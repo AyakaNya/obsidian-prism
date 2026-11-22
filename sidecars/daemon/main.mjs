@@ -1,7 +1,7 @@
 // Obsidian Prism Native Sidecar Daemon (sidecars/daemon/main.mjs)
 // - Auto-discovers DevToolsActivePort across Windows/macOS/Linux + fast Target.setDiscoverTargets push
 // - Registers Page.addScriptToEvaluateOnNewDocument + Runtime.evaluate (survives Ctrl+Shift+R reloads with zero app.asar touch!)
-// - Hot-upgrades legacy instances to Obsidian Prism v1.0.7-beta.1
+// - Hot-upgrades legacy instances to Obsidian Prism v1.0.7-beta.2
 // - Lazily serves real MetricsStore + DesktopUsage snapshots over __agPrismMetricsCall only when requested (0 idle CPU)
 // - Registers __agPrismRepoCall (paired with window.__agPrismRepoBridge) for live Git status & safe git pull --ff-only + hot-reload!
 
@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -36,8 +37,198 @@ export const THOUGHT_BINDING = '__agPrismThoughtCall';
 export const USAGE_BINDING = '__agPrismUsageCall';
 export const INLINE_DIFF_BINDING = '__agPrismInlineDiffCall';
 export const SIDEBAR_BINDING = '__agPrismSidebarCall';
+export const WALLPAPER_BINDING = '__agPrismWallpaperCall';
 export { OmniServer, OMNI_BINDING };
+const WALLPAPER_MAX_PAYLOAD_BYTES = 131072;
+const WALLPAPER_ALLOWED_ACTIONS = new Set([
+  'get-config',
+  'save-config',
+  'pick-media',
+  'clear-media',
+  'get-media-blob',
+  'status',
+]);
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RPC_ROUTE_STORAGE = new AsyncLocalStorage();
+const USAGE_CACHE_MAX_BYTES = 4 * 1024 * 1024;
+const USAGE_CACHE_MAX_PER_SCOPE = 1200;
+const USAGE_CACHE_MAX_SCOPES = 32;
+const USAGE_CACHE_MAX_TOTAL_RECORDS = 2400;
+const FORBIDDEN_SCOPE_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
+export function resolveUsageCachePath(customPath = null) {
+  if (typeof customPath === 'string' && customPath.trim()) {
+    return path.resolve(customPath.trim());
+  }
+  const envPath = typeof process.env.PRISM_USAGE_CACHE_PATH === 'string' ? process.env.PRISM_USAGE_CACHE_PATH.trim() : '';
+  if (envPath) {
+    return path.resolve(envPath);
+  }
+  return path.join(os.homedir(), '.gemini', 'config', 'obsidian-prism-usage-rollup-cache.json');
+}
+
+function sanitizeScopeSegment(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  try {
+    s = decodeURIComponent(s);
+  } catch {}
+  // VS Code Remote-SSH 有时将 authority JSON 编码为 hex 字符串（如 {"hostName":"prod-box"}）
+  if (/^[0-9a-f]{8,}$/i.test(s) && s.length % 2 === 0 && s.length <= 512) {
+    try {
+      const decoded = Buffer.from(s, 'hex').toString('utf8');
+      if (decoded.startsWith('{') && decoded.endsWith('}')) {
+        const parsed = JSON.parse(decoded);
+        const hostCand = parsed?.hostName || parsed?.host || parsed?.authority || '';
+        if (typeof hostCand === 'string' && hostCand.trim()) s = hostCand.trim();
+      }
+    } catch {}
+  }
+  const clean = s
+    .toLowerCase()
+    .replace(/[^a-z0-9._:@-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64);
+  if (!clean || FORBIDDEN_SCOPE_SEGMENTS.has(clean)) return '';
+  return clean;
+}
+
+export function normalizeUsageScopeKey(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const low = s.toLowerCase();
+  if (low === 'local') return 'local';
+  if (low.startsWith('ssh:')) {
+    const host = sanitizeScopeSegment(s.slice(4));
+    return host ? `ssh:${host}` : '';
+  }
+  if (low.startsWith('remote:')) {
+    const id = sanitizeScopeSegment(s.slice(7));
+    return id ? `remote:${id}` : '';
+  }
+  const fromUri = extractScopeKeyFromUri(s);
+  if (fromUri) return fromUri;
+  const fromTitle = extractScopeKeyFromTitle(s);
+  if (fromTitle) return fromTitle;
+  return '';
+}
+
+export function extractScopeKeyFromUri(rawUri) {
+  let s = String(rawUri || '').trim();
+  if (!s) return '';
+  try {
+    s = decodeURIComponent(s);
+  } catch {}
+  // 检查 URL query 中的 remoteAuthority=...
+  const qm = s.match(/[?&#]remoteAuthority=([^&#\s]+)/i);
+  const candidate = qm && qm[1] ? qm[1] : s;
+  const sshMatch = candidate.match(/(?:^|vscode-remote:\/\/)ssh-remote\+([^/&#?\s]+)/i);
+  if (sshMatch && sshMatch[1]) {
+    const host = sanitizeScopeSegment(sshMatch[1]);
+    return host ? `ssh:${host}` : '';
+  }
+  const remoteMatch = candidate.match(/(?:^|vscode-remote:\/\/)([a-z0-9_-]+)\+([^/&#?\s]+)/i);
+  if (remoteMatch && remoteMatch[1] && remoteMatch[2]) {
+    const kind = sanitizeScopeSegment(remoteMatch[1]);
+    const target = sanitizeScopeSegment(remoteMatch[2]);
+    if (kind === 'ssh-remote') return target ? `ssh:${target}` : '';
+    const combined = sanitizeScopeSegment(`${kind}-${target}`);
+    return combined ? `remote:${combined}` : '';
+  }
+  return '';
+}
+
+export function extractScopeKeyFromTitle(rawTitle) {
+  const s = String(rawTitle || '').trim();
+  if (!s) return '';
+  const sshMatch = s.match(/\[SSH:\s*([^\]]+)\]/i);
+  if (sshMatch && sshMatch[1]) {
+    const host = sanitizeScopeSegment(sshMatch[1]);
+    return host ? `ssh:${host}` : '';
+  }
+  const remMatch = s.match(/\[(WSL|Dev Container|Codespaces|Tunnel|Remote):\s*([^\]]+)\]/i);
+  if (remMatch && remMatch[1] && remMatch[2]) {
+    const combined = sanitizeScopeSegment(`${remMatch[1]}-${remMatch[2]}`);
+    return combined ? `remote:${combined}` : '';
+  }
+  return '';
+}
+
+function inferRemoteScopeFromSummariesOrItems(records) {
+  if (!Array.isArray(records) || records.length === 0) return '';
+  let remoteScope = '';
+  let remoteCount = 0;
+  let localFileCount = 0;
+  for (const item of records) {
+    if (!item || typeof item !== 'object') continue;
+    const uris = [];
+    if (Array.isArray(item.workspaces)) {
+      for (const w of item.workspaces) {
+        if (typeof w === 'string' && w) uris.push(w);
+        else if (w && typeof w === 'object') {
+          const u = w.workspaceFolderAbsoluteUri || w.gitRootAbsoluteUri || w.uri || w.path || '';
+          if (u) uris.push(String(u));
+        }
+      }
+    }
+    for (const single of [item.workspaceUri, item.workspacePath, item.workspace]) {
+      if (typeof single === 'string' && single) uris.push(single);
+    }
+    let itemRemote = '';
+    let itemLocal = false;
+    for (const u of uris) {
+      const sc = extractScopeKeyFromUri(u);
+      if (sc) {
+        itemRemote = sc;
+        break;
+      }
+      if (/^file:\/\//i.test(u) || /^[a-z]:[\\/]/i.test(u)) {
+        itemLocal = true;
+      }
+    }
+    if (itemRemote) {
+      if (!remoteScope) remoteScope = itemRemote;
+      remoteCount += 1;
+    } else if (itemLocal) {
+      localFileCount += 1;
+    }
+  }
+  // 只有存在明确远程工作区 URI 且未被本机 file:// 主导时才推断为远程 scope
+  if (remoteScope && remoteCount > 0 && remoteCount >= localFileCount) {
+    return remoteScope;
+  }
+  return '';
+}
+
+export function resolveUsageScopeKey({ explicitScopeKey = '', entry = null, items = null, summaries = null } = {}) {
+  const explicit = normalizeUsageScopeKey(explicitScopeKey);
+  if (explicit && explicit !== 'local') return explicit;
+  if (entry && typeof entry === 'object') {
+    const fromDetected = normalizeUsageScopeKey(entry.detectedScopeKey || entry.scopeKey || '');
+    if (fromDetected && fromDetected !== 'local') return fromDetected;
+    const fromUrl = extractScopeKeyFromUri(entry.url);
+    if (fromUrl) return fromUrl;
+    const fromTitle = extractScopeKeyFromTitle(entry.title);
+    if (fromTitle) return fromTitle;
+  }
+  const fromItems = inferRemoteScopeFromSummariesOrItems(items);
+  if (fromItems) return fromItems;
+  const fromSums = inferRemoteScopeFromSummariesOrItems(summaries);
+  if (fromSums) return fromSums;
+  if (explicit === 'local') return 'local';
+  return 'local';
+}
+
+function hasRealUsageRecord(record) {
+  if (!record || typeof record !== 'object' || !record.days || typeof record.days !== 'object') return false;
+  if (Number(record.calls || 0) > 0) return true;
+  for (const d of Object.values(record.days)) {
+    if (!d || typeof d !== 'object') continue;
+    if (Number(d.total || d.tokens || 0) > 0 || Number(d.calls || 0) > 0) return true;
+  }
+  return false;
+}
 
 function execGit(args, cwd, timeoutMs = 12000, extraConfigs = []) {
   const cfgFlags = [
@@ -1808,12 +1999,14 @@ export class PrismDaemon {
     rootDir = DEFAULT_ROOT_DIR,
     gitRepoDir = null,
     bundleCachePath = undefined,
+    usageCachePath = undefined,
     overridePort = null,
     portFile = null,
     pollIntervalMs = 3000,
     enabledCheck = () => isPluginEnabledInHostConfig(),
     metricsProvider = null,
     thoughtService = null,
+    wallpaperService = null,
     omniExecHooks = null,
     sidebarService = null,
     relaunchHooks = null,
@@ -1873,6 +2066,9 @@ export class PrismDaemon {
     this.inlineDiffExpr = '';
     this.inlineDiffCodeHash = '';
     this._inlineDiffHashSource = '';
+    this.wallpaperExpr = '';
+    this.wallpaperCodeHash = '';
+    this._wallpaperHashSource = '';
     this.codeHash = '';
     this.ownerToken = `${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
     this.pidFile = path.join(this.rootDir, '.daemon.pid');
@@ -1885,12 +2081,20 @@ export class PrismDaemon {
     this._lazyLsClient = null;
     this._backendSummariesCache = null;
     this._backendSummariesAt = 0;
+    this._usageCachePathOpt = usageCachePath;
+    this._usageCacheFile = resolveUsageCachePath(usageCachePath);
+    this._usageDiskCache = null;
+    this._usageCacheDirty = false;
+    this._usageCacheTimer = null;
     this._storageHealthCache = null;
     this._storageHealthAt = 0;
     this._lastTelemetryActivityAt = 0;
     this._telemetryInFlight = 0;
     this._customMetricsProvider = metricsProvider;
     this._lazyThoughtService = thoughtService;
+    this._lazyWallpaperService = wallpaperService;
+    this._wallpaperServicePromise = null;
+    this._wallpaperStopped = false;
     this.omniServer = null;
     this._omniServerPromise = null;
     this._omniExecHooks = omniExecHooks;
@@ -1911,6 +2115,9 @@ export class PrismDaemon {
     this._promptInFlight = false;
     this._lastShortcutCheckAt = 0;
     this._lastObservedHostPid = 0;
+    this._lastActiveCdpPort = null;
+    this._prevAttachedCount = 0;
+    this._disconnectedAllSessions = false;
     this._enableAutoUpdateTimer = enableAutoUpdateTimer !== false;
     const initDelayNum = Number(updateCheckInitialDelayMs);
     this._updateCheckInitialDelayMs = Number.isFinite(initDelayNum) ? Math.max(0, initDelayNum) : 45000;
@@ -1925,7 +2132,7 @@ export class PrismDaemon {
     this.updateService =
       _testUpdateService ||
       new UpdateService({
-        currentVersion: this.cdp?.PLUGIN_VERSION || '1.0.7-beta.1',
+        currentVersion: this.cdp?.PLUGIN_VERSION || '1.0.7-beta.2',
         channel: initialUpdateChannel,
       });
     if (_testUpdateService && typeof _testUpdateService.setChannel === 'function') {
@@ -2410,7 +2617,7 @@ export class PrismDaemon {
   }
 
   _buildCombinedUpdateStatus({ relState = null, gitState = null, action = 'update-status', channelOverride = null } = {}) {
-    const currentVersion = this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.7-beta.1';
+    const currentVersion = this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.7-beta.2';
     const rel = relState || this.updateService?.getStatus?.() || {};
     const autoUpdate = this._getAutoUpdateSetting();
     const explicitChannel = channelOverride === 'beta' || channelOverride === 'stable' ? channelOverride : null;
@@ -2658,7 +2865,7 @@ export class PrismDaemon {
         ...applyRes,
         action: 'apply-update',
         channel,
-        currentVersion: this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.7-beta.1',
+        currentVersion: this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.7-beta.2',
       };
     }
 
@@ -2911,6 +3118,7 @@ export class PrismDaemon {
     }
     this._buildThoughtExprForConfig(cfg, cacheOpts);
     this._buildInlineDiffExprForConfig(cfg, cacheOpts);
+    this._buildWallpaperExprForConfig(cfg, cacheOpts);
 
     if (bundleCachePath) {
       if (deferDiskCacheWrite) {
@@ -3143,6 +3351,73 @@ export class PrismDaemon {
     );
   }
 
+  _hasWallpaperClientFile() {
+    try {
+      return fs.existsSync(path.join(this.rootDir, 'vendor', 'wallpaper', 'wallpaper-client.js'));
+    } catch {
+      return false;
+    }
+  }
+
+  _extractWallpaperCodeHash(expr) {
+    const str = typeof expr === 'string' ? expr : '';
+    if (!str) return '';
+    const m = /const targetHash = "([^"]+)"/.exec(str);
+    if (m && m[1]) return m[1];
+    return crypto.createHash('sha256').update(str).digest('hex').slice(0, 16);
+  }
+
+  _setWallpaperExpr(expr) {
+    const next = typeof expr === 'string' ? expr : '';
+    this.wallpaperExpr = next;
+    this._wallpaperHashSource = next;
+    this.wallpaperCodeHash = this._extractWallpaperCodeHash(next);
+    return next;
+  }
+
+  _buildWallpaperExprForConfig(cfgOverride = null, cacheOpts = undefined) {
+    const cfg = cfgOverride || (typeof this.cdp?.readConfig === 'function' ? this.cdp.readConfig() : null);
+    if (typeof this.cdp?.buildWallpaperExpression !== 'function') {
+      return this._setWallpaperExpr('');
+    }
+    // 不在 NewDocument 脚本中内联含 mediaUrl/mediaPath Bearer Token 的静态快照，
+    // 由前端挂载后通过 WALLPAPER_BINDING 实时 refresh() 获取最新有效配置与 Token。
+    const rawOpts = cacheOpts !== undefined ? cacheOpts : this._getChannelCacheOpts(true);
+    let safeOpts = rawOpts;
+    if (rawOpts && typeof rawOpts === 'object' && Object.prototype.hasOwnProperty.call(rawOpts, 'initialWallpaperConfig')) {
+      const { initialWallpaperConfig: _stripped, ...rest } = rawOpts;
+      safeOpts = Object.keys(rest).length > 0 ? rest : undefined;
+    }
+    const expr = safeOpts
+      ? this.cdp.buildWallpaperExpression(cfg, safeOpts)
+      : this.cdp.buildWallpaperExpression(cfg);
+    if (cacheOpts === undefined && safeOpts && this.running) {
+      this._scheduleBundleCacheFlush();
+    }
+    return this._setWallpaperExpr(expr);
+  }
+
+  _getWallpaperExprHash(expr = this.wallpaperExpr) {
+    const str = typeof expr === 'string' ? expr : '';
+    if (!str) return '';
+    if (str === this._wallpaperHashSource && this.wallpaperCodeHash) {
+      return this.wallpaperCodeHash;
+    }
+    const hash = this._extractWallpaperCodeHash(str);
+    if (str === this.wallpaperExpr) {
+      this._wallpaperHashSource = str;
+      this.wallpaperCodeHash = hash;
+    }
+    return hash;
+  }
+
+  _getWallpaperCleanupExpression() {
+    return (
+      this.cdp?.WALLPAPER_REMOVE_EXPRESSION ||
+      "(() => { try { window.__agPrismWallpaper?.destroy?.(); } catch {} try { const root = document.getElementById('ag-prism-wallpaper-root'); if (root) { root.querySelectorAll('video').forEach((v) => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch {} }); root.remove(); } } catch {} try { document.getElementById('ag-prism-wallpaper-css')?.remove(); } catch {} try { document.documentElement?.removeAttribute?.('data-ag-prism-wallpaper'); } catch {} try { delete window.__agPrismWallpaper; } catch {} try { delete globalThis.__agPrismWallpaper; } catch {} try { delete window.__prismMountWallpaperUi; } catch {} try { delete globalThis.__prismMountWallpaperUi; } catch {} try { delete window.__agPrismWallpaperResolve; } catch {} return { ok: true, status: 'off' }; })()"
+    );
+  }
+
   _isTelemetryDisabled(cfgOverride = null) {
     try {
       const cfg = cfgOverride || this.cdp?.readConfig?.();
@@ -3179,6 +3454,8 @@ export class PrismDaemon {
     this._lazyLsClient = null;
     this._backendSummariesCache = null;
     this._backendSummariesAt = 0;
+    this._flushUsageDiskCache();
+    this._usageDiskCache = null;
     for (const svc of targets) {
       if (!svc) continue;
       try {
@@ -3276,7 +3553,7 @@ export class PrismDaemon {
   _getSidebarServerMeta() {
     return {
       binding: SIDEBAR_BINDING,
-      version: this.cdp?.PLUGIN_VERSION || '1.0.7-beta.1',
+      version: this.cdp?.PLUGIN_VERSION || '1.0.7-beta.2',
       schemaVersion: 2,
       serviceReady: !this._sidebarStopped && typeof this.sidebarService?.handleRpc === 'function' &&
         !this.sidebarService.getBootDiagnostic?.(),
@@ -3341,6 +3618,78 @@ export class PrismDaemon {
       entry.inlineDiffMounted = false;
       entry.inlineDiffSkipped = false;
       entry.lastInlineDiffHash = '';
+    }
+  }
+
+  async _ensureWallpaperBinding(entry, timeoutMs = 2600, force = false) {
+    if (!entry || entry.session.closed) return false;
+    if (!force && entry.wallpaperBindingAdded) return true;
+    const bindingName = this.cdp?.WALLPAPER_BINDING || WALLPAPER_BINDING;
+    const ok = await entry.session
+      .send('Runtime.addBinding', { name: bindingName }, timeoutMs)
+      .then(() => true)
+      .catch(() => false);
+    if (ok) entry.wallpaperBindingAdded = true;
+    return ok;
+  }
+
+  async _removeWallpaperBinding(entry, timeoutMs = 2000) {
+    if (!entry || entry.session.closed) return;
+    const bindingName = this.cdp?.WALLPAPER_BINDING || WALLPAPER_BINDING;
+    await entry.session
+      .send('Runtime.removeBinding', { name: bindingName }, timeoutMs)
+      .catch(() => {});
+    entry.wallpaperBindingAdded = false;
+  }
+
+  async _recordWallpaperEvalOutcome(entry, evalRes, wallpaperHash) {
+    const isSkipped = Boolean(
+      evalRes && typeof evalRes.status === 'string' && evalRes.status.startsWith('skipped-')
+    );
+    if (evalRes && evalRes.ok) {
+      entry.wallpaperMounted = true;
+      entry.wallpaperSkipped = false;
+      entry.lastWallpaperHash = wallpaperHash;
+    } else if (isSkipped) {
+      entry.wallpaperMounted = false;
+      entry.wallpaperSkipped = true;
+      entry.lastWallpaperHash = wallpaperHash;
+      if (evalRes.status === 'skipped-non-host') {
+        await this._removeWallpaperBinding(entry);
+      }
+    } else {
+      entry.wallpaperMounted = false;
+      entry.wallpaperSkipped = false;
+      entry.lastWallpaperHash = '';
+    }
+  }
+
+  async ensureWallpaperService() {
+    if (this._wallpaperStopped) return null;
+    if (this._lazyWallpaperService) return this._lazyWallpaperService;
+    if (this._wallpaperServicePromise) return this._wallpaperServicePromise;
+    this._wallpaperServicePromise = (async () => {
+      const svcPath = path.join(this.rootDir, 'vendor', 'wallpaper', 'wallpaper-service.mjs');
+      if (!fs.existsSync(svcPath)) {
+        return null;
+      }
+      const mod = await import(pathToFileURL(svcPath).href);
+      const factory = mod?.createWallpaperService || mod?.default;
+      if (this._wallpaperStopped || typeof factory !== 'function') return null;
+      const svc = factory({ logger: (m) => this.log(m) });
+      if (this._wallpaperStopped) {
+        try {
+          if (typeof svc?.dispose === 'function') await svc.dispose();
+        } catch {}
+        return null;
+      }
+      this._lazyWallpaperService = svc;
+      return svc;
+    })();
+    try {
+      return await this._wallpaperServicePromise;
+    } finally {
+      this._wallpaperServicePromise = null;
     }
   }
 
@@ -3460,21 +3809,79 @@ export class PrismDaemon {
     return this._lazyUsage;
   }
 
-  _getRendererRpcCandidates() {
-    const out = [];
-    for (const entry of this.sessions.values()) {
-      if (!entry || !entry.session || entry.session.closed) continue;
-      const url = String(entry.url || '');
-      if (/^(?:devtools|chrome-extension|chrome|about):/i.test(url)) continue;
-      const isLocalHost = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//i.test(url);
-      out.push({ entry, score: (isLocalHost ? 2 : 0) + (entry.healthyStreak > 0 ? 1 : 0) });
-    }
-    out.sort((a, b) => b.score - a.score);
-    return out.map((x) => x.entry);
+  _resolveEntryScopeKey(entry) {
+    if (!entry || typeof entry !== 'object') return 'local';
+    return resolveUsageScopeKey({ entry });
   }
 
-  async _invokeRendererLsRpc(method, body = {}) {
-    const candidates = this._getRendererRpcCandidates();
+  _getRendererRpcCandidates(opts = null) {
+    const preferredEntry = opts?.preferredEntry || null;
+    const explicitScope = normalizeUsageScopeKey(opts?.scopeKey || '');
+    const preferredValid = Boolean(
+      preferredEntry &&
+        preferredEntry.session &&
+        !preferredEntry.session.closed &&
+        !/^(?:devtools|chrome-extension|chrome|about):/i.test(String(preferredEntry.url || ''))
+    );
+    if (opts?.strictEntry === true) {
+      return preferredValid ? [preferredEntry] : [];
+    }
+    const targetScope = explicitScope || (preferredValid ? this._resolveEntryScopeKey(preferredEntry) : '');
+    const out = [];
+    if (preferredValid) {
+      out.push(preferredEntry);
+    }
+    const others = [];
+    if (this.sessions && typeof this.sessions.values === 'function') {
+      for (const entry of this.sessions.values()) {
+        if (!entry || entry === preferredEntry || !entry.session || entry.session.closed) continue;
+        const url = String(entry.url || '');
+        if (/^(?:devtools|chrome-extension|chrome|about):/i.test(url)) continue;
+        const entryScope = this._resolveEntryScopeKey(entry);
+        // 严格环境隔离：指定了 targetScope 或 preferredEntry 时，仅允许同 scope 候选回退，严禁 SSH 与 Local 互相跨路由
+        if (targetScope && entryScope !== targetScope) continue;
+        const isLocalHost = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//i.test(url);
+        const isLocalScope = entryScope === 'local';
+        others.push({
+          entry,
+          score: (isLocalScope ? 4 : 0) + (isLocalHost ? 2 : 0) + (entry.healthyStreak > 0 ? 1 : 0),
+        });
+      }
+    }
+    others.sort((a, b) => b.score - a.score);
+    for (const x of others) out.push(x.entry);
+    return out;
+  }
+
+  _createScopedRendererClient(entry, scopeKey, extraOpts = null) {
+    const safeScope = normalizeUsageScopeKey(scopeKey) || 'local';
+    const routeOpts = {
+      preferredEntry: entry,
+      scopeKey: safeScope,
+      ...(extraOpts?.strictEntry ? { strictEntry: true } : {}),
+    };
+    return {
+      server: { port: 0, csrf: '', pid: 0, mode: 'renderer-proxy', scopeKey: safeScope },
+      call: (method, body = {}) => this._invokeRendererLsRpc(method, body, routeOpts),
+      trajectory: (cascadeId) => this._invokeRendererLsRpc('GetCascadeTrajectory', { cascadeId }, routeOpts),
+    };
+  }
+
+  _resolveActiveRpcScope() {
+    const asyncCtx = RPC_ROUTE_STORAGE.getStore();
+    if (asyncCtx && asyncCtx.daemon === this) {
+      const sc =
+        normalizeUsageScopeKey(asyncCtx.scopeKey || '') ||
+        (asyncCtx.preferredEntry ? this._resolveEntryScopeKey(asyncCtx.preferredEntry) : '');
+      return sc || 'local';
+    }
+    return 'local';
+  }
+
+  async _invokeRendererLsRpc(method, body = {}, opts = null) {
+    const asyncCtx = RPC_ROUTE_STORAGE.getStore();
+    const routeOpts = opts || (asyncCtx && asyncCtx.daemon === this ? asyncCtx : null);
+    const candidates = this._getRendererRpcCandidates(routeOpts);
     if (!candidates.length) {
       throw new Error('等待 Antigravity 主窗口连接');
     }
@@ -3506,7 +3913,28 @@ export class PrismDaemon {
           return normalizeRendererQuotaSummary(raw);
         }
         if (method === 'GetAllCascadeTrajectories') {
-          return normalizeRendererSummaries(raw);
+          const scopeHint = normalizeUsageScopeKey(raw?.scopeHint || '');
+          const normalized = normalizeRendererSummaries(raw);
+          const inferredRemote =
+            (scopeHint && scopeHint !== 'local' ? scopeHint : '') ||
+            inferRemoteScopeFromSummariesOrItems(Object.values(normalized?.trajectorySummaries || {}));
+          if (inferredRemote) {
+            entry.detectedScopeKey = inferredRemote;
+            entry._usageScopeVerified = true;
+            // 若调用方显式锁定 local（如本机 MetricsStore）且未指定该窗口探针，严禁把远程窗口会话写入本机遥测
+            if (routeOpts?.scopeKey === 'local' && !routeOpts?.preferredEntry) {
+              lastErr = new Error('renderer_scope_mismatch');
+              continue;
+            }
+          }
+          if (scopeHint) {
+            Object.defineProperty(normalized, '_scopeHint', {
+              value: scopeHint,
+              enumerable: false,
+              configurable: true,
+            });
+          }
+          return normalized;
         }
         if (method === 'GetCascadeTrajectory') {
           return normalizeRendererTrajectory(raw, body?.cascadeId, this._rendererModelLabels || null);
@@ -3552,7 +3980,7 @@ export class PrismDaemon {
     const { MetricsStore } = await import(storeModUrl.href);
     this._lazyStore = new MetricsStore({
       dataDir: telemetryDataDir,
-      rendererRpc: (m, b) => this._invokeRendererLsRpc(m, b),
+      rendererRpc: (m, b) => this._invokeRendererLsRpc(m, b, { scopeKey: 'local' }),
       ...(activePort ? { cdpPort: activePort } : {}),
     });
     return this.ensureMetricsCollector();
@@ -3573,6 +4001,7 @@ export class PrismDaemon {
     }
     if (this._lazyStore && this._lazyStore.client) {
       this._lazyLsClient = this._lazyStore.client;
+      this._lazyLsClient.setScopeResolver?.(() => this._resolveActiveRpcScope());
       this.syncClientCdpPort(this._lazyLsClient);
       return this._lazyLsClient;
     }
@@ -3581,6 +4010,7 @@ export class PrismDaemon {
     const { AntigravityClient } = await import(clientModUrl.href);
     this._lazyLsClient = new AntigravityClient({
       rendererRpc: (m, b) => this._invokeRendererLsRpc(m, b),
+      scopeResolver: () => this._resolveActiveRpcScope(),
       ...(activePort ? { cdpPort: activePort } : {}),
     });
     return this._lazyLsClient;
@@ -3623,10 +4053,27 @@ export class PrismDaemon {
     };
   }
 
-  async _fetchBackendTrajectorySummaries(client, usageCore, force = false) {
+  _discoverLocalAppConversations() {
+    return discoverLocalConversations({ host: 'app' });
+  }
+
+  _getDiscoveredSubagents(scopeKey = 'local') {
+    const safeScope = normalizeUsageScopeKey(scopeKey) || 'local';
+    if (!this._discoveredSubagentsByScope) return null;
+    return this._discoveredSubagentsByScope.get(safeScope) || null;
+  }
+
+  async _fetchBackendTrajectorySummaries(client, usageCore, force = false, ctx = null) {
     const now = Date.now();
-    if (!force && this._backendSummariesCache && now - this._backendSummariesAt < 15000) {
-      return this._backendSummariesCache;
+    const entry = ctx?.entry || null;
+    let scopeKey = resolveUsageScopeKey({ explicitScopeKey: ctx?.scopeKey, entry });
+    const makeBucketKey = (sc) => (entry?.pageId ? `${sc}::${entry.pageId}` : sc);
+    const initialBucketKey = makeBucketKey(scopeKey);
+    if (!force && this._backendSummariesCache instanceof Map) {
+      const hit = this._backendSummariesCache.get(initialBucketKey);
+      if (hit && now - hit.at < 15000) {
+        return hit.pack;
+      }
     }
     try {
       const raw = await client.call('GetAllCascadeTrajectories', {});
@@ -3718,36 +4165,70 @@ export class PrismDaemon {
         list.push(item);
         byId.set(id.toLowerCase(), item);
       }
-      if (client?.server?.mode === 'renderer-proxy') {
-        const subMap = this._discoveredSubagents || null;
-        try {
-          const localRes = await discoverLocalConversations({ host: 'app' });
-          for (const entry of localRes?.conversations || []) {
-            const lid = String(entry?.id || '').toLowerCase();
-            if (!GUID_RE.test(lid) || byId.has(lid)) continue;
-            // 直接复用 discoverLocalConversations 并发 lstat 返回的 mtimeMs，省去二次串行 lstat
-            const rawMtimeMs = Number.isFinite(entry?.dbMtimeMs)
-              ? entry.dbMtimeMs
-              : Number.isFinite(entry?.mtimeMs)
-              ? entry.mtimeMs
-              : 0;
-            const mtimeSec = rawMtimeMs > 0 ? Math.floor(rawMtimeMs / 1000) : 0;
-            const knownSub = subMap?.get(lid) || null;
-            const localItem = {
-              id: lid,
-              stepCount: 0,
-              lastModifiedSec: mtimeSec,
-              createdSec: mtimeSec,
-              subagent: Boolean(knownSub),
-              ...(knownSub?.parentId ? { parentId: knownSub.parentId } : {}),
-              ...(knownSub?.workspace ? { workspace: knownSub.workspace } : {}),
-              title: '',
-              status: '',
-            };
-            list.push(localItem);
-            byId.set(lid, localItem);
+
+      // 动态二次校准 scopeKey：在扫描本机磁盘前检查该窗口返回的工作区 URI 与 renderer scopeHint
+      if (scopeKey === 'local') {
+        const inferredScope = resolveUsageScopeKey({
+          explicitScopeKey: raw?._scopeHint || entry?.detectedScopeKey || '',
+          entry,
+          summaries: list,
+        });
+        if (inferredScope && inferredScope !== 'local') {
+          scopeKey = inferredScope;
+          if (entry && typeof entry === 'object') {
+            entry.detectedScopeKey = scopeKey;
+            entry._usageScopeVerified = true;
           }
-        } catch {}
+        } else if (entry && typeof entry === 'object') {
+          // 仅当渲染器明确返回 local scopeHint 或包含本机 file:// 工作区路径时，才确认该窗口为可信 local
+          const hasExplicitLocalHint = normalizeUsageScopeKey(raw?._scopeHint || '') === 'local';
+          const hasLocalFileWs = list.some(
+            (it) =>
+              Array.isArray(it.workspaces) &&
+              it.workspaces.some((u) => /^file:\/\//i.test(String(u || '')) || /^[a-z]:[\\/]/i.test(String(u || '')))
+          );
+          if (hasExplicitLocalHint || hasLocalFileWs) {
+            entry._usageScopeVerified = true;
+          }
+        }
+      } else if (entry && typeof entry === 'object') {
+        entry._usageScopeVerified = true;
+      }
+
+      if (client?.server?.mode === 'renderer-proxy') {
+        const subMap = this._getDiscoveredSubagents(scopeKey);
+        // 严格隔离：仅已确认的本地窗口（或无 entry 直调）允许补充扫描本机磁盘会话；未验证窗口与 Remote-SSH 窗口绝不混入本机磁盘对话
+        const allowLocalDiskScan = scopeKey === 'local' && (!entry || entry._usageScopeVerified === true);
+        if (allowLocalDiskScan) {
+          try {
+            const localRes = await this._discoverLocalAppConversations();
+            for (const localEntry of localRes?.conversations || []) {
+              const lid = String(localEntry?.id || '').toLowerCase();
+              if (!GUID_RE.test(lid) || byId.has(lid)) continue;
+              // 直接复用 discoverLocalConversations 并发 lstat 返回的 mtimeMs，省去二次串行 lstat
+              const rawMtimeMs = Number.isFinite(localEntry?.dbMtimeMs)
+                ? localEntry.dbMtimeMs
+                : Number.isFinite(localEntry?.mtimeMs)
+                ? localEntry.mtimeMs
+                : 0;
+              const mtimeSec = rawMtimeMs > 0 ? Math.floor(rawMtimeMs / 1000) : 0;
+              const knownSub = subMap?.get(lid) || null;
+              const localItem = {
+                id: lid,
+                stepCount: 0,
+                lastModifiedSec: mtimeSec,
+                createdSec: mtimeSec,
+                subagent: Boolean(knownSub),
+                ...(knownSub?.parentId ? { parentId: knownSub.parentId } : {}),
+                ...(knownSub?.workspace ? { workspace: knownSub.workspace } : {}),
+                title: '',
+                status: '',
+              };
+              list.push(localItem);
+              byId.set(lid, localItem);
+            }
+          } catch {}
+        }
         if (subMap && subMap.size > 0) {
           for (const item of list) {
             const info = subMap.get(item.id.toLowerCase());
@@ -3759,27 +4240,45 @@ export class PrismDaemon {
         }
         list.sort((a, b) => (b.lastModifiedSec || 0) - (a.lastModifiedSec || 0));
       }
-      const pack = { list, byId };
-      this._backendSummariesCache = pack;
+
+      const pack = { list, byId, scopeKey };
+      if (!(this._backendSummariesCache instanceof Map)) {
+        this._backendSummariesCache = new Map();
+      }
+      const finalBucketKey = makeBucketKey(scopeKey);
+      this._backendSummariesCache.delete(finalBucketKey);
+      this._backendSummariesCache.set(finalBucketKey, { pack, at: now });
+      while (this._backendSummariesCache.size > 32) {
+        this._backendSummariesCache.delete(this._backendSummariesCache.keys().next().value);
+      }
       this._backendSummariesAt = now;
       return pack;
     } catch {
-      return { list: [], byId: new Map() };
+      return { list: [], byId: new Map(), scopeKey };
     }
   }
 
-  _recordDiscoveredSubagents(parentId, traj, parentWorkspace = '') {
+  _recordDiscoveredSubagents(parentId, traj, parentWorkspace = '', scopeKey = 'local') {
     const steps = traj?.trajectory?.steps;
     if (!Array.isArray(steps) || !GUID_RE.test(String(parentId || ''))) return;
     const pid = String(parentId).toLowerCase();
-    if (!this._discoveredSubagents) this._discoveredSubagents = new Map();
+    const safeScope = normalizeUsageScopeKey(scopeKey) || 'local';
+    if (!this._discoveredSubagentsByScope) this._discoveredSubagentsByScope = new Map();
+    let scopeMap = this._discoveredSubagentsByScope.get(safeScope);
+    if (!scopeMap) {
+      scopeMap = new Map();
+      this._discoveredSubagentsByScope.set(safeScope, scopeMap);
+      while (this._discoveredSubagentsByScope.size > USAGE_CACHE_MAX_SCOPES) {
+        this._discoveredSubagentsByScope.delete(this._discoveredSubagentsByScope.keys().next().value);
+      }
+    }
     const register = (rawChildId) => {
       const cid = String(rawChildId || '').toLowerCase();
       if (!GUID_RE.test(cid) || cid === pid) return;
-      this._discoveredSubagents.delete(cid);
-      this._discoveredSubagents.set(cid, { parentId: pid, workspace: String(parentWorkspace || '') });
-      while (this._discoveredSubagents.size > 512) {
-        this._discoveredSubagents.delete(this._discoveredSubagents.keys().next().value);
+      scopeMap.delete(cid);
+      scopeMap.set(cid, { parentId: pid, workspace: String(parentWorkspace || '') });
+      while (scopeMap.size > 512) {
+        scopeMap.delete(scopeMap.keys().next().value);
       }
     };
     for (const s of steps) {
@@ -3792,136 +4291,483 @@ export class PrismDaemon {
     }
   }
 
+  _resolveUsageCachePath() {
+    if (typeof this._usageCacheFile === 'string' && this._usageCacheFile.trim()) {
+      return path.resolve(this._usageCacheFile.trim());
+    }
+    return resolveUsageCachePath(this._usageCachePathOpt);
+  }
+
+  _loadUsageDiskCache() {
+    if (this._usageDiskCache instanceof Map) return this._usageDiskCache;
+    const scopesMap = new Map();
+    const cacheFile = this._resolveUsageCachePath();
+    const parseScopeEntries = (obj) => {
+      const m = new Map();
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return m;
+      for (const [k, v] of Object.entries(obj)) {
+        if (m.size >= USAGE_CACHE_MAX_PER_SCOPE) break;
+        if (GUID_RE.test(k) && v && v.record?.days && Number(v.stepCount) > 0 && Number(v.lastModifiedSec) > 0) {
+          m.set(k.toLowerCase(), {
+            stepCount: Number(v.stepCount),
+            lastModifiedSec: Number(v.lastModifiedSec),
+            record: v.record,
+          });
+        }
+      }
+      return m;
+    };
+    try {
+      const dir = path.dirname(cacheFile);
+      if (fs.existsSync(cacheFile)) {
+        const dirStat = fs.lstatSync(dir);
+        const lst = fs.lstatSync(cacheFile);
+        if (
+          !dirStat.isSymbolicLink() &&
+          dirStat.isDirectory() &&
+          !lst.isSymbolicLink() &&
+          lst.isFile() &&
+          lst.size > 0 &&
+          lst.size <= USAGE_CACHE_MAX_BYTES
+        ) {
+          const raw = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+          if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            if (raw.version === 2 && raw.scopes && typeof raw.scopes === 'object' && !Array.isArray(raw.scopes)) {
+              for (const [rawScope, bucketObj] of Object.entries(raw.scopes)) {
+                if (scopesMap.size >= USAGE_CACHE_MAX_SCOPES) break;
+                const sc = normalizeUsageScopeKey(rawScope);
+                if (!sc) continue;
+                const parsedBucket = parseScopeEntries(bucketObj);
+                if (parsedBucket.size > 0) scopesMap.set(sc, parsedBucket);
+              }
+            } else {
+              // 向下兼容 v1 平铺格式：统一归入 local 分区
+              const localBucket = parseScopeEntries(raw);
+              if (localBucket.size > 0) scopesMap.set('local', localBucket);
+            }
+          }
+        }
+      }
+    } catch {}
+    this._usageDiskCache = scopesMap;
+    return scopesMap;
+  }
+
+  _getUsageDiskCacheScope(scopeKey = 'local', create = false) {
+    const safeScope = normalizeUsageScopeKey(scopeKey) || 'local';
+    const scopesMap = this._loadUsageDiskCache();
+    let bucket = scopesMap.get(safeScope);
+    if (!bucket && create) {
+      bucket = new Map();
+      scopesMap.set(safeScope, bucket);
+      while (scopesMap.size > USAGE_CACHE_MAX_SCOPES) {
+        const oldestKey = scopesMap.keys().next().value;
+        if (oldestKey === safeScope) break;
+        scopesMap.delete(oldestKey);
+      }
+    }
+    return bucket || new Map();
+  }
+
+  _putUsageDiskCache(id, stepCount, lastModifiedSec, record, scopeKey = 'local') {
+    if (!id || !GUID_RE.test(id) || !record?.days) return;
+    const sc = Math.max(0, Number(stepCount || record.stepCount || 0));
+    const lm = Math.max(0, Number(lastModifiedSec || record.lastModifiedSec || 0));
+    if (sc <= 0 || lm <= 0) return;
+    const safeScope = normalizeUsageScopeKey(scopeKey) || 'local';
+    const bucket = this._getUsageDiskCacheScope(safeScope, true);
+    const key = id.toLowerCase();
+    const existing = bucket.get(key);
+    // 保护：绝不用空统计覆盖已有真实非空统计
+    if (existing && hasRealUsageRecord(existing.record) && !hasRealUsageRecord(record)) {
+      return;
+    }
+    bucket.set(key, { stepCount: sc, lastModifiedSec: lm, record });
+    this._usageCacheDirty = true;
+    if (!this._usageCacheTimer) {
+      this._usageCacheTimer = setTimeout(() => {
+        this._usageCacheTimer = null;
+        this._flushUsageDiskCache();
+      }, 1500);
+      this._usageCacheTimer.unref?.();
+    }
+  }
+
+  _flushUsageDiskCache() {
+    if (this._usageCacheTimer) {
+      clearTimeout(this._usageCacheTimer);
+      this._usageCacheTimer = null;
+    }
+    if (!this._usageCacheDirty || !(this._usageDiskCache instanceof Map)) return;
+    this._usageCacheDirty = false;
+    try {
+      const cacheFile = this._resolveUsageCachePath();
+      const dir = path.dirname(cacheFile);
+      assertNotSymlinkSync(cacheFile, 'usage cache file');
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      }
+      assertNotSymlinkSync(dir, 'usage cache directory');
+
+      // 1) 单 scope 限额 1200 条，按 lastModifiedSec 降序保留最新记录
+      const normalizedScopes = [];
+      let totalCount = 0;
+      for (const [rawScope, bucket] of this._usageDiskCache.entries()) {
+        const sc = normalizeUsageScopeKey(rawScope);
+        if (!sc || !(bucket instanceof Map) || bucket.size === 0) continue;
+        let entries = Array.from(bucket.entries());
+        entries.sort((a, b) => (b[1].lastModifiedSec || 0) - (a[1].lastModifiedSec || 0));
+        if (entries.length > USAGE_CACHE_MAX_PER_SCOPE) {
+          entries = entries.slice(0, USAGE_CACHE_MAX_PER_SCOPE);
+          this._usageDiskCache.set(sc, new Map(entries));
+        }
+        const newestSec = entries[0]?.[1]?.lastModifiedSec || 0;
+        normalizedScopes.push({ scope: sc, entries, newestSec });
+        totalCount += entries.length;
+      }
+      // 最多保留 USAGE_CACHE_MAX_SCOPES 个最活跃 scope
+      normalizedScopes.sort((a, b) => b.newestSec - a.newestSec);
+      if (normalizedScopes.length > USAGE_CACHE_MAX_SCOPES) {
+        normalizedScopes.length = USAGE_CACHE_MAX_SCOPES;
+      }
+
+      // 2) 跨 scope 总条目限额控制
+      if (totalCount > USAGE_CACHE_MAX_TOTAL_RECORDS) {
+        const allItems = [];
+        for (const s of normalizedScopes) {
+          for (const [k, v] of s.entries) allItems.push({ scope: s.scope, key: k, val: v });
+        }
+        allItems.sort((a, b) => (b.val.lastModifiedSec || 0) - (a.val.lastModifiedSec || 0));
+        const kept = allItems.slice(0, USAGE_CACHE_MAX_TOTAL_RECORDS);
+        const byScope = new Map();
+        for (const it of kept) {
+          let arr = byScope.get(it.scope);
+          if (!arr) {
+            arr = [];
+            byScope.set(it.scope, arr);
+          }
+          arr.push([it.key, it.val]);
+        }
+        normalizedScopes.length = 0;
+        for (const [sc, entries] of byScope.entries()) {
+          normalizedScopes.push({ scope: sc, entries, newestSec: entries[0]?.[1]?.lastModifiedSec || 0 });
+        }
+      }
+
+      // 3) 序列化并严格保证 <= 4 MB 上限（超限时按最老条目逐步裁剪）
+      normalizedScopes.sort((a, b) => (b.newestSec || 0) - (a.newestSec || 0));
+      const buildPayload = () => {
+        const scopesObj = Object.create(null);
+        for (const s of normalizedScopes) {
+          if (!s.entries.length) continue;
+          const bucketObj = Object.create(null);
+          for (const [k, v] of s.entries) bucketObj[k] = v;
+          scopesObj[s.scope] = bucketObj;
+        }
+        return JSON.stringify({ version: 2, scopes: scopesObj });
+      };
+      let serialized = buildPayload();
+      while (Buffer.byteLength(serialized, 'utf8') > USAGE_CACHE_MAX_BYTES) {
+        let trimmed = false;
+        for (const s of normalizedScopes) {
+          if (s.entries.length > 1) {
+            s.entries = s.entries.slice(0, Math.max(1, Math.floor(s.entries.length * 0.8)));
+            trimmed = true;
+          }
+        }
+        if (!trimmed) {
+          // 各 scope 均仅剩 <=1 条仍超 4MB 时，从最老 scope 起弹出尾部记录，避免死锁放弃落盘
+          for (let i = normalizedScopes.length - 1; i >= 0; i--) {
+            if (normalizedScopes[i].entries.length > 0) {
+              normalizedScopes[i].entries.pop();
+              trimmed = true;
+              break;
+            }
+          }
+        }
+        if (!trimmed) break;
+        serialized = buildPayload();
+      }
+      if (Buffer.byteLength(serialized, 'utf8') <= USAGE_CACHE_MAX_BYTES) {
+        writeFileAtomicSync(cacheFile, serialized, { mode: 0o600 });
+      }
+    } catch {}
+  }
+
   async fetchUsageRollupBatch(rawItems, opts = {}) {
     const usageCore = require(path.join(this.rootDir, 'usage-core.js'));
-    const client = await this.ensureLsClient();
+    const entry = opts?.entry || null;
     const action = opts?.action || 'fetch-batch';
     const wantSummaries = action === 'list-summaries' || Boolean(opts?.includeSummaries);
-    const backendPack = await this._fetchBackendTrajectorySummaries(client, usageCore, action === 'list-summaries');
+    let scopeKey = resolveUsageScopeKey({
+      explicitScopeKey: opts?.scopeKey || '',
+      entry,
+      items: Array.isArray(rawItems) ? rawItems : null,
+    });
+    const routeState = { daemon: this, preferredEntry: entry, scopeKey };
 
-    if (action === 'list-summaries') {
-      return { ok: true, records: [], summaries: backendPack.list };
-    }
+    return RPC_ROUTE_STORAGE.run(routeState, async () => {
+      const hasEntrySession = Boolean(entry && entry.session && !entry.session.closed);
+      const entryScopeVerified = Boolean(entry && entry._usageScopeVerified === true);
+      let client =
+        hasEntrySession && (scopeKey !== 'local' || !entryScopeVerified)
+          ? this._createScopedRendererClient(entry, scopeKey, { strictEntry: !entryScopeVerified })
+          : await this.ensureLsClient();
 
-    const list = Array.isArray(rawItems) ? rawItems.slice(0, 16) : [];
-    if (list.length === 0) {
-      return wantSummaries ? { ok: true, records: [], summaries: backendPack.list } : { ok: true, records: [] };
-    }
+      const backendPack = await this._fetchBackendTrajectorySummaries(
+        client,
+        usageCore,
+        action === 'list-summaries',
+        { entry, scopeKey }
+      );
+      const resolvedScope = normalizeUsageScopeKey(backendPack?.scopeKey || '') || scopeKey;
+      if (resolvedScope !== scopeKey) {
+        scopeKey = resolvedScope;
+        routeState.scopeKey = scopeKey;
+        if (scopeKey !== 'local' && hasEntrySession && client?.server?.scopeKey !== scopeKey) {
+          client = this._createScopedRendererClient(entry, scopeKey);
+        }
+      }
+      const allowDiskCache = !(hasEntrySession && scopeKey === 'local' && entry?._usageScopeVerified !== true);
+      const diskCache = allowDiskCache ? this._getUsageDiskCacheScope(scopeKey, false) : new Map();
 
-    const records = [];
-    for (const item of list) {
-      const id = String(item?.id || '');
-      if (!GUID_RE.test(id)) continue;
-      const backendSum = backendPack.byId.get(id.toLowerCase()) || null;
-      const stepCount = Math.max(0, Number(item.stepCount || backendSum?.stepCount || 0));
-      const lastModifiedSec = Math.max(0, Number(item.lastModifiedSec || backendSum?.lastModifiedSec || 0));
-      const createdSec = Math.max(0, Number(item.createdSec || backendSum?.createdSec || lastModifiedSec || 0));
-      const subagent = Boolean(item.subagent || backendSum?.subagent);
-      const parentId = String(item.parentId || backendSum?.parentId || '').trim();
-      const rootId = String(item.rootId || backendSum?.rootId || '').trim();
-      const workspace = String(item.workspace || backendSum?.workspace || '');
-      const workspaces = Array.isArray(item.workspaces) && item.workspaces.length
-        ? item.workspaces
-        : backendSum?.workspaces || [];
-      const gmOffset = Math.max(0, Math.floor(Number(item.gmOffset || 0)));
-      const wsMeta = workspaces.map((uri) => ({ workspaceFolderAbsoluteUri: uri }));
-      const summaryStub = {
-        stepCount,
-        lastModifiedTime: lastModifiedSec > 0 ? { seconds: lastModifiedSec } : undefined,
-        createdTime: createdSec > 0 ? { seconds: createdSec } : undefined,
-        ...(parentId ? { parentConversationId: parentId, parentId } : {}),
-        ...(rootId ? { rootConversationId: rootId, rootId } : {}),
-        ...(wsMeta.length ? { workspaces: wsMeta } : {}),
-        trajectoryMetadata: {
-          ...(subagent ? { nestingDepth: 1 } : {}),
-          ...(parentId ? { parentConversationId: parentId } : {}),
-          ...(rootId ? { rootConversationId: rootId } : {}),
-          ...(wsMeta.length ? { workspaces: wsMeta } : {}),
-        },
-      };
-      try {
-        if (client?.server?.mode === 'renderer-proxy' && typeof client.trajectory === 'function') {
-          const fullTraj = await client.trajectory(id, { force: Boolean(opts?.force), summary: summaryStub });
-          this._recordDiscoveredSubagents(id, fullTraj, workspace);
-          const allSteps = Array.isArray(fullTraj?.trajectory?.steps) ? fullTraj.trajectory.steps : [];
-          const allGms = Array.isArray(fullTraj?.trajectory?.generatorMetadata) ? fullTraj.trajectory.generatorMetadata : [];
-          const realStepCount = Math.max(stepCount, Number(fullTraj?.numTotalSteps || 0), allSteps.length);
-          const totalGm = Math.max(Number(fullTraj?.numTotalGeneratorMetadata || 0), allGms.length);
-          const firstStepTs = allSteps.find((s) => s?.metadata?.createdAt)?.metadata?.createdAt;
-          const lastStepTs = [...allSteps].reverse().find((s) => s?.metadata?.completedAt || s?.metadata?.createdAt);
-          const realLastModSec =
-            lastModifiedSec ||
-            (lastStepTs ? Math.floor((Date.parse(lastStepTs.metadata.completedAt || lastStepTs.metadata.createdAt) || 0) / 1000) : 0);
-          const realCreatedSec =
-            (firstStepTs ? Math.floor((Date.parse(firstStepTs) || 0) / 1000) : 0) || createdSec || realLastModSec;
-          const enrichedStub = {
-            ...summaryStub,
-            stepCount: realStepCount,
-            ...(realLastModSec > 0 ? { lastModifiedTime: { seconds: realLastModSec } } : {}),
-            ...(realCreatedSec > 0 ? { createdTime: { seconds: realCreatedSec } } : {}),
-          };
-          if (gmOffset > 0 && totalGm >= gmOffset) {
-            const deltaItems = allGms.slice(gmOffset);
-            const deltaRec = usageCore.analyzeTrajectoryForUsage(
-              {
-                numTotalSteps: realStepCount,
-                numTotalGeneratorMetadata: totalGm,
-                trajectory: { cascadeId: id, steps: allSteps, generatorMetadata: deltaItems },
-              },
-              enrichedStub,
-              id
-            );
-            if (workspace && deltaRec && typeof deltaRec === 'object' && !deltaRec.workspace) deltaRec.workspace = workspace;
-            if (parentId && deltaRec && typeof deltaRec === 'object' && !deltaRec.parentId) deltaRec.parentId = parentId;
-            records.push({
-              id,
-              mode: 'delta',
-              gmCount: totalGm,
-              stepCount: realStepCount,
-              lastModifiedSec: realLastModSec,
-              subagent,
-              ...(parentId ? { parentId } : {}),
-              ...(workspace ? { workspace } : {}),
-              delta: deltaRec,
-            });
-          } else {
-            const fullRec = usageCore.analyzeTrajectoryForUsage(fullTraj, enrichedStub, id);
-            if (workspace && fullRec && typeof fullRec === 'object' && !fullRec.workspace) fullRec.workspace = workspace;
-            if (parentId && fullRec && typeof fullRec === 'object' && !fullRec.parentId) fullRec.parentId = parentId;
+      if (action === 'list-summaries') {
+        const cachedRecords = [];
+        for (const s of backendPack.list) {
+          const sid = String(s?.id || '').trim();
+          if (!sid) continue;
+          const hit = diskCache.get(sid.toLowerCase());
+          if (hit?.record?.days) {
+            cachedRecords.push({ id: sid, mode: 'full', record: hit.record });
+          }
+        }
+        return { ok: true, scopeKey, records: cachedRecords, summaries: backendPack.list };
+      }
+
+      const list = Array.isArray(rawItems) ? rawItems.slice(0, 16) : [];
+      if (list.length === 0) {
+        return wantSummaries
+          ? { ok: true, scopeKey, records: [], summaries: backendPack.list }
+          : { ok: true, scopeKey, records: [] };
+      }
+
+      const records = [];
+      for (const item of list) {
+        const id = String(item?.id || '');
+        if (!GUID_RE.test(id)) continue;
+        const backendSum = backendPack.byId.get(id.toLowerCase()) || null;
+        const stepCount = Math.max(0, Number(item.stepCount || backendSum?.stepCount || 0));
+        const lastModifiedSec = Math.max(0, Number(item.lastModifiedSec || backendSum?.lastModifiedSec || 0));
+        const createdSec = Math.max(0, Number(item.createdSec || backendSum?.createdSec || lastModifiedSec || 0));
+        const subagent = Boolean(item.subagent || backendSum?.subagent);
+        const parentId = String(item.parentId || backendSum?.parentId || '').trim();
+        const rootId = String(item.rootId || backendSum?.rootId || '').trim();
+        const workspace = String(item.workspace || backendSum?.workspace || '');
+        const workspaces = Array.isArray(item.workspaces) && item.workspaces.length
+          ? item.workspaces
+          : backendSum?.workspaces || [];
+        const gmOffset = Math.max(0, Math.floor(Number(item.gmOffset || 0)));
+        const diskHit = diskCache.get(id.toLowerCase()) || null;
+        if (!opts?.force && stepCount > 0 && lastModifiedSec > 0) {
+          if (diskHit && diskHit.stepCount === stepCount && diskHit.lastModifiedSec === lastModifiedSec && diskHit.record?.days) {
             records.push({
               id,
               mode: 'full',
-              subagent,
+              subagent: Boolean(diskHit.record.subagent || subagent),
               ...(parentId ? { parentId } : {}),
               ...(workspace ? { workspace } : {}),
-              record: fullRec,
+              record: diskHit.record,
             });
+            continue;
           }
-        } else if (gmOffset > 0) {
-          const deltaItems = [];
-          let curOffset = gmOffset;
-          let totalGm = null;
-          while (true) {
-            const page = await client.call('GetCascadeTrajectoryGeneratorMetadata', {
-              cascadeId: id,
-              generatorMetadataOffset: curOffset,
-              includeMessages: false,
-            });
-            const chunk = page?.generatorMetadata || page?.generatorMetadatas || [];
-            if (page?.numTotalGeneratorMetadata !== undefined && page?.numTotalGeneratorMetadata !== null) {
-              totalGm = Number(page.numTotalGeneratorMetadata);
+        }
+        const wsMeta = workspaces.map((uri) => ({ workspaceFolderAbsoluteUri: uri }));
+        const summaryStub = {
+          stepCount,
+          lastModifiedTime: lastModifiedSec > 0 ? { seconds: lastModifiedSec } : undefined,
+          createdTime: createdSec > 0 ? { seconds: createdSec } : undefined,
+          ...(parentId ? { parentConversationId: parentId, parentId } : {}),
+          ...(rootId ? { rootConversationId: rootId, rootId } : {}),
+          ...(wsMeta.length ? { workspaces: wsMeta } : {}),
+          trajectoryMetadata: {
+            ...(subagent ? { nestingDepth: 1 } : {}),
+            ...(parentId ? { parentConversationId: parentId } : {}),
+            ...(rootId ? { rootConversationId: rootId } : {}),
+            ...(wsMeta.length ? { workspaces: wsMeta } : {}),
+          },
+        };
+        try {
+          if (client?.server?.mode === 'renderer-proxy' && typeof client.trajectory === 'function') {
+            const fullTraj = await client.trajectory(id, { force: Boolean(opts?.force), summary: summaryStub });
+            this._recordDiscoveredSubagents(id, fullTraj, workspace, scopeKey);
+            const allSteps = Array.isArray(fullTraj?.trajectory?.steps) ? fullTraj.trajectory.steps : [];
+            const allGms = Array.isArray(fullTraj?.trajectory?.generatorMetadata) ? fullTraj.trajectory.generatorMetadata : [];
+            const realStepCount = Math.max(stepCount, Number(fullTraj?.numTotalSteps || 0), allSteps.length);
+            const totalGm = Math.max(Number(fullTraj?.numTotalGeneratorMetadata || 0), allGms.length);
+            const firstStepTs = allSteps.find((s) => s?.metadata?.createdAt)?.metadata?.createdAt;
+            const lastStepTs = [...allSteps].reverse().find((s) => s?.metadata?.completedAt || s?.metadata?.createdAt);
+            const realLastModSec =
+              lastModifiedSec ||
+              (lastStepTs ? Math.floor((Date.parse(lastStepTs.metadata.completedAt || lastStepTs.metadata.createdAt) || 0) / 1000) : 0);
+            const realCreatedSec =
+              (firstStepTs ? Math.floor((Date.parse(firstStepTs) || 0) / 1000) : 0) || createdSec || realLastModSec;
+            const enrichedStub = {
+              ...summaryStub,
+              stepCount: realStepCount,
+              ...(realLastModSec > 0 ? { lastModifiedTime: { seconds: realLastModSec } } : {}),
+              ...(realCreatedSec > 0 ? { createdTime: { seconds: realCreatedSec } } : {}),
+            };
+            if (gmOffset > 0 && totalGm >= gmOffset) {
+              const deltaItems = allGms.slice(gmOffset);
+              const deltaRec = usageCore.analyzeTrajectoryForUsage(
+                {
+                  numTotalSteps: realStepCount,
+                  numTotalGeneratorMetadata: totalGm,
+                  trajectory: { cascadeId: id, steps: allSteps, generatorMetadata: deltaItems },
+                },
+                enrichedStub,
+                id
+              );
+              if (workspace && deltaRec && typeof deltaRec === 'object' && !deltaRec.workspace) deltaRec.workspace = workspace;
+              if (parentId && deltaRec && typeof deltaRec === 'object' && !deltaRec.parentId) deltaRec.parentId = parentId;
+              if (allowDiskCache && diskHit?.record?.days && typeof usageCore.mergeUsageRecordDelta === 'function') {
+                const merged = usageCore.mergeUsageRecordDelta(diskHit.record, deltaRec, {
+                  cascadeId: id,
+                  stepCount: Number(item.stepCount || realStepCount),
+                  lastModifiedSec: Number(item.lastModifiedSec || realLastModSec),
+                  gmCount: totalGm,
+                  subagent,
+                  workspace,
+                  parentId,
+                });
+                this._putUsageDiskCache(
+                  id,
+                  Number(item.stepCount || realStepCount),
+                  Number(item.lastModifiedSec || realLastModSec),
+                  merged,
+                  scopeKey
+                );
+              }
+              records.push({
+                id,
+                mode: 'delta',
+                gmCount: totalGm,
+                stepCount: realStepCount,
+                lastModifiedSec: realLastModSec,
+                subagent,
+                ...(parentId ? { parentId } : {}),
+                ...(workspace ? { workspace } : {}),
+                delta: deltaRec,
+              });
+            } else {
+              const fullRec = usageCore.analyzeTrajectoryForUsage(fullTraj, enrichedStub, id);
+              if (workspace && fullRec && typeof fullRec === 'object' && !fullRec.workspace) fullRec.workspace = workspace;
+              if (parentId && fullRec && typeof fullRec === 'object' && !fullRec.parentId) fullRec.parentId = parentId;
+              if (allowDiskCache) {
+                this._putUsageDiskCache(
+                  id,
+                  Number(item.stepCount || realStepCount),
+                  Number(item.lastModifiedSec || realLastModSec),
+                  fullRec,
+                  scopeKey
+                );
+              }
+              records.push({
+                id,
+                mode: 'full',
+                subagent,
+                ...(parentId ? { parentId } : {}),
+                ...(workspace ? { workspace } : {}),
+                record: fullRec,
+              });
             }
-            if (!chunk.length) break;
-            deltaItems.push(...chunk);
-            curOffset += chunk.length;
-            if (totalGm !== null && curOffset >= totalGm) break;
-          }
-          if (totalGm !== null && totalGm < gmOffset) {
-            // Rewound/reverted conversation: rebuild cleanly from offset 0
+          } else if (gmOffset > 0) {
+            const deltaItems = [];
+            let curOffset = gmOffset;
+            let totalGm = null;
+            while (true) {
+              const page = await client.call('GetCascadeTrajectoryGeneratorMetadata', {
+                cascadeId: id,
+                generatorMetadataOffset: curOffset,
+                includeMessages: false,
+              });
+              const chunk = page?.generatorMetadata || page?.generatorMetadatas || [];
+              if (page?.numTotalGeneratorMetadata !== undefined && page?.numTotalGeneratorMetadata !== null) {
+                totalGm = Number(page.numTotalGeneratorMetadata);
+              }
+              if (!chunk.length) break;
+              deltaItems.push(...chunk);
+              curOffset += chunk.length;
+              if (totalGm !== null && curOffset >= totalGm) break;
+            }
+            if (totalGm !== null && totalGm < gmOffset) {
+              // Rewound/reverted conversation: rebuild cleanly from offset 0
+              const fullMeta = await this._fetchFullGeneratorMetadata(client, id);
+              const fullRec = usageCore.analyzeTrajectoryForUsage(fullMeta, summaryStub, id);
+              if (workspace && fullRec && typeof fullRec === 'object' && !fullRec.workspace) fullRec.workspace = workspace;
+              if (parentId && fullRec && typeof fullRec === 'object' && !fullRec.parentId) fullRec.parentId = parentId;
+              if (allowDiskCache) this._putUsageDiskCache(id, stepCount, lastModifiedSec, fullRec, scopeKey);
+              records.push({
+                id,
+                mode: 'full',
+                subagent,
+                ...(parentId ? { parentId } : {}),
+                ...(workspace ? { workspace } : {}),
+                record: fullRec,
+              });
+            } else {
+              const nextGmCount = totalGm !== null ? Math.max(gmOffset + deltaItems.length, totalGm) : gmOffset + deltaItems.length;
+              const deltaSummary = {
+                stepCount,
+                lastModifiedTime: lastModifiedSec > 0 ? { seconds: lastModifiedSec } : { seconds: Math.floor(Date.now() / 1000) },
+                createdTime: lastModifiedSec > 0 ? { seconds: lastModifiedSec } : undefined,
+                ...(parentId ? { parentConversationId: parentId, parentId } : {}),
+                ...(rootId ? { rootConversationId: rootId, rootId } : {}),
+                ...(wsMeta.length ? { workspaces: wsMeta } : {}),
+                trajectoryMetadata: {
+                  ...(subagent ? { nestingDepth: 1 } : {}),
+                  ...(parentId ? { parentConversationId: parentId } : {}),
+                  ...(rootId ? { rootConversationId: rootId } : {}),
+                  ...(wsMeta.length ? { workspaces: wsMeta } : {}),
+                },
+              };
+              const deltaRec = usageCore.analyzeTrajectoryForUsage(
+                { numTotalSteps: stepCount, numTotalGeneratorMetadata: nextGmCount, trajectory: { cascadeId: id, steps: [], generatorMetadata: deltaItems } },
+                deltaSummary,
+                id
+              );
+              if (workspace && deltaRec && typeof deltaRec === 'object' && !deltaRec.workspace) deltaRec.workspace = workspace;
+              if (parentId && deltaRec && typeof deltaRec === 'object' && !deltaRec.parentId) deltaRec.parentId = parentId;
+              if (allowDiskCache && diskHit?.record?.days && typeof usageCore.mergeUsageRecordDelta === 'function') {
+                const merged = usageCore.mergeUsageRecordDelta(diskHit.record, deltaRec, {
+                  cascadeId: id,
+                  stepCount,
+                  lastModifiedSec,
+                  gmCount: nextGmCount,
+                  subagent,
+                  workspace,
+                  parentId,
+                });
+                this._putUsageDiskCache(id, stepCount, lastModifiedSec, merged, scopeKey);
+              }
+              records.push({
+                id,
+                mode: 'delta',
+                gmCount: nextGmCount,
+                stepCount,
+                lastModifiedSec,
+                subagent,
+                ...(parentId ? { parentId } : {}),
+                ...(workspace ? { workspace } : {}),
+                delta: deltaRec,
+              });
+            }
+          } else {
             const fullMeta = await this._fetchFullGeneratorMetadata(client, id);
             const fullRec = usageCore.analyzeTrajectoryForUsage(fullMeta, summaryStub, id);
             if (workspace && fullRec && typeof fullRec === 'object' && !fullRec.workspace) fullRec.workspace = workspace;
             if (parentId && fullRec && typeof fullRec === 'object' && !fullRec.parentId) fullRec.parentId = parentId;
+            if (allowDiskCache) this._putUsageDiskCache(id, stepCount, lastModifiedSec, fullRec, scopeKey);
             records.push({
               id,
               mode: 'full',
@@ -3930,60 +4776,15 @@ export class PrismDaemon {
               ...(workspace ? { workspace } : {}),
               record: fullRec,
             });
-          } else {
-            const nextGmCount = totalGm !== null ? Math.max(gmOffset + deltaItems.length, totalGm) : gmOffset + deltaItems.length;
-            const deltaSummary = {
-              stepCount,
-              lastModifiedTime: lastModifiedSec > 0 ? { seconds: lastModifiedSec } : { seconds: Math.floor(Date.now() / 1000) },
-              createdTime: lastModifiedSec > 0 ? { seconds: lastModifiedSec } : undefined,
-              ...(parentId ? { parentConversationId: parentId, parentId } : {}),
-              ...(rootId ? { rootConversationId: rootId, rootId } : {}),
-              ...(wsMeta.length ? { workspaces: wsMeta } : {}),
-              trajectoryMetadata: {
-                ...(subagent ? { nestingDepth: 1 } : {}),
-                ...(parentId ? { parentConversationId: parentId } : {}),
-                ...(rootId ? { rootConversationId: rootId } : {}),
-                ...(wsMeta.length ? { workspaces: wsMeta } : {}),
-              },
-            };
-            const deltaRec = usageCore.analyzeTrajectoryForUsage(
-              { numTotalSteps: stepCount, numTotalGeneratorMetadata: nextGmCount, trajectory: { cascadeId: id, steps: [], generatorMetadata: deltaItems } },
-              deltaSummary,
-              id
-            );
-            if (workspace && deltaRec && typeof deltaRec === 'object' && !deltaRec.workspace) deltaRec.workspace = workspace;
-            if (parentId && deltaRec && typeof deltaRec === 'object' && !deltaRec.parentId) deltaRec.parentId = parentId;
-            records.push({
-              id,
-              mode: 'delta',
-              gmCount: nextGmCount,
-              stepCount,
-              lastModifiedSec,
-              subagent,
-              ...(parentId ? { parentId } : {}),
-              ...(workspace ? { workspace } : {}),
-              delta: deltaRec,
-            });
           }
-        } else {
-          const fullMeta = await this._fetchFullGeneratorMetadata(client, id);
-          const fullRec = usageCore.analyzeTrajectoryForUsage(fullMeta, summaryStub, id);
-          if (workspace && fullRec && typeof fullRec === 'object' && !fullRec.workspace) fullRec.workspace = workspace;
-          if (parentId && fullRec && typeof fullRec === 'object' && !fullRec.parentId) fullRec.parentId = parentId;
-          records.push({
-            id,
-            mode: 'full',
-            subagent,
-            ...(parentId ? { parentId } : {}),
-            ...(workspace ? { workspace } : {}),
-            record: fullRec,
-          });
+        } catch (err) {
+          records.push({ id, mode: 'error', error: sanitizeSecretText(err?.message || 'fetch failed') });
         }
-      } catch (err) {
-        records.push({ id, mode: 'error', error: sanitizeSecretText(err?.message || 'fetch failed') });
       }
-    }
-    return wantSummaries ? { ok: true, records, summaries: backendPack.list } : { ok: true, records };
+      return wantSummaries
+        ? { ok: true, scopeKey, records, summaries: backendPack.list }
+        : { ok: true, scopeKey, records };
+    });
   }
 
   updateConfigBatch(entriesObj) {
@@ -4166,6 +4967,7 @@ export class PrismDaemon {
         const hostI18nSnap = this.hostI18nExpr;
         let thoughtSnap = this.thoughtExpr;
         let inlineDiffSnap = this.inlineDiffExpr;
+        let wallpaperSnap = this.wallpaperExpr;
         const currentCfg = typeof this.cdp.readConfig === 'function' ? this.cdp.readConfig() : {};
         if (currentCfg?.telemetryModule === 'off') {
           this._releaseIdleTelemetry(true);
@@ -4187,6 +4989,10 @@ export class PrismDaemon {
           inlineDiffSnap = this._buildInlineDiffExprForConfig(currentCfg);
         }
         const inlineDiffHash = inlineDiffSnap ? this._getInlineDiffExprHash(inlineDiffSnap) : '';
+        if (!wallpaperSnap && typeof this.cdp.buildWallpaperExpression === 'function') {
+          wallpaperSnap = this._buildWallpaperExprForConfig(currentCfg);
+        }
+        const wallpaperHash = wallpaperSnap ? this._getWallpaperExprHash(wallpaperSnap) : '';
         const canFastRefresh = typeof this.cdp.buildConfigRefreshExpression === 'function';
         const baseRefreshExpr = canFastRefresh ? this.cdp.buildConfigRefreshExpression() : null;
         if (activeItems.length === 0) continue;
@@ -4317,6 +5123,26 @@ export class PrismDaemon {
                 entry.inlineDiffSkipped = false;
                 entry.lastInlineDiffHash = '';
               }
+              if (abortIfStale()) return;
+              const hadWallpaper = Boolean(entry.wallpaperScriptId || entry.wallpaperMounted);
+              const wallpaperChanged = Boolean(
+                wallpaperSnap &&
+                  !entry.wallpaperSkipped &&
+                  (entry.lastWallpaperHash !== wallpaperHash || !entry.wallpaperScriptId || !entry.wallpaperMounted)
+              );
+              if (wallpaperSnap) {
+                if (!skippedStale && !entry.session.closed && !entry.wallpaperSkipped && (!refreshedFast || wallpaperChanged)) {
+                  await this._ensureWallpaperBinding(entry);
+                  const evalRes = await entry.session.evaluate(wallpaperSnap).catch(() => null);
+                  await this._recordWallpaperEvalOutcome(entry, evalRes, wallpaperHash);
+                }
+              } else if (hadWallpaper && !skippedStale && !entry.session.closed) {
+                await this._removeWallpaperBinding(entry);
+                await entry.session.evaluate(this._getWallpaperCleanupExpression()).catch(() => {});
+                entry.wallpaperMounted = false;
+                entry.wallpaperSkipped = false;
+                entry.lastWallpaperHash = '';
+              }
 
               // Coalesce persistent NewDocument script replacement if a newer mutation is already queued!
               if (this._broadcastPending || this._configSeq !== snapSeq || entry.session.closed) {
@@ -4440,6 +5266,29 @@ export class PrismDaemon {
                   entry.lastInlineDiffScriptHash = inlineDiffHash;
                 }
               }
+              if (!wallpaperSnap) {
+                if (entry.wallpaperScriptId) {
+                  await entry.session
+                    .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId })
+                    .catch(() => {});
+                  entry.wallpaperScriptId = null;
+                }
+                entry.lastWallpaperScriptHash = '';
+              } else if ((entry.lastWallpaperScriptHash !== wallpaperHash || !entry.wallpaperScriptId) && !entry.session.closed) {
+                if (entry.wallpaperScriptId) {
+                  await entry.session
+                    .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId })
+                    .catch(() => {});
+                  entry.wallpaperScriptId = null;
+                }
+                const wallpaperAdd = await entry.session
+                  .send('Page.addScriptToEvaluateOnNewDocument', { source: wallpaperSnap })
+                  .catch(() => null);
+                if (wallpaperAdd && wallpaperAdd.identifier) {
+                  entry.wallpaperScriptId = wallpaperAdd.identifier;
+                  entry.lastWallpaperScriptHash = wallpaperHash;
+                }
+              }
             })
           )
         );
@@ -4554,6 +5403,10 @@ export class PrismDaemon {
           this._buildInlineDiffExprForConfig(curCfg, chOpts);
           if (chOpts && this.inlineDiffExpr) usedChCache = true;
         }
+        if (!this.wallpaperExpr && typeof this.cdp.buildWallpaperExpression === 'function') {
+          this._buildWallpaperExprForConfig(curCfg, chOpts);
+          if (chOpts && this.wallpaperExpr) usedChCache = true;
+        }
         if (usedChCache && this.running) {
           this._scheduleBundleCacheFlush();
         }
@@ -4611,8 +5464,15 @@ export class PrismDaemon {
             .catch(() => {});
           entry.inlineDiffScriptId = null;
         }
+        if (entry.wallpaperScriptId) {
+          await entry.session
+            .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId })
+            .catch(() => {});
+          entry.wallpaperScriptId = null;
+        }
         await this._removeSidebarBinding(entry);
         await this._removeInlineDiffBinding(entry);
+        await this._removeWallpaperBinding(entry);
         entry.sidebarMounted = false;
         entry.hostI18nMounted = false;
         entry.lastHostI18nSig = '';
@@ -4624,6 +5484,10 @@ export class PrismDaemon {
         entry.inlineDiffSkipped = true;
         entry.lastInlineDiffHash = '';
         entry.lastInlineDiffScriptHash = '';
+        entry.wallpaperMounted = false;
+        entry.wallpaperSkipped = true;
+        entry.lastWallpaperHash = '';
+        entry.lastWallpaperScriptHash = '';
         return mainRes;
       }
 
@@ -4805,6 +5669,43 @@ export class PrismDaemon {
         entry.lastInlineDiffHash = '';
         entry.lastInlineDiffScriptHash = '';
       }
+      const hadWallpaperBefore = Boolean(entry.wallpaperScriptId || entry.wallpaperMounted);
+      if (entry.wallpaperScriptId) {
+        await entry.session
+          .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId })
+          .catch(() => {});
+        entry.wallpaperScriptId = null;
+      }
+      const wallpaperCfgNow = getCurrentCfg();
+      if (!this.wallpaperExpr && typeof this.cdp.buildWallpaperExpression === 'function') {
+        this._buildWallpaperExprForConfig(wallpaperCfgNow);
+      }
+      if (this.wallpaperExpr) {
+        await this._ensureWallpaperBinding(entry);
+        const wallpaperAdd = await entry.session
+          .send('Page.addScriptToEvaluateOnNewDocument', { source: this.wallpaperExpr })
+          .catch(() => null);
+        if (wallpaperAdd && wallpaperAdd.identifier) {
+          entry.wallpaperScriptId = wallpaperAdd.identifier;
+        }
+        const evalRes = await entry.session.evaluate(this.wallpaperExpr).catch(() => null);
+        const wallpaperHash = this._getWallpaperExprHash(this.wallpaperExpr);
+        await this._recordWallpaperEvalOutcome(entry, evalRes, wallpaperHash);
+        if (wallpaperAdd && wallpaperAdd.identifier) {
+          entry.lastWallpaperScriptHash = wallpaperHash;
+        } else {
+          entry.lastWallpaperScriptHash = '';
+        }
+      } else {
+        if (hadWallpaperBefore) {
+          await this._removeWallpaperBinding(entry);
+          await entry.session.evaluate(this._getWallpaperCleanupExpression()).catch(() => null);
+        }
+        entry.wallpaperMounted = false;
+        entry.wallpaperSkipped = false;
+        entry.lastWallpaperHash = '';
+        entry.lastWallpaperScriptHash = '';
+      }
       entry.lastVerifyAt = Date.now();
       entry.healthyStreak = 1;
       entry.verifyDirty = false;
@@ -4984,6 +5885,12 @@ export class PrismDaemon {
           result = await svc.fetchModels(input);
         } else if (action === 'test-connection') {
           result = await svc.testConnection(input);
+        } else if (action === 'diagnose') {
+          if (typeof svc.diagnose === 'function') {
+            result = await svc.diagnose(input);
+          } else {
+            result = { ok: false, error: 'diagnose_not_supported' };
+          }
         } else if (action === 'translate-stream') {
           let lastSent = '';
           let pendingPartial = null;
@@ -5067,9 +5974,12 @@ export class PrismDaemon {
       this._lastTelemetryActivityAt = Date.now();
       let result;
       try {
+        const reqScopeKey = typeof parsed.scopeKey === 'string' && parsed.scopeKey.trim() ? parsed.scopeKey.trim() : '';
         result = await this.fetchUsageRollupBatch(parsed.items, {
           action: parsed.action || 'fetch-batch',
           includeSummaries: Boolean(parsed.includeSummaries),
+          entry,
+          ...(reqScopeKey ? { scopeKey: reqScopeKey } : {}),
         });
       } catch (err) {
         result = { ok: false, error: sanitizeSecretText(err?.message || err), records: [] };
@@ -5258,6 +6168,158 @@ export class PrismDaemon {
       }
       return result;
     }
+
+    const activeWallpaperBinding = this.cdp?.WALLPAPER_BINDING || WALLPAPER_BINDING;
+    if (name === WALLPAPER_BINDING || name === activeWallpaperBinding) {
+      const context = typeof executionContextId === 'number' ? entry.contextFrames?.get(executionContextId) : undefined;
+      const expectedDocGen = typeof entry.sidebarDocument === 'number' ? entry.sidebarDocument : null;
+      const hasTrackedFrames = Boolean(
+        entry.hasFrameTree || entry.mainFrameId || (entry.contextFrames instanceof Map && entry.contextFrames.size > 0)
+      );
+      const isCurrentContext = () => {
+        if (this._wallpaperStopped || !entry || entry.session?.closed) return false;
+        if (entry.sidebarHostVerified !== true) return false;
+        if (!this._isTrustedMainFrameBindingCall(entry, executionContextId)) return false;
+        if (hasTrackedFrames) {
+          if (typeof executionContextId !== 'number' || !context) return false;
+          if (context.isDefault !== true || (context.type && context.type !== 'default')) return false;
+          if (!entry.mainFrameId || context.frameId !== entry.mainFrameId) return false;
+          if (!(entry.contextFrames instanceof Map) || entry.contextFrames.get(executionContextId) !== context) {
+            return false;
+          }
+          if (typeof entry.sidebarDocument === 'number') {
+            if (typeof entry.sidebarVerifiedDocument === 'number' && entry.sidebarVerifiedDocument !== entry.sidebarDocument) {
+              return false;
+            }
+            if (expectedDocGen !== null && entry.sidebarDocument !== expectedDocGen) {
+              return false;
+            }
+            if (typeof context.docGen === 'number' && context.docGen !== entry.sidebarDocument) {
+              return false;
+            }
+          }
+          if (typeof entry.sidebarHostContextId === 'number' && entry.sidebarHostContextId !== executionContextId) {
+            return false;
+          }
+        } else {
+          if (!isAutomatedTestRuntime()) return false;
+        }
+        return true;
+      };
+      if (!isCurrentContext()) return;
+      if (typeof payload !== 'string') return;
+      if (payload.length > WALLPAPER_MAX_PAYLOAD_BYTES) return;
+      if (Buffer.byteLength(payload, 'utf8') > WALLPAPER_MAX_PAYLOAD_BYTES) return;
+      let parsed;
+      try {
+        parsed = JSON.parse(payload);
+      } catch {
+        return;
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+      const reqId = Number.isSafeInteger(parsed.id) && parsed.id >= 0 ? parsed.id : null;
+      if (reqId === null) return;
+      const action = typeof parsed.action === 'string' ? parsed.action.trim() : '';
+      if (!WALLPAPER_ALLOWED_ACTIONS.has(action)) {
+        const errRes = { ok: false, error: `Unknown wallpaper action: ${action || 'empty'}` };
+        if (isCurrentContext()) {
+          const safeId = Number(reqId) | 0;
+          const resolveExpr = `(() => { const r = ${serializeJsonForEval(errRes)}; if (typeof window.__agPrismWallpaperResolve === 'function') window.__agPrismWallpaperResolve(${safeId}, r); else if (window.__agPrismWallpaperBridge && typeof window.__agPrismWallpaperBridge.resolve === 'function') window.__agPrismWallpaperBridge.resolve(${safeId}, r); })()`;
+          const evalParams = { expression: resolveExpr, returnByValue: true };
+          if (typeof executionContextId === 'number') evalParams.contextId = executionContextId;
+          await entry.session.send('Runtime.evaluate', evalParams).catch(() => {});
+        }
+        return errRes;
+      }
+      const actionPayload =
+        parsed.payload && typeof parsed.payload === 'object' && !Array.isArray(parsed.payload)
+          ? parsed.payload
+          : parsed.input && typeof parsed.input === 'object' && !Array.isArray(parsed.input)
+          ? parsed.input
+          : {};
+
+      let result;
+      let svc = null;
+      try {
+        svc = await this.ensureWallpaperService();
+        if (!svc || typeof svc.handleAction !== 'function') {
+          result = { ok: false, error: 'wallpaper_service_unavailable' };
+        } else {
+          result = await svc.handleAction(action, actionPayload);
+        }
+      } catch (err) {
+        result = { ok: false, error: sanitizeSecretText(err?.message || err) };
+      }
+
+      if (isCurrentContext()) {
+        const safeId = Number(reqId) | 0;
+        const safeJson = serializeJsonForEval(result);
+        const payloadExpr = safeJson.length > 4096 ? `JSON.parse(${serializeJsonForEval(safeJson)})` : safeJson;
+        const resolveExpr = `(() => { const r = ${payloadExpr}; if (typeof window.__agPrismWallpaperResolve === 'function') window.__agPrismWallpaperResolve(${safeId}, r); else if (window.__agPrismWallpaperBridge && typeof window.__agPrismWallpaperBridge.resolve === 'function') window.__agPrismWallpaperBridge.resolve(${safeId}, r); })()`;
+        const evalParams = { expression: resolveExpr, returnByValue: true };
+        if (typeof executionContextId === 'number') evalParams.contextId = executionContextId;
+        await entry.session.send('Runtime.evaluate', evalParams).catch(() => {});
+      }
+
+      // 多窗口同步：保存/选媒/清除壁纸后向其他合法主窗口广播最新安全配置
+      if (
+        result &&
+        result.ok &&
+        (action === 'save-config' || action === 'pick-media' || action === 'clear-media')
+      ) {
+        let latestCfg = result.config || null;
+        if (!latestCfg && svc && typeof svc.getConfigSync === 'function') {
+          try {
+            latestCfg = svc.getConfigSync();
+          } catch {}
+        }
+        if (latestCfg && typeof latestCfg === 'object') {
+          const syncExpr = `window.__agPrismWallpaper?.applyConfig?.(${serializeJsonForEval(latestCfg)})`;
+          for (const other of this.sessions.values()) {
+            if (!other || other === entry || other.session?.closed || other.wallpaperSkipped) continue;
+            if (other.sidebarHostVerified !== true) continue;
+            if (typeof other.sidebarHostContextId !== 'number') continue;
+            if (
+              typeof other.sidebarDocument === 'number' &&
+              typeof other.sidebarVerifiedDocument === 'number' &&
+              other.sidebarVerifiedDocument !== other.sidebarDocument
+            ) {
+              continue;
+            }
+            const otherCtx = other.contextFrames instanceof Map ? other.contextFrames.get(other.sidebarHostContextId) : null;
+            if (
+              !otherCtx ||
+              otherCtx.isDefault !== true ||
+              (otherCtx.type && otherCtx.type !== 'default') ||
+              !other.mainFrameId ||
+              otherCtx.frameId !== other.mainFrameId
+            ) {
+              continue;
+            }
+            if (
+              typeof other.sidebarDocument === 'number' &&
+              typeof otherCtx.docGen === 'number' &&
+              otherCtx.docGen !== other.sidebarDocument
+            ) {
+              continue;
+            }
+            void other.session
+              .send(
+                'Runtime.evaluate',
+                {
+                  expression: syncExpr,
+                  contextId: other.sidebarHostContextId,
+                  returnByValue: true,
+                  awaitPromise: false,
+                },
+                2000
+              )
+              .catch(() => {});
+          }
+        }
+      }
+      return result;
+    }
   }
 
   async attachTarget(target) {
@@ -5271,6 +6333,8 @@ export class PrismDaemon {
       pageId: target.id,
       url: String(target.url || ''),
       title: target.title || target.url || 'Antigravity',
+      detectedScopeKey: '',
+      _usageScopeVerified: false,
       session,
       scriptId: null,
       omniScriptId: null,
@@ -5291,6 +6355,12 @@ export class PrismDaemon {
       inlineDiffSkipped: false,
       lastInlineDiffHash: '',
       lastInlineDiffScriptHash: '',
+      wallpaperScriptId: null,
+      wallpaperBindingAdded: false,
+      wallpaperMounted: false,
+      wallpaperSkipped: false,
+      lastWallpaperHash: '',
+      lastWallpaperScriptHash: '',
       sidebarHostVerified: false,
       sidebarVerifiedDocument: -1,
       sidebarHostContextId: null,
@@ -5317,6 +6387,9 @@ export class PrismDaemon {
       }
       if (this.sessions.get(wsUrl) === entry) {
         this.sessions.delete(wsUrl);
+        if (this.sessions.size === 0 && this._prevAttachedCount > 0) {
+          this._disconnectedAllSessions = true;
+        }
       }
     };
 
@@ -5327,6 +6400,7 @@ export class PrismDaemon {
         entry.sidebarHostContextId = null;
         entry.sidebarDocument += 1;
         entry.inlineDiffSkipped = false;
+        entry.wallpaperSkipped = false;
       };
       session.on('Runtime.executionContextCreated', (params) => {
         const ctx = params?.context;
@@ -5474,6 +6548,13 @@ export class PrismDaemon {
         entry.inlineDiffMounted = false;
         entry.lastInlineDiffHash = '';
         entry.lastInlineDiffScriptHash = '';
+        if (entry.wallpaperScriptId) {
+          await session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId });
+          entry.wallpaperScriptId = null;
+        }
+        entry.wallpaperMounted = false;
+        entry.lastWallpaperHash = '';
+        entry.lastWallpaperScriptHash = '';
       } catch {}
       session.close();
       this.sessions.delete(wsUrl);
@@ -5499,6 +6580,10 @@ export class PrismDaemon {
     const inlineDiffNeedsSync = inlineDiffAvailable
       ? !entry.inlineDiffSkipped && (!entry.inlineDiffScriptId || !entry.inlineDiffMounted)
       : Boolean(entry.inlineDiffScriptId || entry.inlineDiffMounted);
+    const wallpaperAvailable = Boolean(this.wallpaperExpr || this._hasWallpaperClientFile());
+    const wallpaperNeedsSync = wallpaperAvailable
+      ? !entry.wallpaperSkipped && (!entry.wallpaperScriptId || !entry.wallpaperMounted)
+      : Boolean(entry.wallpaperScriptId || entry.wallpaperMounted);
     const now = Date.now();
     const hashMatches = !this.codeHash || entry.lastVerifiedCodeHash === this.codeHash;
     if (
@@ -5506,6 +6591,7 @@ export class PrismDaemon {
       !needsBindingHeal &&
       !thoughtNeedsSync &&
       !inlineDiffNeedsSync &&
+      !wallpaperNeedsSync &&
       !entry.verifyDirty &&
       hashMatches &&
       entry.lastVerifyAt > 0 &&
@@ -5564,6 +6650,8 @@ export class PrismDaemon {
           ready: true,
           isHostDom,
           href: (typeof location !== 'undefined' && location && typeof location.href === 'string') ? location.href : '',
+          title: typeof document.title === 'string' ? document.title.slice(0, 200) : '',
+          scopeAttr: root.getAttribute('data-ag-prism-scope') || '',
           prismAttr: root.getAttribute('data-ag-prism') || '',
           hasPrism: Boolean(api),
           hasRepoBridge: Boolean(window.__agPrismRepoBridge),
@@ -5580,6 +6668,8 @@ export class PrismDaemon {
           hasThought: Boolean(window.__agPrismThought),
           hasThoughtSettingsUi: Boolean(window.__agPrismThoughtSettingsUi),
           hasInlineDiff: Boolean(window.__agPrismInlineDiff && !window.__agPrismInlineDiff.getDebugState?.()?.destroyed),
+          hasWallpaper: Boolean(window.__agPrismWallpaper && !window.__agPrismWallpaper.getDebugState?.()?.destroyed),
+          hasWallpaperUi: Boolean(typeof window.__prismMountWallpaperUi === 'function'),
           codeHash: (api && api.codeHash) || '',
           hasLegacyCss: Boolean(document.getElementById('ag-claude-style-css')),
           needsDashboardSync: Boolean(api && telMode !== 'off' && !isHome && hasModelBtn && !hasPulseBar),
@@ -5590,6 +6680,11 @@ export class PrismDaemon {
       );
       if (!probe || !probe.ready) return { alive: true, ready: false, isHostDom: true };
       if (probe.href) entry.url = probe.href;
+      if (probe.title) entry.title = probe.title;
+      if (probe.scopeAttr) {
+        const probedScope = normalizeUsageScopeKey(probe.scopeAttr);
+        if (probedScope && probedScope !== 'local') entry.detectedScopeKey = probedScope;
+      }
       const omniEnabled = this._isOmniEnabled(cfg) && probe.omniMode !== 'off';
       const hasClientOnDisk = omniEnabled && this._hasOmniClientFile();
       const needsOmniHeal =
@@ -5621,6 +6716,12 @@ export class PrismDaemon {
         (!probe.hasInlineDiff || !entry.inlineDiffScriptId || !entry.inlineDiffMounted);
       const needsInlineDiffCleanup =
         !inlineDiffAvailable && Boolean(probe.hasInlineDiff || entry.inlineDiffScriptId || entry.inlineDiffMounted);
+      const needsWallpaperHeal =
+        wallpaperAvailable &&
+        !entry.wallpaperSkipped &&
+        (!probe.hasWallpaper || !probe.hasWallpaperUi || !entry.wallpaperScriptId || !entry.wallpaperMounted);
+      const needsWallpaperCleanup =
+        !wallpaperAvailable && Boolean(probe.hasWallpaper || probe.hasWallpaperUi || entry.wallpaperScriptId || entry.wallpaperMounted);
       let healed = false;
       if (
         (entry.sidebarHostVerified === false && probe.isHostDom) ||
@@ -5679,8 +6780,13 @@ export class PrismDaemon {
             await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId }).catch(() => {});
             entry.inlineDiffScriptId = null;
           }
+          if (entry.wallpaperScriptId) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId }).catch(() => {});
+            entry.wallpaperScriptId = null;
+          }
           await this._removeSidebarBinding(entry);
           await this._removeInlineDiffBinding(entry);
+          await this._removeWallpaperBinding(entry);
           entry.sidebarMounted = false;
           entry.hostI18nMounted = false;
           entry.lastHostI18nSig = '';
@@ -5692,6 +6798,10 @@ export class PrismDaemon {
           entry.inlineDiffSkipped = true;
           entry.lastInlineDiffHash = '';
           entry.lastInlineDiffScriptHash = '';
+          entry.wallpaperMounted = false;
+          entry.wallpaperSkipped = true;
+          entry.lastWallpaperHash = '';
+          entry.lastWallpaperScriptHash = '';
           this._markTargetIgnored({ id: entry.pageId, webSocketDebuggerUrl: entry.wsUrl }, probe.href || entry.url);
           entry.session.close();
           this.sessions.delete(entry.wsUrl);
@@ -5844,6 +6954,37 @@ export class PrismDaemon {
           entry.inlineDiffSkipped = false;
           entry.lastInlineDiffHash = '';
           entry.lastInlineDiffScriptHash = '';
+        }
+        if (wallpaperAvailable) {
+          await this._ensureWallpaperBinding(entry, 2600, true);
+          if (!this.wallpaperExpr && typeof this.cdp.buildWallpaperExpression === 'function') {
+            this._buildWallpaperExprForConfig(cfg);
+          }
+          if (this.wallpaperExpr) {
+            const wallpaperHash = this._getWallpaperExprHash(this.wallpaperExpr);
+            if (!entry.wallpaperScriptId) {
+              const wallpaperAdd = await entry.session
+                .send('Page.addScriptToEvaluateOnNewDocument', { source: this.wallpaperExpr })
+                .catch(() => null);
+              if (wallpaperAdd && wallpaperAdd.identifier) {
+                entry.wallpaperScriptId = wallpaperAdd.identifier;
+                entry.lastWallpaperScriptHash = wallpaperHash;
+              }
+            }
+            const evalRes = await entry.session.evaluate(this.wallpaperExpr, false, 4500).catch(() => null);
+            await this._recordWallpaperEvalOutcome(entry, evalRes, wallpaperHash);
+          }
+        } else if (needsWallpaperCleanup) {
+          if (entry.wallpaperScriptId) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId }).catch(() => {});
+            entry.wallpaperScriptId = null;
+          }
+          await this._removeWallpaperBinding(entry);
+          await entry.session.evaluate(this._getWallpaperCleanupExpression(), false, 3500).catch(() => {});
+          entry.wallpaperMounted = false;
+          entry.wallpaperSkipped = false;
+          entry.lastWallpaperHash = '';
+          entry.lastWallpaperScriptHash = '';
         }
         this.log(`[↻] Hot-healed window to Obsidian Prism v${this.cdp.PLUGIN_VERSION}: ${entry.title}`);
       } else {
@@ -6009,6 +7150,41 @@ export class PrismDaemon {
           entry.lastInlineDiffHash = '';
           entry.lastInlineDiffScriptHash = '';
         }
+        if (needsWallpaperHeal) {
+          healed = true;
+          await this._ensureWallpaperBinding(entry, 2600, true);
+          if (!this.wallpaperExpr && typeof this.cdp.buildWallpaperExpression === 'function') {
+            this._buildWallpaperExprForConfig(cfg);
+          }
+          if (this.wallpaperExpr) {
+            const wallpaperHash = this._getWallpaperExprHash(this.wallpaperExpr);
+            if (!entry.wallpaperScriptId) {
+              const wallpaperAdd = await entry.session
+                .send('Page.addScriptToEvaluateOnNewDocument', { source: this.wallpaperExpr })
+                .catch(() => null);
+              if (wallpaperAdd && wallpaperAdd.identifier) {
+                entry.wallpaperScriptId = wallpaperAdd.identifier;
+                entry.lastWallpaperScriptHash = wallpaperHash;
+              }
+            }
+            if (!probe.hasWallpaper || !probe.hasWallpaperUi || !entry.wallpaperMounted) {
+              const evalRes = await entry.session.evaluate(this.wallpaperExpr, false, 4500).catch(() => null);
+              await this._recordWallpaperEvalOutcome(entry, evalRes, wallpaperHash);
+            }
+          }
+        } else if (needsWallpaperCleanup) {
+          healed = true;
+          if (entry.wallpaperScriptId) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId }).catch(() => {});
+            entry.wallpaperScriptId = null;
+          }
+          await this._removeWallpaperBinding(entry);
+          await entry.session.evaluate(this._getWallpaperCleanupExpression(), false, 3500).catch(() => {});
+          entry.wallpaperMounted = false;
+          entry.wallpaperSkipped = false;
+          entry.lastWallpaperHash = '';
+          entry.lastWallpaperScriptHash = '';
+        }
         if (probe.needsDashboardSync) {
           healed = true;
           await entry.session
@@ -6100,7 +7276,18 @@ export class PrismDaemon {
         // If this page is already attached and healthy, only mark it dirty on URL shift rather than waking all pages
         for (const existing of this.sessions.values()) {
           if (tid && existing.pageId === tid) {
+            if (typeof info.title === 'string' && info.title && info.title !== existing.title) {
+              existing.title = info.title;
+              const titleScope = extractScopeKeyFromTitle(info.title);
+              if (titleScope && titleScope !== existing.detectedScopeKey) {
+                existing.detectedScopeKey = titleScope;
+                existing._usageScopeVerified = false;
+              }
+            }
             if (typeof info.url === 'string' && info.url && info.url !== existing.url) {
+              existing.url = info.url;
+              existing.detectedScopeKey = '';
+              existing._usageScopeVerified = false;
               existing.verifyDirty = true;
               existing.healthyStreak = 0;
               this.scheduleImmediateTick(45);
@@ -6156,6 +7343,15 @@ export class PrismDaemon {
           entry.inlineDiffMounted = false;
           entry.lastInlineDiffHash = '';
           entry.lastInlineDiffScriptHash = '';
+          if (entry.wallpaperScriptId && !entry.session.closed) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId }).catch(() => {});
+          }
+          await this._removeWallpaperBinding(entry);
+          entry.wallpaperBindingAdded = false;
+          entry.wallpaperScriptId = null;
+          entry.wallpaperMounted = false;
+          entry.lastWallpaperHash = '';
+          entry.lastWallpaperScriptHash = '';
           if (cleanPageDom && !entry.session.closed) {
             await entry.session.evaluate(this.cdp.REMOVE_EXPRESSION).catch(() => {});
           }
@@ -6181,6 +7377,15 @@ export class PrismDaemon {
       return JSON.parse(fs.readFileSync(cfgPath, 'utf8')) || {};
     } catch {
       return {};
+    }
+  }
+
+  _resetShortcutBackoff(reason = '') {
+    const hadBackoff = Boolean(this._shortcutAllClean || this._lastShortcutCheckAt > 0);
+    this._shortcutAllClean = false;
+    this._lastShortcutCheckAt = 0;
+    if (reason && hadBackoff) {
+      this.log(`[shortcut-guard] Reset shortcut backoff (${reason})`);
     }
   }
 
@@ -6389,6 +7594,11 @@ export class PrismDaemon {
       const port = discoverActivePort(this.overridePort, this.portFile);
       if (!port) {
         this._hasActiveCdpPort = false;
+        this._resetShortcutBackoff('no-port');
+        if (this.sessions.size === 0 && this._prevAttachedCount > 0) {
+          this._disconnectedAllSessions = true;
+          this._prevAttachedCount = 0;
+        }
         await this._handleMissingCdpPort();
         return { attached: 0, port: null };
       }
@@ -6419,6 +7629,10 @@ export class PrismDaemon {
 
         if (liveEntries.length > 0) {
           await Promise.allSettled(liveEntries.map((entry) => this.verifyAndHealEntry(entry)));
+          if (this.sessions.size === 0 && this._prevAttachedCount > 0) {
+            this._disconnectedAllSessions = true;
+          }
+          this._prevAttachedCount = this.sessions.size;
           if (this._isTelemetryDisabled()) {
             this._releaseIdleTelemetry(true);
           } else {
@@ -6431,6 +7645,10 @@ export class PrismDaemon {
             skippedListPoll: true,
           };
         }
+        if (this._prevAttachedCount > 0) {
+          this._disconnectedAllSessions = true;
+          this._prevAttachedCount = 0;
+        }
       }
 
       let rawPages = [];
@@ -6440,8 +7658,13 @@ export class PrismDaemon {
         this._forceListPagesNextTick = false;
       } catch {
         this._hasActiveCdpPort = false;
+        this._resetShortcutBackoff('port-unreachable');
         this.closeBrowserDiscovery();
         if (this.sessions.size === 0) {
+          if (this._prevAttachedCount > 0) {
+            this._disconnectedAllSessions = true;
+            this._prevAttachedCount = 0;
+          }
           await this._handleMissingCdpPort();
         }
         return { attached: this.sessions.size, port, unreachable: true };
@@ -6449,7 +7672,19 @@ export class PrismDaemon {
 
       this._noPortSinceMs = 0;
       this._hasActiveCdpPort = true;
-      if (this.timer) {
+      const prevActivePort = this._lastActiveCdpPort;
+      const portChanged = prevActivePort !== null && prevActivePort !== port;
+      this._lastActiveCdpPort = port;
+      const prevSessionCount = this.sessions.size;
+      const canRunShortcutSync = Boolean(this.timer || typeof this._relaunchHooks?.syncShortcuts === 'function');
+      let forcedShortcutSyncThisTick = false;
+      if (portChanged) {
+        this._resetShortcutBackoff(`port-changed:${prevActivePort}->${port}`);
+        if (canRunShortcutSync) {
+          forcedShortcutSyncThisTick = true;
+          this._maybeSyncShortcuts(true, { hasActivePort: true });
+        }
+      } else if (this.timer) {
         this._maybeSyncShortcuts(false, { hasActivePort: true });
       }
 
@@ -6500,6 +7735,15 @@ export class PrismDaemon {
             entry.inlineDiffMounted = false;
             entry.lastInlineDiffHash = '';
             entry.lastInlineDiffScriptHash = '';
+            if (entry.wallpaperScriptId) {
+              await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.wallpaperScriptId }).catch(() => {});
+              entry.wallpaperScriptId = null;
+            }
+            await this._removeWallpaperBinding(entry);
+            entry.wallpaperBindingAdded = false;
+            entry.wallpaperMounted = false;
+            entry.lastWallpaperHash = '';
+            entry.lastWallpaperScriptHash = '';
             await entry.session.evaluate(this.cdp.REMOVE_EXPRESSION).catch(() => {});
           }
           entry.session.close();
@@ -6517,6 +7761,29 @@ export class PrismDaemon {
           return this.verifyAndHealEntry(this.sessions.get(target.webSocketDebuggerUrl));
         })
       );
+
+      // 盲区 3：全部窗口断开后重连，或活跃窗口数从 0 恢复时，立即复位 45 分钟退避并补检快捷方式
+      const nowAttachedCount = this.sessions.size;
+      if (nowAttachedCount === 0) {
+        if (this._prevAttachedCount > 0 || prevSessionCount > 0) {
+          this._disconnectedAllSessions = true;
+        }
+      } else {
+        const recoveredFromAllDisconnected = this._disconnectedAllSessions;
+        const recoveredFromZero = prevSessionCount === 0 && this._lastShortcutCheckAt > 0;
+        if (recoveredFromAllDisconnected) {
+          this._disconnectedAllSessions = false;
+        }
+        if ((recoveredFromAllDisconnected || recoveredFromZero) && !forcedShortcutSyncThisTick) {
+          this._resetShortcutBackoff(
+            recoveredFromAllDisconnected ? 'all-windows-reconnected' : 'active-windows-recovered-from-zero'
+          );
+          if (canRunShortcutSync) {
+            this._maybeSyncShortcuts(true, { hasActivePort: true });
+          }
+        }
+      }
+      this._prevAttachedCount = nowAttachedCount;
 
       if (this._isTelemetryDisabled()) {
         this._releaseIdleTelemetry(true);
@@ -6684,6 +7951,7 @@ export class PrismDaemon {
   start({ claimPid = true, watchFiles = true } = {}) {
     if (this.running) return;
     this._sidebarStopped = false;
+    this._wallpaperStopped = false;
     this.running = true;
     if (claimPid) this.claimOwnership();
     const initialPort = discoverActivePort(this.overridePort, this.portFile);
@@ -6783,7 +8051,9 @@ export class PrismDaemon {
   }
 
   async stop(cleanPageDom = false) {
+    this._flushUsageDiskCache();
     this._sidebarStopped = true;
+    this._wallpaperStopped = true;
     this.running = false;
     if (this._updateInitialTimer) {
       clearTimeout(this._updateInitialTimer);
@@ -6842,6 +8112,7 @@ export class PrismDaemon {
     this._lazyLsClient = null;
     this._backendSummariesCache = null;
     this._backendSummariesAt = 0;
+    this._usageDiskCache = null;
     this._lazyThoughtService = null;
     if (this.omniServer) {
       const srv = this.omniServer;
@@ -6855,6 +8126,14 @@ export class PrismDaemon {
       this.sidebarService = null;
       try {
         if (typeof sb.dispose === 'function') await sb.dispose();
+      } catch {}
+    }
+    await this._wallpaperServicePromise?.catch(() => null);
+    if (this._lazyWallpaperService) {
+      const wp = this._lazyWallpaperService;
+      this._lazyWallpaperService = null;
+      try {
+        if (typeof wp.dispose === 'function') await wp.dispose();
       } catch {}
     }
     this.releaseOwnership();
@@ -6879,7 +8158,43 @@ function parseArgs(argv) {
   return { once, port, rootDir, gitRepoDir, outFile };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+/**
+ * 判断当前模块是否作为 CLI 主入口启动。
+ * 复用本文件 canonicalRealpathSync() 解析符号链接与 Windows Junction（例如 ~/.gemini 迁至其他盘符），
+ * 并在 Win32 下统一规范化盘符大小写与长路径前缀。
+ */
+export function isMainEntry(argv1, moduleFilename = __filename) {
+  if (!argv1 || !moduleFilename) return false;
+  let selfPath = String(moduleFilename);
+  if (selfPath.startsWith('file://')) {
+    try {
+      selfPath = fileURLToPath(selfPath);
+    } catch {
+      return false;
+    }
+  }
+  let resolvedArgv;
+  let resolvedSelf;
+  try {
+    resolvedArgv = canonicalRealpathSync(argv1);
+  } catch {
+    resolvedArgv = path.resolve(argv1);
+  }
+  try {
+    resolvedSelf = canonicalRealpathSync(selfPath);
+  } catch {
+    resolvedSelf = path.resolve(selfPath);
+  }
+  if (process.platform === 'win32') {
+    return (
+      resolvedArgv.replace(/^\\\\\?\\/, '').toLowerCase() ===
+      resolvedSelf.replace(/^\\\\\?\\/, '').toLowerCase()
+    );
+  }
+  return resolvedArgv === resolvedSelf;
+}
+
+if (isMainEntry(process.argv[1], __filename)) {
   const cli = parseArgs(process.argv);
   const daemon = new PrismDaemon({
     rootDir: cli.rootDir,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { PrismDaemon } from '../sidecars/daemon/main.mjs';
@@ -209,15 +210,19 @@ test('tools/install-plugin.cjs default uninstall backs up & restores config.json
 
     const thoughtCfg = path.join(hostConfigDir, 'obsidian-prism-thought.json');
     const thoughtCache = path.join(hostConfigDir, 'obsidian-prism-thought-cache.json');
+    const usageRollupCache = path.join(hostConfigDir, 'obsidian-prism-usage-rollup-cache.json');
     const sidebarCfg = path.join(hostConfigDir, 'obsidian-prism-sidebar.json');
     const sidebarLock = path.join(hostConfigDir, 'obsidian-prism-sidebar.json.lock');
     const sidebarBak = path.join(hostConfigDir, 'obsidian-prism-sidebar.json.v1.12345.bak');
+    const wallpaperCfg = path.join(hostConfigDir, 'obsidian-prism-wallpaper.json');
 
     fs.writeFileSync(thoughtCfg, JSON.stringify({ apiKey: 'sk-test-secret' }));
     fs.writeFileSync(thoughtCache, '{"c":1}');
+    fs.writeFileSync(usageRollupCache, '{"version":2,"scopes":{"local":{}}}');
     fs.writeFileSync(sidebarCfg, '{"folders":[]}');
     fs.writeFileSync(sidebarLock, 'lock');
     fs.writeFileSync(sidebarBak, '{"folders":[]}');
+    fs.writeFileSync(wallpaperCfg, '{"enabled":true}');
 
     // 1) Install into isolated targetDir and customize config.json
     const installRes = await installTool.installPlugin({
@@ -247,7 +252,9 @@ test('tools/install-plugin.cjs default uninstall backs up & restores config.json
     assert.equal(fs.existsSync(backupPath), true, 'Default uninstall must back up config.json');
     assert.equal(JSON.parse(fs.readFileSync(backupPath, 'utf8')).palette, 'warm');
     assert.equal(fs.existsSync(thoughtCfg), true, 'Default uninstall must keep obsidian-prism-thought.json');
+    assert.equal(fs.existsSync(usageRollupCache), true, 'Default uninstall must keep obsidian-prism-usage-rollup-cache.json');
     assert.equal(fs.existsSync(sidebarCfg), true, 'Default uninstall must keep obsidian-prism-sidebar.json');
+    assert.equal(fs.existsSync(wallpaperCfg), true, 'Default uninstall must keep obsidian-prism-wallpaper.json');
     assert.equal(fs.existsSync(telemetryDir), true, 'Default uninstall must keep telemetry/');
 
     // 3) Reinstall automatically inherits obsidian-prism-config.backup.json
@@ -279,9 +286,11 @@ test('tools/install-plugin.cjs default uninstall backs up & restores config.json
     assert.equal(fs.existsSync(backupPath), false);
     assert.equal(fs.existsSync(thoughtCfg), false);
     assert.equal(fs.existsSync(thoughtCache), false);
+    assert.equal(fs.existsSync(usageRollupCache), false, '--purge-data must remove obsidian-prism-usage-rollup-cache.json');
     assert.equal(fs.existsSync(sidebarCfg), false);
     assert.equal(fs.existsSync(sidebarLock), false);
     assert.equal(fs.existsSync(sidebarBak), false);
+    assert.equal(fs.existsSync(wallpaperCfg), false, '--purge-data must remove obsidian-prism-wallpaper.json');
     assert.equal(fs.existsSync(telemetryDir), false);
 
     // Redline directories must be 100% untouched
@@ -346,6 +355,44 @@ test('Redline subdirectories and hijacked AG_PRISM_TELEMETRY_DIR env var are ref
     fs.mkdirSync(validTel, { recursive: true });
     process.env.AG_PRISM_TELEMETRY_DIR = validTel;
     assert.equal(installTool.resolveTelemetryDir(hostConfigDir), path.resolve(validTel));
+
+    // 4) PRISM_USAGE_CACHE_PATH safe override is cleaned on --purge-data, while hijacked/redline paths are refused
+    const prevUsageEnv = process.env.PRISM_USAGE_CACHE_PATH;
+    try {
+      const safeUsageOverride = path.join(rootTmp, 'usage-override', 'obsidian-prism-usage-rollup-cache.json');
+      const hijackedUsageFile = path.join(evilWorkspace, 'not-usage-cache.json');
+      const redlineUsageFile = path.join(convSubdir, 'obsidian-prism-usage-rollup-cache.json');
+      fs.mkdirSync(path.dirname(safeUsageOverride), { recursive: true });
+      fs.writeFileSync(safeUsageOverride, '{"version":2,"scopes":{"ssh:box":{}}}');
+      fs.writeFileSync(hijackedUsageFile, '{"keep":true}');
+      fs.writeFileSync(redlineUsageFile, '{"archive":true}');
+
+      process.env.PRISM_USAGE_CACHE_PATH = safeUsageOverride;
+      await installTool.uninstallPlugin({
+        targetDir,
+        hostConfigDir,
+        noCdp: true,
+        syncShortcuts: false,
+        purgeData: true,
+      });
+      assert.equal(fs.existsSync(safeUsageOverride), false, 'Valid PRISM_USAGE_CACHE_PATH override must be purged on --purge-data');
+
+      for (const dangerous of [hijackedUsageFile, redlineUsageFile]) {
+        process.env.PRISM_USAGE_CACHE_PATH = dangerous;
+        await installTool.uninstallPlugin({
+          targetDir,
+          hostConfigDir,
+          noCdp: true,
+          syncShortcuts: false,
+          purgeData: true,
+        });
+      }
+      assert.equal(fs.existsSync(hijackedUsageFile), true, 'Non-allowlisted PRISM_USAGE_CACHE_PATH filename must be refused');
+      assert.equal(fs.existsSync(redlineUsageFile), true, 'Redline PRISM_USAGE_CACHE_PATH must be refused');
+    } finally {
+      if (prevUsageEnv === undefined) delete process.env.PRISM_USAGE_CACHE_PATH;
+      else process.env.PRISM_USAGE_CACHE_PATH = prevUsageEnv;
+    }
   } finally {
     if (prevEnv === undefined) delete process.env.AG_PRISM_TELEMETRY_DIR;
     else process.env.AG_PRISM_TELEMETRY_DIR = prevEnv;
@@ -674,6 +721,7 @@ test('Windows Program.cs and macOS main.swift source contracts support --purge-d
   assert.ok(cs.includes('CleanInstallDirKeepingSelfExe'));
   assert.ok(cs.includes('conversations_archive'));
   assert.ok(cs.includes('obsidian-prism-thought.json'));
+  assert.ok(cs.includes('obsidian-prism-usage-rollup-cache.json'));
   assert.ok(cs.includes('obsidian-prism-sidebar.json'));
   assert.ok(cs.includes('telemetry'));
   assert.ok(cs.includes('ScheduleSelfDeleteIfNeeded'));
@@ -688,7 +736,153 @@ test('Windows Program.cs and macOS main.swift source contracts support --purge-d
   assert.ok(swift.includes('purgeUserPluginData'));
   assert.ok(swift.includes('isAllowedTelemetryOverrideDir'));
   assert.ok(swift.includes('obsidian-prism-thought.json'));
+  assert.ok(swift.includes('obsidian-prism-usage-rollup-cache.json'));
   assert.ok(swift.includes('obsidian-prism-sidebar.json'));
   assert.ok(swift.includes('telemetry'));
   assert.ok(swift.includes('unloadLaunchAgent'));
+  assert.ok(swift.includes('normalizeSystemRootPrefix'));
+  assert.ok(swift.includes('isNoSuchFileError'));
+  assert.ok(swift.includes('NSFileReadNoSuchFileError'));
+  assert.ok(swift.includes('NSFileNoSuchFileError'));
+  assert.ok(swift.includes('isRegularFileNoSymlink'));
+});
+
+test('tools/install-plugin.cjs P1-5: waits for slow-exiting daemon to finish flushing before --purge-data deletes usage cache and escalates to SIGKILL on timeout', async () => {
+  assert.ok(
+    installTool.DAEMON_STOP_POLL_MS >= 25 && installTool.DAEMON_STOP_POLL_MS <= 40,
+    `Expected poll interval within 25..40ms, got ${installTool.DAEMON_STOP_POLL_MS}`
+  );
+  assert.equal(installTool.DAEMON_STOP_GRACEFUL_TIMEOUT_MS, 800);
+
+  const rootTmp = mkTempDir('prism-p1-5-install-');
+  const spawnedChildren = [];
+  try {
+    const geminiDir = path.join(rootTmp, '.gemini');
+    const hostConfigDir = path.join(geminiDir, 'config');
+    const targetDir = path.join(hostConfigDir, 'plugins', 'obsidian-prism');
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    const usageCachePath = path.join(hostConfigDir, 'obsidian-prism-usage-rollup-cache.json');
+    const flushMarkerPath = path.join(rootTmp, 'flushed.marker');
+    const triggerFilePath = path.join(rootTmp, 'sigterm.trigger');
+    fs.writeFileSync(usageCachePath, '{"version":2,"scopes":{"local":{"stale":true}}}', 'utf8');
+
+    // 1) Spawn a real child process simulating a Daemon that flushes dirty usage cache ~160ms after SIGTERM, then exits
+    const slowDaemonScript = `
+      const fs = require('node:fs');
+      const [cachePath, markerPath, triggerPath] = process.argv.slice(1);
+      let stopping = false;
+      function gracefulStop() {
+        if (stopping) return;
+        stopping = true;
+        setTimeout(() => {
+          try { fs.writeFileSync(cachePath, '{"version":2,"scopes":{"local":{"revived":true}}}', 'utf8'); } catch {}
+          try { fs.writeFileSync(markerPath, String(Date.now()), 'utf8'); } catch {}
+          setTimeout(() => process.exit(0), 25);
+        }, 160);
+      }
+      process.on('SIGTERM', gracefulStop);
+      const timer = setInterval(() => {
+        if (fs.existsSync(triggerPath)) gracefulStop();
+      }, 10);
+      timer.unref && false;
+    `;
+    const child = spawn(process.execPath, ['-e', slowDaemonScript, usageCachePath, flushMarkerPath, triggerFilePath], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    spawnedChildren.push(child);
+    let childExited = false;
+    child.once('exit', () => {
+      childExited = true;
+    });
+
+    const pidFile = path.join(targetDir, '.daemon.pid');
+    fs.writeFileSync(pidFile, JSON.stringify({ pid: child.pid, startedAt: Date.now() }), 'utf8');
+
+    const signals = [];
+    const daemonStopOpts =
+      process.platform === 'win32'
+        ? {
+            pollIntervalMs: 25,
+            gracefulTimeoutMs: 800,
+            killWaitMs: 200,
+            kill: (p, sig) => {
+              signals.push(sig);
+              if (sig === 'SIGTERM') {
+                fs.writeFileSync(triggerFilePath, '1', 'utf8');
+                return;
+              }
+              process.kill(p, sig);
+            },
+          }
+        : {
+            pollIntervalMs: 25,
+            gracefulTimeoutMs: 800,
+            killWaitMs: 200,
+            kill: (p, sig) => {
+              signals.push(sig);
+              process.kill(p, sig);
+            },
+          };
+
+    const startedAt = Date.now();
+    const unRes = await installTool.uninstallPlugin({
+      targetDir,
+      hostConfigDir,
+      noCdp: true,
+      syncShortcuts: false,
+      purgeData: true,
+      daemonStopOpts,
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(unRes.ok, true);
+    assert.equal(unRes.stoppedPid, child.pid);
+    assert.deepEqual(signals, ['SIGTERM'], 'gracefully exiting daemon must not require SIGKILL escalation');
+    assert.equal(fs.existsSync(flushMarkerPath), true, 'slow daemon must have executed its shutdown flush before uninstall finished');
+    assert.ok(elapsedMs >= 140, `uninstallPlugin must wait for daemon exit instead of racing ahead (${elapsedMs}ms)`);
+    assert.equal(fs.existsSync(usageCachePath), false, 'usage rollup cache flushed during daemon shutdown must be purged cleanly');
+
+    // Wait past any possible late flush and verify cache never resurrects
+    await new Promise((r) => setTimeout(r, 250));
+    assert.equal(childExited, true, 'slow daemon child process must have exited');
+    assert.equal(fs.existsSync(usageCachePath), false, 'usage rollup cache must NOT resurrect after --purge-data');
+
+    // 2) Stubborn process ignoring graceful SIGTERM must escalate to SIGKILL after timeout and exit cleanly
+    const stubbornScript = `
+      process.on('SIGTERM', () => {});
+      setInterval(() => {}, 1000);
+    `;
+    const stubborn = spawn(process.execPath, ['-e', stubbornScript], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    spawnedChildren.push(stubborn);
+    const stubbornSignals = [];
+    const termRes = await installTool.terminatePidAndWait(stubborn.pid, {
+      pollIntervalMs: 25,
+      gracefulTimeoutMs: 120,
+      killWaitMs: 400,
+      kill: (p, sig) => {
+        stubbornSignals.push(sig);
+        if (process.platform === 'win32' && sig === 'SIGTERM') {
+          // Simulate POSIX process ignoring SIGTERM
+          return;
+        }
+        process.kill(p, sig);
+      },
+    });
+    assert.deepEqual(stubbornSignals, ['SIGTERM', 'SIGKILL'], 'must escalate to SIGKILL after graceful timeout');
+    assert.equal(termRes.signaled, true);
+    assert.equal(termRes.escalated, true);
+    assert.equal(termRes.exited, true);
+  } finally {
+    for (const c of spawnedChildren) {
+      try {
+        process.kill(c.pid, 'SIGKILL');
+      } catch {}
+    }
+    fs.rmSync(rootTmp, { recursive: true, force: true });
+  }
 });

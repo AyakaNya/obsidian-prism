@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -29,6 +32,17 @@ namespace AgyClaudeStyle
         public string WebSocketDebuggerUrl;
     }
 
+    public class ActivePortProbeResult
+    {
+        public int? RawPort;
+        public int? LivePort;
+        public List<CdpPageInfo> Pages;
+        public bool IsStalePort;
+        public bool IsConnectionRefused;
+        public bool IsTransientTimeout;
+        public int ConsecutiveFailures;
+    }
+
     public class PluginManifest
     {
         public string Version;
@@ -44,7 +58,7 @@ namespace AgyClaudeStyle
             string manifestPath = Path.Combine(baseDir, "manifest.json");
             Dictionary<string, object> raw = MiniJson.ParseObject(File.ReadAllText(manifestPath, Encoding.UTF8));
             PluginManifest m = new PluginManifest();
-            m.Version = GetString(raw, "version", "1.0.7-beta.1");
+            m.Version = GetString(raw, "version", "1.0.7-beta.2");
             m.StyleId = GetString(raw, "styleId", "ag-prism-css");
             m.SettingBinding = GetString(raw, "settingBinding", "__agPrismSetting");
             m.RemoveExpression = GetString(raw, "removeExpression", "");
@@ -87,6 +101,11 @@ namespace AgyClaudeStyle
         private readonly CancellationTokenSource _cts = new CancellationTokenSource();
         private int _nextId = 0;
         private volatile bool _closed = false;
+
+        public bool IsClosed
+        {
+            get { return _closed; }
+        }
 
         public Action OnClose;
 
@@ -386,7 +405,17 @@ namespace AgyClaudeStyle
 
     public static class CdpHelper
     {
-        private static readonly HttpClient SharedHttp = new HttpClient { Timeout = TimeSpan.FromMilliseconds(2000) };
+        private static readonly HttpClient SharedHttp = CreateSharedHttpClient();
+
+        private static HttpClient CreateSharedHttpClient()
+        {
+            HttpClientHandler handler = new HttpClientHandler();
+            handler.UseProxy = false;
+            HttpClient client = new HttpClient(handler);
+            // Windows loopback 关闭端口 TCP SYN 重传耗时约 2000~2100ms，Timeout 需高于该值才能准确捕获 ConnectionRefused 而非被 2000ms 超时截胡
+            client.Timeout = TimeSpan.FromMilliseconds(3000);
+            return client;
+        }
 
         public static string GetPortFilePath()
         {
@@ -418,6 +447,154 @@ namespace AgyClaudeStyle
             }
             catch { }
             return null;
+        }
+
+        public static async Task<bool> IsPortAliveAsync(int port, int timeoutMs = 1200)
+        {
+            if (port <= 0 || port > 65535) return false;
+            int effectiveMs = timeoutMs > 100 ? timeoutMs : 1200;
+            using (CancellationTokenSource cts = new CancellationTokenSource(effectiveMs))
+            {
+                try
+                {
+                    string url = string.Format("http://127.0.0.1:{0}/json/list", port);
+                    using (HttpResponseMessage resp = await SharedHttp.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
+                    {
+                        return resp.IsSuccessStatusCode;
+                    }
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+        }
+
+        private static bool IsConnectionRefusedException(Exception ex)
+        {
+            if (ex == null) return false;
+            Queue<Exception> q = new Queue<Exception>();
+            q.Enqueue(ex);
+            while (q.Count > 0)
+            {
+                Exception cur = q.Dequeue();
+                if (cur == null) continue;
+                SocketException sex = cur as SocketException;
+                if (sex != null && sex.SocketErrorCode == SocketError.ConnectionRefused)
+                {
+                    return true;
+                }
+                AggregateException agg = cur as AggregateException;
+                if (agg != null && agg.InnerExceptions != null)
+                {
+                    for (int i = 0; i < agg.InnerExceptions.Count; i++) q.Enqueue(agg.InnerExceptions[i]);
+                }
+                if (cur.InnerException != null) q.Enqueue(cur.InnerException);
+            }
+            return false;
+        }
+
+        private static bool IsTransientTimeoutException(Exception ex)
+        {
+            if (ex == null) return false;
+            Queue<Exception> q = new Queue<Exception>();
+            q.Enqueue(ex);
+            while (q.Count > 0)
+            {
+                Exception cur = q.Dequeue();
+                if (cur == null) continue;
+                if (cur is TaskCanceledException || cur is OperationCanceledException || cur is TimeoutException)
+                {
+                    return true;
+                }
+                WebException wex = cur as WebException;
+                if (wex != null && wex.Status == WebExceptionStatus.Timeout)
+                {
+                    return true;
+                }
+                SocketException sex = cur as SocketException;
+                if (sex != null && sex.SocketErrorCode == SocketError.TimedOut)
+                {
+                    return true;
+                }
+                AggregateException agg = cur as AggregateException;
+                if (agg != null && agg.InnerExceptions != null)
+                {
+                    for (int i = 0; i < agg.InnerExceptions.Count; i++) q.Enqueue(agg.InnerExceptions[i]);
+                }
+                if (cur.InnerException != null) q.Enqueue(cur.InnerException);
+            }
+            return false;
+        }
+
+        public static Task<ActivePortProbeResult> ProbeActivePortAsync(int? overridePort)
+        {
+            return ProbeActivePortAsync(overridePort, false, 0);
+        }
+
+        public static async Task<ActivePortProbeResult> ProbeActivePortAsync(
+            int? overridePort,
+            bool hasActiveAttachedSession,
+            int consecutiveTimeoutFailures
+        )
+        {
+            ActivePortProbeResult res = new ActivePortProbeResult();
+            int? rawPort = ReadPort(overridePort);
+            res.RawPort = rawPort;
+            if (!rawPort.HasValue)
+            {
+                res.LivePort = null;
+                res.Pages = null;
+                res.IsStalePort = false;
+                res.IsConnectionRefused = false;
+                res.IsTransientTimeout = false;
+                res.ConsecutiveFailures = 0;
+                return res;
+            }
+            try
+            {
+                List<CdpPageInfo> pages = await ListPagesAsync(rawPort.Value).ConfigureAwait(false);
+                if (pages != null)
+                {
+                    res.LivePort = rawPort;
+                    res.Pages = pages;
+                    res.IsStalePort = false;
+                    res.IsConnectionRefused = false;
+                    res.IsTransientTimeout = false;
+                    res.ConsecutiveFailures = 0;
+                    return res;
+                }
+                res.LivePort = null;
+                res.Pages = null;
+                res.IsStalePort = true;
+                res.ConsecutiveFailures = (consecutiveTimeoutFailures > 0 ? consecutiveTimeoutFailures : 0) + 1;
+                return res;
+            }
+            catch (Exception ex)
+            {
+                bool isRefused = IsConnectionRefusedException(ex);
+                bool isTimeout = !isRefused && IsTransientTimeoutException(ex);
+                int nextFailures = (consecutiveTimeoutFailures > 0 ? consecutiveTimeoutFailures : 0) + 1;
+                res.LivePort = null;
+                res.Pages = null;
+                res.IsConnectionRefused = isRefused;
+                res.IsTransientTimeout = isTimeout;
+                res.ConsecutiveFailures = nextFailures;
+                // 已有活跃 attached 会话时：ConnectionRefused 立即判死，瞬态超时需连续 2 次失败才判 IsStalePort 断连
+                if (isRefused)
+                {
+                    res.IsStalePort = true;
+                }
+                else if (hasActiveAttachedSession && isTimeout && nextFailures < 2)
+                {
+                    res.IsStalePort = false;
+                }
+                else
+                {
+                    res.IsStalePort = true;
+                }
+                return res;
+            }
         }
 
         public static bool IsBareAuxiliaryTarget(string title, string pageUrl)
@@ -761,6 +938,11 @@ namespace AgyClaudeStyle
 
         private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
         private const int ProcessCommandLineInformation = 60;
+        private const int ERROR_ACCESS_DENIED = 5;
+        private const int ERROR_INVALID_PARAMETER = 87;
+        private const int STATUS_ACCESS_DENIED = unchecked((int)0xC0000022);
+        private const int STATUS_PRIVILEGE_NOT_HELD = unchecked((int)0xC0000061);
+        private const int STATUS_PROCESS_IS_TERMINATING = unchecked((int)0xC000010A);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct UNICODE_STRING
@@ -789,15 +971,39 @@ namespace AgyClaudeStyle
         private static int _verifiedDaemonPid = 0;
         private static long _verifiedStartTicks = 0L;
 
-        private static string QueryProcessCommandLineFast(int pid)
+        public static string QueryProcessCommandLineFast(int pid, out bool accessDenied)
         {
-            if (pid <= 0) return "";
+            bool notFound;
+            return QueryProcessCommandLineFast(pid, out accessDenied, out notFound);
+        }
+
+        private static string QueryProcessCommandLineFast(int pid, out bool accessDenied, out bool notFound)
+        {
+            accessDenied = false;
+            notFound = false;
+            if (pid <= 0)
+            {
+                notFound = true;
+                return "";
+            }
             IntPtr hProc = IntPtr.Zero;
             IntPtr buf = IntPtr.Zero;
             try
             {
                 hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-                if (hProc == IntPtr.Zero) return "";
+                if (hProc == IntPtr.Zero)
+                {
+                    int lastErr = Marshal.GetLastWin32Error();
+                    if (lastErr == ERROR_ACCESS_DENIED)
+                    {
+                        accessDenied = true;
+                    }
+                    else if (lastErr == ERROR_INVALID_PARAMETER)
+                    {
+                        notFound = true;
+                    }
+                    return "";
+                }
                 int allocSize = 2048;
                 buf = Marshal.AllocHGlobal(allocSize);
                 int reqLen = 0;
@@ -817,6 +1023,14 @@ namespace AgyClaudeStyle
                         return Marshal.PtrToStringUni(us.Buffer, us.Length / 2) ?? "";
                     }
                 }
+                else if (status == STATUS_ACCESS_DENIED || status == STATUS_PRIVILEGE_NOT_HELD)
+                {
+                    accessDenied = true;
+                }
+                else if (status == STATUS_PROCESS_IS_TERMINATING)
+                {
+                    notFound = true;
+                }
             }
             catch { }
             finally
@@ -827,11 +1041,8 @@ namespace AgyClaudeStyle
             return "";
         }
 
-        private static string QueryWindowsProcessCommandLine(int pid)
+        private static string QueryProcessCommandLineViaPowerShell(int pid)
         {
-            if (pid <= 0) return "";
-            string fastCmd = QueryProcessCommandLineFast(pid);
-            if (!string.IsNullOrEmpty(fastCmd)) return fastCmd;
             try
             {
                 ProcessStartInfo psi = new ProcessStartInfo();
@@ -850,13 +1061,94 @@ namespace AgyClaudeStyle
                         try { p.Kill(); } catch { }
                         return "";
                     }
-                    return readTask.GetAwaiter().GetResult() ?? "";
+                    string output = readTask.GetAwaiter().GetResult() ?? "";
+                    return output.Trim();
                 }
             }
             catch
             {
                 return "";
             }
+        }
+
+        private static string QueryWindowsProcessCommandLine(int pid)
+        {
+            bool accessDenied;
+            return QueryWindowsProcessCommandLine(pid, true, out accessDenied);
+        }
+
+        public static string QueryWindowsProcessCommandLine(int pid, bool allowPowerShellFallback, out bool accessDenied)
+        {
+            accessDenied = false;
+            if (pid <= 0) return "";
+            // 快速 PEB 通道：遇 ACCESS_DENIED 或进程已退出立即返回（杜绝 PowerShell 风暴）；仅对瞬态空串重试一次
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                bool denied;
+                bool notFound;
+                string fastCmd = (QueryProcessCommandLineFast(pid, out denied, out notFound) ?? "").Trim();
+                if (!string.IsNullOrEmpty(fastCmd)) return fastCmd;
+                if (denied)
+                {
+                    accessDenied = true;
+                    return "";
+                }
+                if (notFound)
+                {
+                    return "";
+                }
+                if (attempt == 0)
+                {
+                    try { Thread.Sleep(60); } catch { }
+                }
+            }
+
+            // 无窗子进程（MainWindowHandle == IntPtr.Zero）严禁回退 PowerShell，避免 16x PowerShell 风暴
+            if (!allowPowerShellFallback)
+            {
+                return "";
+            }
+
+            // CIM / PowerShell 回退，瞬态空串时做二次短退避重试
+            for (int psAttempt = 0; psAttempt < 2; psAttempt++)
+            {
+                string psCmd = QueryProcessCommandLineViaPowerShell(pid);
+                if (!string.IsNullOrEmpty(psCmd)) return psCmd;
+                if (psAttempt == 0)
+                {
+                    try
+                    {
+                        using (Process checkProc = Process.GetProcessById(pid))
+                        {
+                            if (checkProc.HasExited) return "";
+                        }
+                        Thread.Sleep(120);
+                        bool retryDenied;
+                        bool retryNotFound;
+                        string retryFast = (QueryProcessCommandLineFast(pid, out retryDenied, out retryNotFound) ?? "").Trim();
+                        if (!string.IsNullOrEmpty(retryFast)) return retryFast;
+                        if (retryDenied)
+                        {
+                            accessDenied = true;
+                            return "";
+                        }
+                        if (retryNotFound) return "";
+                    }
+                    catch (Win32Exception wex)
+                    {
+                        if (wex.NativeErrorCode == ERROR_ACCESS_DENIED)
+                        {
+                            accessDenied = true;
+                        }
+                        return "";
+                    }
+                    catch
+                    {
+                        return "";
+                    }
+                }
+            }
+            return "";
         }
 
         private static bool MatchesNativeLockFilePid(int pid, string pluginDir)
@@ -1344,13 +1636,47 @@ namespace AgyClaudeStyle
             }
         }
 
-        private static List<string> GetShortcutCandidateDirs(string installDir, string defaultInstallDir)
+        public static bool IsTestSandboxEnvironment(string installDir = null)
+        {
+            string disable1 = Environment.GetEnvironmentVariable("PRISM_DISABLE_SHORTCUT_SYNC");
+            string disable2 = Environment.GetEnvironmentVariable("AG_PRISM_DISABLE_SHORTCUT_SYNC");
+            if (disable1 == "1" || disable2 == "1") return true;
+            string nodeEnv = Environment.GetEnvironmentVariable("NODE_ENV");
+            if (string.Equals(nodeEnv, "test", StringComparison.OrdinalIgnoreCase)) return true;
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("NODE_TEST_CONTEXT"))) return true;
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AG_PRISM_GEMINI_CONFIG_DIR"))) return true;
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("AG_PRISM_ELECTRON_EXE"))) return true;
+            if (!string.IsNullOrEmpty(installDir))
+            {
+                try
+                {
+                    string normInst = Path.GetFullPath(installDir).TrimEnd('\\', '/');
+                    string normTemp = Path.GetFullPath(Path.GetTempPath()).TrimEnd('\\', '/');
+                    if (!string.IsNullOrEmpty(normTemp) &&
+                        (string.Equals(normInst, normTemp, StringComparison.OrdinalIgnoreCase) ||
+                         normInst.StartsWith(normTemp + "\\", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
+        public static List<string> GetShortcutCandidateDirs(string installDir, string defaultInstallDir)
         {
             List<string> dirs = new List<string>();
             string envDirs = Environment.GetEnvironmentVariable("AG_PRISM_SHORTCUT_DIRS");
             if (!string.IsNullOrEmpty(envDirs))
             {
-                string[] parts = envDirs.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                string trimmedEnv = envDirs.Trim();
+                if (string.Equals(trimmedEnv, "none", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(trimmedEnv, "off", StringComparison.OrdinalIgnoreCase))
+                {
+                    return dirs;
+                }
+                string[] parts = trimmedEnv.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
                 for (int i = 0; i < parts.Length; i++)
                 {
                     string d = parts[i].Trim();
@@ -1359,26 +1685,26 @@ namespace AgyClaudeStyle
                 return dirs;
             }
 
-            if (!string.IsNullOrEmpty(installDir) && !string.IsNullOrEmpty(defaultInstallDir))
+            // 严格隔离自动化测试与临时沙盒目录，避免触碰真实桌面快捷方式；
+            // 允许真实用户在非默认目录安装时正常修补快捷方式。
+            if (IsTestSandboxEnvironment(installDir))
             {
-                string normInst = Path.GetFullPath(installDir).TrimEnd('\\', '/');
-                string normDef = Path.GetFullPath(defaultInstallDir).TrimEnd('\\', '/');
-                if (!string.Equals(normInst, normDef, StringComparison.OrdinalIgnoreCase))
-                {
-                    return dirs;
-                }
+                return dirs;
             }
 
             string userDesktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             string userPrograms = Environment.GetFolderPath(Environment.SpecialFolder.Programs);
             string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string quickLaunch = !string.IsNullOrEmpty(appData)
+                ? Path.Combine(appData, @"Microsoft\Internet Explorer\Quick Launch")
+                : null;
             string taskbarPinned = !string.IsNullOrEmpty(appData)
                 ? Path.Combine(appData, @"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar")
                 : null;
             string commonDesktop = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
             string commonPrograms = Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms);
 
-            string[] raw = new string[] { userDesktop, userPrograms, taskbarPinned, commonDesktop, commonPrograms };
+            string[] raw = new string[] { userDesktop, userPrograms, quickLaunch, taskbarPinned, commonDesktop, commonPrograms };
             for (int i = 0; i < raw.Length; i++)
             {
                 if (!string.IsNullOrEmpty(raw[i]) && Directory.Exists(raw[i]) && !dirs.Contains(raw[i]))
@@ -1391,7 +1717,7 @@ namespace AgyClaudeStyle
 
         private static void CollectLnkFilesBounded(string dir, int depth, List<string> outFiles)
         {
-            if (depth > 2 || string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
+            if (depth > 3 || string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
             try
             {
                 string[] lnks = Directory.GetFiles(dir, "*.lnk", SearchOption.TopDirectoryOnly);
@@ -1401,7 +1727,7 @@ namespace AgyClaudeStyle
                 }
             }
             catch { }
-            if (depth >= 2) return;
+            if (depth >= 3) return;
             try
             {
                 string[] subs = Directory.GetDirectories(dir);
@@ -1471,10 +1797,22 @@ namespace AgyClaudeStyle
             List<string> rootDirs = GetShortcutCandidateDirs(installDir, defaultInstallDir);
             if (rootDirs.Count == 0) return 0;
 
-            List<string> lnkFiles = new List<string>();
+            List<string> rawLnkFiles = new List<string>();
             for (int i = 0; i < rootDirs.Count; i++)
             {
-                CollectLnkFilesBounded(rootDirs[i], 0, lnkFiles);
+                CollectLnkFilesBounded(rootDirs[i], 0, rawLnkFiles);
+            }
+            if (rawLnkFiles.Count == 0) return 0;
+
+            HashSet<string> seenLnks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            List<string> lnkFiles = new List<string>();
+            for (int i = 0; i < rawLnkFiles.Count; i++)
+            {
+                string p = rawLnkFiles[i];
+                if (!string.IsNullOrEmpty(p) && seenLnks.Add(p))
+                {
+                    lnkFiles.Add(p);
+                }
             }
             if (lnkFiles.Count == 0) return 0;
 
@@ -1701,14 +2039,54 @@ namespace AgyClaudeStyle
             {
                 Process[] procs = Process.GetProcessesByName("Antigravity");
                 BareHostProcessInfo candidate = null;
+                BareHostProcessInfo windowFallbackCandidate = null;
                 for (int i = 0; i < procs.Length; i++)
                 {
                     Process p = procs[i];
                     try
                     {
-                        if (p.HasExited) continue;
-                        string cmd = QueryWindowsProcessCommandLine(p.Id);
-                        if (string.IsNullOrEmpty(cmd)) continue;
+                        bool exited = false;
+                        try
+                        {
+                            exited = p.HasExited;
+                        }
+                        catch (Win32Exception wex)
+                        {
+                            // 权限不足（如管理员宿主进程）直接跳过，绝不误判为裸启
+                            if (wex.NativeErrorCode == ERROR_ACCESS_DENIED) continue;
+                        }
+                        if (exited) continue;
+                        bool hasMainWindow = false;
+                        try { hasMainWindow = (p.MainWindowHandle != IntPtr.Zero); } catch { }
+                        bool accessDenied;
+                        string cmd = QueryWindowsProcessCommandLine(p.Id, hasMainWindow, out accessDenied);
+                        if (string.IsNullOrEmpty(cmd))
+                        {
+                            // 权限不足导致命令行不可读时绝不激活 windowFallbackCandidate，避免将已带参管理员主窗口误判为裸启
+                            if (!accessDenied && windowFallbackCandidate == null && hasMainWindow)
+                            {
+                                bool mainModuleDenied = false;
+                                string fbExe = "";
+                                try
+                                {
+                                    fbExe = p.MainModule.FileName;
+                                }
+                                catch (Win32Exception wex)
+                                {
+                                    if (wex.NativeErrorCode == ERROR_ACCESS_DENIED) mainModuleDenied = true;
+                                }
+                                catch { }
+                                if (mainModuleDenied) continue;
+                                long fbStartMs = ProcessStartEpochMs(p);
+                                if (string.IsNullOrEmpty(fbExe)) fbExe = FindAntigravityExecutable(null);
+                                windowFallbackCandidate = new BareHostProcessInfo();
+                                windowFallbackCandidate.Pid = p.Id;
+                                windowFallbackCandidate.ExePath = fbExe;
+                                windowFallbackCandidate.StartTimeMs = fbStartMs;
+                                windowFallbackCandidate.UptimeMs = fbStartMs > 0L ? Math.Max(0L, NowEpochMs() - fbStartMs) : 0L;
+                            }
+                            continue;
+                        }
                         if (cmd.IndexOf("--type=", StringComparison.OrdinalIgnoreCase) >= 0) continue;
                         if (cmd.IndexOf("sidecar_sdk", StringComparison.OrdinalIgnoreCase) >= 0 ||
                             cmd.IndexOf("main.mjs", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -1740,7 +2118,7 @@ namespace AgyClaudeStyle
                         try { p.Dispose(); } catch { }
                     }
                 }
-                return candidate;
+                return candidate ?? windowFallbackCandidate;
             }
             catch
             {
@@ -1791,18 +2169,67 @@ namespace AgyClaudeStyle
             return false;
         }
 
+        private static readonly object _promptedHostLock = new object();
+        private static readonly HashSet<string> _promptedHostKeys = new HashSet<string>(StringComparer.Ordinal);
+
+        private static bool IsHostKeyPromptedInMemory(int hostPid, long startTimeMs)
+        {
+            if (hostPid <= 0) return true;
+            string expectedKey = hostPid + ":" + startTimeMs;
+            string pidPrefix = hostPid + ":";
+            lock (_promptedHostLock)
+            {
+                if (_promptedHostKeys.Contains(expectedKey)) return true;
+                foreach (string hk in _promptedHostKeys)
+                {
+                    if (string.IsNullOrEmpty(hk) || !hk.StartsWith(pidPrefix, StringComparison.Ordinal)) continue;
+                    if (startTimeMs <= 0L) return true;
+                    long savedStart;
+                    if (long.TryParse(hk.Substring(pidPrefix.Length), out savedStart))
+                    {
+                        if (savedStart <= 0L || Math.Abs(savedStart - startTimeMs) <= 15000L)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static void RememberPromptedHostInMemory(int hostPid, long startTimeMs)
+        {
+            if (hostPid <= 0) return;
+            string hostKey = hostPid + ":" + startTimeMs;
+            lock (_promptedHostLock)
+            {
+                if (_promptedHostKeys.Count >= 256)
+                {
+                    _promptedHostKeys.Clear();
+                }
+                _promptedHostKeys.Add(hostKey);
+            }
+        }
+
         public static bool HasPromptedForHost(int hostPid, long startTimeMs, string installDir, string pluginDir)
         {
             if (hostPid <= 0) return true;
+            if (IsHostKeyPromptedInMemory(hostPid, startTimeMs)) return true;
             if (!string.IsNullOrEmpty(pluginDir))
             {
                 if (StateFileMatchesHost(Path.Combine(pluginDir, ".relaunch-prompt-state.json"), hostPid, startTimeMs))
+                {
+                    RememberPromptedHostInMemory(hostPid, startTimeMs);
                     return true;
+                }
             }
             if (!string.IsNullOrEmpty(installDir))
             {
                 if (StateFileMatchesHost(Path.Combine(installDir, ".relaunch-prompt-state.json"), hostPid, startTimeMs))
+                {
+                    RememberPromptedHostInMemory(hostPid, startTimeMs);
                     return true;
+                }
             }
             return false;
         }
@@ -1810,6 +2237,8 @@ namespace AgyClaudeStyle
         public static void RecordPromptedForHost(int hostPid, long startTimeMs, string decision, string installDir, string pluginDir)
         {
             if (hostPid <= 0) return;
+            // 先写入进程内 HashSet 兜底，即使磁盘只读/满导致状态文件写盘失败，也绝不每 2s 无限弹窗
+            RememberPromptedHostInMemory(hostPid, startTimeMs);
             string hostKey = hostPid + ":" + startTimeMs;
             Dictionary<string, object> obj = new Dictionary<string, object>(StringComparer.Ordinal);
             obj["hostPid"] = hostPid;

@@ -5,6 +5,7 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import tls from 'node:tls';
 import vm from 'node:vm';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +38,15 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
+
+async function waitUntil(pred, timeoutMs = 1500, stepMs = 15) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (pred()) return true;
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+  return Boolean(pred());
+}
 
 function createMockDomEnv(extraWindowProps = {}) {
   function makeEl(tag) {
@@ -1200,7 +1210,7 @@ test('UX-3 & UX-6 regression: prioritizes data-ag-cs-lang over host lang="en", l
 
   // 1) Start in machine mode + preload: must use zh-CN despite host lang="en"!
   api.sync({ thoughtTranslate: 'machine', thoughtTrigger: 'preload', language: 'zh-CN' });
-  await new Promise((r) => setTimeout(r, 90));
+  await waitUntil(() => panel1.getAttribute('data-op-zh-ready') === '1', 1500);
 
   const ov1 = panel1.querySelector('.ag-prism-thought-overlay');
   const rawBtn1 = ov1.children.find((c) => c.classList.contains('ag-prism-thought-raw-toggle'));
@@ -1249,7 +1259,7 @@ test('UX-3 & UX-6 regression: prioritizes data-ag-cs-lang over host lang="en", l
 
   // 3) Switch engine machine -> ai: must clear old sigs and retranslate with AI!
   api.sync({ thoughtTranslate: 'ai', thoughtTrigger: 'expand', language: 'zh-CN' });
-  await new Promise((r) => setTimeout(r, 90));
+  await waitUntil(() => panel1.textContent.includes('AI 精修版本内容。'), 1500);
   assert.ok(panel1.textContent.includes('AI 精修版本内容。'));
 
   // 4) Switch -> off: must restore clean raw English immediately
@@ -1466,7 +1476,10 @@ test('Phase 2 TS-1~TS-8 security & lifecycle audit: SSRF/redirect defense, key r
       mode: 'ai',
       requestId: 'req-live-sse',
     });
-    await new Promise((r) => setTimeout(r, 20));
+    const waitActiveDeadline = Date.now() + 2000;
+    while (svc.getQueueStats().active < 1 && Date.now() < waitActiveDeadline) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
     assert.equal(svc.getQueueStats().active, 1);
 
     const abortRes = svc.cancelPending('req-live-sse');
@@ -1976,7 +1989,7 @@ test('Cache jank root-cause guards: persisted custom styleTag 0ms hit, collapsed
     // Scroll far block into [-800, vh+800] warm band -> capture scroll listener hydrates smoothly!
     blkFar.panel._boundingRect = { top: -520, bottom: -320, left: 20, right: 620, width: 600, height: 200 };
     scrollHook.fn();
-    await new Promise((r) => setTimeout(r, 140));
+    await waitUntil(() => blkFar.panel.getAttribute('data-op-zh-ready') === '1', 1500);
     assert.equal(blkFar.panel.getAttribute('data-op-zh-ready'), '1');
     assert.ok(blkFar.panel.textContent.includes('远端历史块滚入视口懒挂载译文'));
 
@@ -2405,7 +2418,7 @@ test('5-locale targetLang adaptation: prompt/boundary routing, GTX tl= mapping, 
     // Frontend thought-client.js zh-HK/zh-MO mapping & short threshold parity
     const tcSrc = fs.readFileSync(path.join(ROOT_DIR, 'vendor', 'thought-translator', 'thought-client.js'), 'utf8');
     assert.ok(/if\s*\(\/\^\(\?:yue\|zh\[-_\]\(\?:yue\|HK\|MO\)\)\/i\.test\(s\)\)\s*return\s*'yue'/.test(tcSrc), 'thought-client.js must map zh-HK/zh-MO to yue before zh-TW');
-    assert.ok(tcSrc.includes('norm.length < 4 || norm.length > 48000'), 'thought-client.js must use < 4 short-text threshold');
+    assert.ok(tcSrc.includes('!norm || norm.length < 4'), 'thought-client.js must use < 4 short-text threshold');
 
     // 3) Backend AI + GTX tl= mapping + cache isolation
     const aiRequests = [];
@@ -2752,13 +2765,18 @@ test('Issue #14 system proxy detection: Windows reg query, macOS scutil, env pri
   assert.equal(winDisabled.http, null);
   assert.equal(winDisabled.https, null);
 
-  // Windows reg query: socks-only or socks5:// must safely return disabled without crashing
+  // Windows reg query: socks-only now natively parses as socks5h://; unsupported schemes & unsplit tokens still return null
   const winSocksOnly = parseWindowsRegProxyOutput(
     '    ProxyEnable    REG_DWORD    0x1\r\n    ProxyServer    REG_SZ    socks=127.0.0.1:1080\r\n'
   );
-  assert.equal(winSocksOnly.enabled, false);
-  assert.equal(parseProxyUrl('socks5://127.0.0.1:1080'), null);
+  assert.equal(winSocksOnly.enabled, true);
+  assert.equal(winSocksOnly.socks?.protocol, 'socks5h:');
+  assert.equal(winSocksOnly.socks?.port, 1080);
+  assert.equal(parseProxyUrl('socks5://127.0.0.1:1080')?.protocol, 'socks5:');
+  assert.equal(parseProxyUrl('socks5://127.0.0.1:1080')?.port, 1080);
+  assert.equal(parseProxyUrl('socks5h://127.0.0.1:1080')?.protocol, 'socks5h:');
   assert.equal(parseProxyUrl('socks=127.0.0.1:1080'), null);
+  assert.equal(parseProxyUrl('socks4://127.0.0.1:1080'), null);
 
   // 2) macOS scutil --proxy parsing
   const macScutilOut = [
@@ -3228,6 +3246,8 @@ test('Red-team security hardening: HTTPS proxy SNI servername, microtask queue c
       const peekPort = tlsPeekServer.address().port;
 
       try {
+        // 使用有效测试 CA PEM 且严格保持默认 TLS 证书校验开启（tlsPeekServer 仅捕获 ClientHello SNI 即断开）
+        const testCaPem = Array.isArray(tls.rootCertificates) && tls.rootCertificates.length > 0 ? tls.rootCertificates[0] : undefined;
         const localLookup = (_hostname, opts, cb) => {
           const done = typeof opts === 'function' ? opts : cb;
           if (opts && typeof opts === 'object' && opts.all) {
@@ -3242,7 +3262,7 @@ test('Red-team security hardening: HTTPS proxy SNI servername, microtask queue c
           configDir: tmpDir,
           proxyEnv: {},
           resolveSystemProxy: () => `https://proxy.corp.example:${peekPort}`,
-          proxyTlsOptions: { lookup: localLookup, rejectUnauthorized: false },
+          proxyTlsOptions: { lookup: localLookup, ...(testCaPem ? { ca: testCaPem } : {}), rejectUnauthorized: true },
         });
         await assert.rejects(() =>
           domainProxySvc._request('http://target.upstream.test/v1/models', { method: 'GET', redirect: 'error' })
@@ -3267,7 +3287,7 @@ test('Red-team security hardening: HTTPS proxy SNI servername, microtask queue c
           configDir: tmpDir,
           proxyEnv: {},
           resolveSystemProxy: () => `https://127.0.0.1:${peekPort}`,
-          proxyTlsOptions: { rejectUnauthorized: false },
+          proxyTlsOptions: { ...(testCaPem ? { ca: testCaPem } : {}), rejectUnauthorized: true },
         });
         await assert.rejects(() =>
           ipProxySvc._request('http://target.upstream.test/v1/models', { method: 'GET', redirect: 'error' })

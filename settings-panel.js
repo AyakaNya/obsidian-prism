@@ -3,7 +3,7 @@
   'use strict';
   const G = root || (typeof globalThis !== 'undefined' ? globalThis : window);
   if (!G) return;
-  const O = Object, isArr = Array.isArray, hasOwn = (o, k) => O.prototype.hasOwnProperty.call(o, k);
+  const O = Object, isArr = Array.isArray, hasOwn = (o, k) => O.prototype.hasOwnProperty.call(o, k), isFn = (v) => typeof v === 'function', isObj = (v) => Boolean(v && typeof v === 'object'), getWin = () => (typeof window !== 'undefined' ? window : G);
 
   const SETTINGS_SEC_ID = 'ag-cs-settings-sec';
   const STORAGE_SETTINGS_OPEN_KEY = 'ag-prism:settings-open';
@@ -26,7 +26,7 @@
 
   const clearPrismLocalStorage = (store) => {
     const st = store || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!st || typeof st.removeItem !== 'function') return 0;
+    if (!st || !isFn(st.removeItem)) return 0;
     let n = 0;
     for (const k of PRISM_STORAGE_KEYS) {
       try { st.removeItem(k); n += 1; } catch {}
@@ -37,46 +37,47 @@
   const SETTINGS_FALLBACK_CSS =
     '.ag-cs-settings-fold-body:not(.is-open),.ag-cs-settings-group[hidden]{display:none!important}';
 
-  const S_ON = O.freeze({ allowed: ['on', 'off'], default: 'on' });
-  const S_OFF = O.freeze({ allowed: ['on', 'off'], default: 'off' });
-  const S_AUTO = O.freeze({ allowed: ['auto', 'on', 'off'], default: 'auto' });
-  const S_T = O.freeze({ allowed: [true, false], default: true });
-  const S_F = O.freeze({ allowed: [true, false], default: false });
+  const mkSp = (allowed, d, aliases) => (aliases ? { allowed, default: d ?? allowed[0], aliases } : { allowed, default: d ?? allowed[0] });
+  const S_ON = O.freeze(mkSp(['on', 'off']));
+  const S_OFF = O.freeze(mkSp(['on', 'off'], 'off'));
+  const S_AUTO = O.freeze(mkSp(['auto', 'on', 'off']));
+  const S_T = O.freeze(mkSp([true, false]));
+  const S_F = O.freeze(mkSp([true, false], false));
 
   const PRISM_SETTINGS_SCHEMA = O.freeze({
-    palette: { allowed: ['obsidian', 'host', 'warm'], default: 'obsidian', aliases: { claude: 'warm' } },
-    lightPreset: { allowed: ['crystal', 'alabaster'], default: 'crystal' },
-    accentTone: { allowed: ['follow', 'cobalt', 'iris', 'amber', 'mono'], default: 'follow' },
-    cornerStyle: { allowed: ['sharp', 'balanced', 'soft'], default: 'balanced' },
-    ambientIntensity: { allowed: ['0', '35', '70', '100'], default: '100' },
-    motionLevel: { allowed: ['off', 'subtle', 'standard', 'ultra'], default: 'ultra' },
-    targetFps: { allowed: ['60', '120', '180', 'native'], default: '180' },
-    homeLayout: { allowed: ['studio', 'classic', 'off'], default: 'studio' },
+    palette: mkSp(['obsidian', 'host', 'warm'], null, { claude: 'warm' }),
+    lightPreset: mkSp(['crystal', 'alabaster']),
+    accentTone: mkSp(['follow', 'cobalt', 'iris', 'amber', 'mono']),
+    cornerStyle: mkSp(['sharp', 'balanced', 'soft'], 'balanced'),
+    ambientIntensity: mkSp(['0', '35', '70', '100'], '100'),
+    motionLevel: mkSp(['off', 'subtle', 'standard', 'ultra'], 'ultra'),
+    targetFps: mkSp(['60', '120', '180', 'native'], '180'),
+    homeLayout: mkSp(['studio', 'classic', 'off']),
     homeRipple: S_T,
-    logoInk: { allowed: ['accent', 'foreground'], default: 'accent' },
-    language: { allowed: ['zh-CN', 'zh-TW', 'yue', 'en', 'ja'], default: 'zh-CN' },
+    logoInk: mkSp(['accent', 'foreground']),
+    language: mkSp(['zh-CN', 'zh-TW', 'yue', 'en', 'ja']),
     hostLocalization: S_AUTO,
     composerRestyle: S_T,
-    placeholderStyle: { allowed: ['studio', 'host'], default: 'studio' },
+    placeholderStyle: mkSp(['studio', 'host']),
     smoothCaret: S_T,
-    scrollBottomMotion: { allowed: ['smooth', 'instant'], default: 'smooth' },
+    scrollBottomMotion: mkSp(['smooth', 'instant']),
     contextMenu: S_T,
-    codeFont: { allowed: ['default', 'jetbrains', 'cascadia', 'sfmono'], default: 'default' },
+    codeFont: mkSp(['default', 'jetbrains', 'cascadia', 'sfmono']),
     codeLigatures: S_F,
-    mascot: { allowed: ['crab', 'minis', 'off'], default: 'crab', aliases: { dual: 'crab' } },
+    mascot: mkSp(['crab', 'minis', 'off'], null, { dual: 'crab' }),
     sidebarRestyle: S_T,
     sidebarCompact: S_F,
-    sidebarNavFold: { allowed: ['off', 'on'], default: 'off' },
-    thoughtTranslate: { allowed: ['off', 'machine', 'ai'], default: 'off' },
-    thoughtTrigger: { allowed: ['preload', 'expand'], default: 'preload' },
-    thoughtView: { allowed: ['immersive', 'bilingual'], default: 'immersive' },
+    sidebarNavFold: mkSp(['off', 'on']),
+    thoughtTranslate: mkSp(['off', 'machine', 'ai']),
+    thoughtTrigger: mkSp(['preload', 'expand']),
+    thoughtView: mkSp(['immersive', 'bilingual']),
     telemetryModule: S_AUTO,
     effortSliderModule: S_AUTO,
     omniModule: S_ON,
-    linkTarget: { allowed: ['builtin', 'external'], default: 'builtin' },
+    linkTarget: mkSp(['builtin', 'external']),
     sidebarStudio: S_OFF,
     autoUpdate: S_OFF,
-    updateChannel: { allowed: ['stable', 'beta'], default: 'stable' },
+    updateChannel: mkSp(['stable', 'beta']),
   });
 
   const SCENE_PRESETS = O.freeze({
@@ -112,25 +113,22 @@
     return spec.allowed.includes(val) ? { valid: true, value: val } : { valid: false };
   };
 
-  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.7-beta.1') => {
+  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.7-beta.2') => {
     const settings = {};
     for (const [k, spec] of O.entries(PRISM_SETTINGS_SCHEMA)) {
       const c = sanitizeKeyVal(k, currentSettings[k]);
       settings[k] = c.valid ? c.value : spec.default;
     }
-    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.7-beta.1'), exportedAt: new Date().toISOString(), settings };
-    const tSrc =
-      rawThoughtCfg && typeof rawThoughtCfg === 'object' && rawThoughtCfg.config && typeof rawThoughtCfg.config === 'object'
-        ? rawThoughtCfg.config
-        : rawThoughtCfg;
-    if (tSrc && typeof tSrc === 'object' && !isArr(tSrc) && typeof tSrc.then !== 'function' && tSrc.ok !== false) {
+    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.7-beta.2'), exportedAt: new Date().toISOString(), settings };
+    const tSrc = isObj(rawThoughtCfg) && isObj(rawThoughtCfg.config) ? rawThoughtCfg.config : rawThoughtCfg;
+    if (isObj(tSrc) && !isArr(tSrc) && !isFn(tSrc.then) && tSrc.ok !== false) {
       out.thought = {
         stylePreset: normThoughtStyle(tSrc.stylePreset) || 'technical',
         customPrompt: typeof tSrc.customPrompt === 'string' ? redactSecrets(tSrc.customPrompt.slice(0, 4000)) : '',
         activeProfileId: typeof tSrc.activeProfileId === 'string' ? tSrc.activeProfileId.slice(0, 64) : '',
         profiles: isArr(tSrc.profiles)
           ? tSrc.profiles
-              .filter((p) => p && typeof p === 'object' && !isArr(p))
+              .filter((p) => isObj(p) && !isArr(p))
               .slice(0, 16)
               .map((p, i) => ({
                 id: String(p.id || `p-${i + 1}`).slice(0, 64),
@@ -154,8 +152,8 @@
         return { ok: false, error: 'invalid-json' };
       }
     }
-    if (!parsed || typeof parsed !== 'object' || isArr(parsed)) return { ok: false, error: 'invalid-root' };
-    const src = parsed.settings && typeof parsed.settings === 'object' && !isArr(parsed.settings) ? parsed.settings : parsed;
+    if (!isObj(parsed) || isArr(parsed)) return { ok: false, error: 'invalid-root' };
+    const src = isObj(parsed.settings) && !isArr(parsed.settings) ? parsed.settings : parsed;
     const cleanPatch = {};
     for (const k of O.keys(src)) {
       if (k === '__proto__' || k === 'constructor' || k === 'prototype' || /apikey|secret|token|password/i.test(k)) continue;
@@ -163,13 +161,13 @@
       if (c.valid) cleanPatch[k] = c.value;
     }
     let cleanThought = null;
-    if (parsed.thought && typeof parsed.thought === 'object' && !isArr(parsed.thought)) {
+    if (isObj(parsed.thought) && !isArr(parsed.thought)) {
       const t = parsed.thought;
       const stylePreset = normThoughtStyle(t.stylePreset) || undefined;
       const customPrompt = typeof t.customPrompt === 'string' ? redactSecrets(t.customPrompt.slice(0, 4000)) : undefined;
       const profiles = isArr(t.profiles)
         ? t.profiles
-            .filter((p) => p && typeof p === 'object' && !isArr(p))
+            .filter((p) => isObj(p) && !isArr(p))
             .slice(0, 16)
             .map((p, i) => ({
               id: String(p.id || `p-${i + 1}`).slice(0, 64),
@@ -228,18 +226,17 @@
 
   const invokePrismRepoAction = (action, ver, extra) => {
     const act = ['pull', 'storage-health', 'prepare-archive', 'uninstall', 'update-status', 'check-update', 'apply-update'].includes(action) ? action : 'status';
-    const isObj = ver && typeof ver === 'object';
-    const ext = isObj ? { ...ver, ...(extra && typeof extra === 'object' ? extra : null) } : extra && typeof extra === 'object' ? extra : null;
-    const win = typeof window !== 'undefined' ? window : G;
+    const vObj = isObj(ver);
+    const ext = vObj ? { ...ver, ...(isObj(extra) ? extra : null) } : isObj(extra) ? extra : null;
     try {
-      const b = win?.__agPrismRepoBridge, arg = ext ? { ...ext, action: act } : { action: act };
-      if (typeof b === 'function') return Promise.resolve(b(arg));
-      if (typeof b?.[act] === 'function') return Promise.resolve(b[act](ext || extra));
-      if (typeof b?.call === 'function') return Promise.resolve(b.call(arg));
+      const b = getWin()?.__agPrismRepoBridge, arg = ext ? { ...ext, action: act } : { action: act };
+      if (isFn(b)) return Promise.resolve(b(arg));
+      if (isFn(b?.[act])) return Promise.resolve(b[act](ext || extra));
+      if (isFn(b?.call)) return Promise.resolve(b.call(arg));
     } catch (err) {
       return Promise.resolve({ ok: false, action: act, error: String(err?.message || err) });
     }
-    return Promise.resolve({ ok: false, offline: true, action: act, noRemote: true, hasRemote: false, branch: 'local', shortHash: isObj ? ver.version : ver });
+    return Promise.resolve({ ok: false, offline: true, action: act, noRemote: true, hasRemote: false, branch: 'local', shortHash: vObj ? ver.version : ver });
   };
 
   const readStore = (k) => {
@@ -251,8 +248,8 @@
 
   const renderObsidianPrismBrandSvg = (size = 20) => {
     try {
-      const ext = G.__agPrismBrandLogoSvg || (typeof window !== 'undefined' && window.__agPrismBrandLogoSvg);
-      const out = typeof ext === 'function' ? ext(size) : ext;
+      const ext = G.__agPrismBrandLogoSvg || getWin()?.__agPrismBrandLogoSvg;
+      const out = isFn(ext) ? ext(size) : ext;
       if (typeof out === 'string' && out.includes('<svg')) return out;
     } catch {}
     return '';
@@ -286,7 +283,7 @@
     const doc = typeof document !== 'undefined' ? document : null;
     if (!doc) return;
     const syncChrome = G.__agPrismHostEnhancer?.syncSettingsDialogChrome;
-    if (typeof syncChrome === 'function') syncChrome(doc, runGuardedMut);
+    if (isFn(syncChrome)) syncChrome(doc, runGuardedMut);
     const lang = getLang();
     const ui = uiText(lang);
     const targetTitles = ['Appearance', '外观', '外觀', '外観'];
@@ -298,7 +295,7 @@
       }
     }
     if (!panel) return;
-    if (typeof syncChrome !== 'function') {
+    if (!isFn(syncChrome)) {
       const dlg = panel.closest?.('[role="dialog"]');
       if (dlg && dlg.getAttribute?.('data-ag-cs-settings-dlg') !== '1') {
         runGuardedMut(() => dlg.setAttribute?.('data-ag-cs-settings-dlg', '1'));
@@ -306,11 +303,11 @@
     }
 
     const effVal = (k, l) => {
-      const v = typeof resolveSettingRowActiveValue === 'function' ? resolveSettingRowActiveValue(k, l) : undefined;
+      const v = isFn(resolveSettingRowActiveValue) ? resolveSettingRowActiveValue(k, l) : undefined;
       return v !== undefined && v !== null && v !== '' ? v : PRISM_SETTINGS_SCHEMA[k]?.default;
     };
     const matchBtn = (k, valJson, cur) => {
-      if (typeof isSettingButtonMatch === 'function') {
+      if (isFn(isSettingButtonMatch)) {
         const r = isSettingButtonMatch(k, valJson, cur);
         if (r === true) return true;
         if (cur !== undefined && cur !== null) return false;
@@ -318,17 +315,17 @@
       try { return JSON.parse(valJson) === cur; } catch { return String(valJson) === String(cur); }
     };
     const applyBatch = (patch) => {
-      if (!patch || typeof patch !== 'object') return;
-      if (typeof saveSettingsBatch === 'function') saveSettingsBatch(patch);
-      else if (typeof saveSetting === 'function') for (const [k, v] of O.entries(patch)) saveSetting(k, v);
+      if (!isObj(patch)) return;
+      if (isFn(saveSettingsBatch)) saveSettingsBatch(patch);
+      else if (isFn(saveSetting)) for (const [k, v] of O.entries(patch)) saveSetting(k, v);
     };
-    const K_IC = 'isConnected', K_TC = 'textContent', K_CL = 'classList';
+    const K_IC = 'isConnected', K_TC = 'textContent', K_CL = 'classList', K_WP = 'prism-wallpaper-slot';
     const sa = (e, k, v = '') => e.setAttribute(k, String(v));
     const ga = (e, k) => e.getAttribute(k);
     const ra = (e, k) => e.removeAttribute(k);
     const qs = (e, s) => e.querySelector(s);
     const qa = (e, s) => e.querySelectorAll(s);
-    const rc = (e) => (typeof e?.getBoundingClientRect === 'function' ? e.getBoundingClientRect() : null);
+    const rc = (e) => (isFn(e?.getBoundingClientRect) ? e.getBoundingClientRect() : null);
     const ap = (p, ...cs) => {
       for (const c of cs) if (c) p.appendChild(c);
       return p;
@@ -346,6 +343,7 @@
       if (typeof rootEl.__prismMountThoughtUi === 'function') {
         try { rootEl.__prismMountThoughtUi(); } catch {}
       }
+      try { rootEl.__prismMountWp?.(l); } catch {}
 
       const de = doc.documentElement;
       const themeAttr = de?.getAttribute?.('data-ag-cs-theme') || '';
@@ -453,6 +451,7 @@
           syncRootState(existing, lang, ui);
           return;
         }
+        try { qs(existing, `[data-testid="${K_WP}"]`)?.__agPrismWpUiHandle?.destroy?.(); } catch {}
         existing.remove();
       }
 
@@ -540,6 +539,7 @@
       let probeRepoRef = null;
       let thoughtListEl = null;
       let thoughtUiHandle = null;
+      let wpSlot = null;
 
       const getThoughtUiHandle = () => {
         const live = sec.__prismThoughtUiHandle || thoughtUiHandle;
@@ -551,8 +551,8 @@
       };
 
       const mountThoughtUiIfReady = () => {
-        const curUi = (typeof window !== 'undefined' && window.__agPrismThoughtSettingsUi) || G.__agPrismThoughtSettingsUi;
-        const hasFactory = typeof curUi?.createThoughtAiConfigBox === 'function';
+        const curUi = getWin()?.__agPrismThoughtSettingsUi || G.__agPrismThoughtSettingsUi;
+        const hasFactory = isFn(curUi?.createThoughtAiConfigBox);
         if (thoughtUiHandle && !thoughtUiHandle.box?.[K_IC]) {
           thoughtUiHandle = null;
           if (sec.__prismThoughtUiHandle && !sec.__prismThoughtUiHandle.box?.[K_IC]) {
@@ -588,7 +588,7 @@
         });
         if (!handle || !handle.box) return null;
         runGuardedMut(() => {
-          qa(hostList, '[data-testid="prism-thought-ai-config"]').forEach((oldBox) => oldBox.remove());
+          qa(hostList, '[data-testid="prism-thought-ai-config"],[data-testid="prism-thought-general-config"]').forEach((oldBox) => oldBox.remove());
           ap(hostList, handle.box);
         });
         handle.__agLang = curLang;
@@ -602,6 +602,10 @@
         return handle;
       };
       sec.__prismMountThoughtUi = mountThoughtUiIfReady;
+      sec.__prismMountWp = (l) => {
+        const f = G.__prismMountWallpaperUi;
+        if (wpSlot && f) f(wpSlot, { lang: l || getLang(), getLang, runGuardedMut });
+      };
 
       const syncFoldBadgeOnly = (st) => {
         if (!updBadge[K_IC] || !st || st.offline || st.timeout) return;
@@ -638,43 +642,44 @@
           const onOffStr = autoOnOff.slice(1);
           const warmLbl = ui.optWarm || (ui.optClaude && !/claude/i.test(ui.optClaude) ? ui.optClaude : '') || 'Alabaster';
           const R = (key, tk, dk, opts) => ({ key, title: U(tk, key), desc: U(dk), opts });
-          const RS = (key, s, opts) => R(key, 'set' + s + 'Title', 'set' + s + 'Desc', opts);
+          const RS = (key, opts, s = key[0].toUpperCase() + key.slice(1)) => R(key, 'set' + s + 'Title', 'set' + s + 'Desc', opts);
 
-          const rowDefs = {
-            palette: RS('palette', 'Palette', [['host', U('optHost')], ['warm', warmLbl], ['obsidian', U('optObsidian')]]),
-            lightPreset: RS('lightPreset', 'LightPreset', [['crystal', U('optLightCrystal')], ['alabaster', U('optLightAlabaster')]]),
-            accentTone: RS('accentTone', 'AccentTone', [['follow', U('optToneFollow')], ['cobalt', U('optToneCobalt')], ['iris', U('optToneIris')], ['amber', U('optToneAmber')], ['mono', U('optToneMono')]]),
-            cornerStyle: RS('cornerStyle', 'CornerStyle', [['sharp', U('optCornerSharp')], ['balanced', U('optCornerBalanced')], ['soft', U('optCornerSoft')]]),
-            ambientIntensity: RS('ambientIntensity', 'AmbientIntensity', [['0', U('optAmb0', '0%')], ['35', U('optAmb35', '35%')], ['70', U('optAmb70', '70%')], ['100', U('optAmb100', '100%')]]),
-            motionLevel: RS('motionLevel', 'MotionLevel', [['off', U('optMotionOff')], ['subtle', U('optMotionSubtle')], ['standard', U('optMotionStandard')], ['ultra', U('optMotionUltra')]]),
-            targetFps: RS('targetFps', 'TargetFps', [['60', U('optFps60', '60')], ['120', U('optFps120', '120')], ['180', U('optFps180', '180')], ['native', U('optFpsNative')]]),
-            homeLayout: RS('homeLayout', 'HomeLayout', [['studio', U('optStudio')], ['classic', U('optClassic')], ['off', U('optNativeOff')]]),
-            homeRipple: RS('homeRipple', 'Ripple', onOff),
-            logoInk: RS('logoInk', 'LogoInk', [['accent', U('optAccent')], ['foreground', U('optForeground')]]),
-            language: RS('language', 'Language', langOpts),
-            hostLocalization: RS('hostLocalization', 'HostI18n', [['auto', U('optHostI18nAuto', 'Auto')], ['on', U('onLabel', 'On')], ['off', U('offLabel', 'Off')]]),
-            composerRestyle: RS('composerRestyle', 'Composer', onOff),
-            placeholderStyle: RS('placeholderStyle', 'Placeholder', [['studio', 'Studio'], ['host', U('optPlaceholderHost')]]),
-            smoothCaret: RS('smoothCaret', 'SmoothCaret', onOff),
-            scrollBottomMotion: RS('scrollBottomMotion', 'ScrollBottom', [['smooth', U('optScrollBottomSmooth', 'Glide')], ['instant', U('optScrollBottomInstant', 'Instant')]]),
-            contextMenu: R('contextMenu', 'rowContextMenuTitle', 'rowContextMenuDesc', onOff),
-            codeFont: RS('codeFont', 'CodeFont', [['default', U('optFontDefault')], ['jetbrains', 'JetBrains Mono'], ['cascadia', 'Cascadia Code'], ['sfmono', U('optFontSfmono', 'SF Mono')]]),
-            codeLigatures: RS('codeLigatures', 'CodeLigatures', onOff),
-            mascot: RS('mascot', 'Mascot', [['crab', mDual], ['minis', mMinis], ['off', mOff]]),
-            sidebarRestyle: RS('sidebarRestyle', 'Sidebar', onOff),
-            sidebarCompact: RS('sidebarCompact', 'SidebarCompact', onOff),
-            sidebarNavFold: R('sidebarNavFold', 'setSidebarNavFoldLabel', 'setSidebarNavFoldDesc', [['off', U('optSidebarNavFoldOff', 'Show All')], ['on', U('optSidebarNavFoldOn', 'Fold Extra')]]),
-            thoughtTranslate: RS('thoughtTranslate', 'ThoughtMode', [['off', U('optThoughtOff')], ['machine', U('optThoughtMachine')], ['ai', U('optThoughtAi')]]),
-            thoughtTrigger: RS('thoughtTrigger', 'ThoughtTrigger', [['preload', U('optTriggerPreload')], ['expand', U('optTriggerExpand')]]),
-            thoughtView: RS('thoughtView', 'ThoughtView', [['immersive', U('optThoughtImmersive')], ['bilingual', U('optThoughtBilingual')]]),
-            telemetryModule: RS('telemetryModule', 'Telemetry', autoOnOff),
-            effortSliderModule: RS('effortSliderModule', 'EffortSlider', autoOnOff),
-            omniModule: RS('omniModule', 'Omni', onOffStr),
-            linkTarget: RS('linkTarget', 'LinkTarget', [['builtin', U('optLinkBuiltin')], ['external', U('optLinkExternal')]]),
-            sidebarStudio: RS('sidebarStudio', 'SidebarStudio', onOffStr),
-            autoUpdate: RS('autoUpdate', 'AutoUpdate', onOffStr),
-            updateChannel: RS('updateChannel', 'UpdateChannel', [['stable', U('optChannelStable', 'Stable')], ['beta', U('optChannelBeta', 'Beta')]]),
-          };
+          const rowDefs = {};
+          for (const r of [
+            RS('palette', [['host', U('optHost')], ['warm', warmLbl], ['obsidian', U('optObsidian')]]),
+            RS('lightPreset', [['crystal', U('optLightCrystal')], ['alabaster', U('optLightAlabaster')]]),
+            RS('accentTone', [['follow', U('optToneFollow')], ['cobalt', U('optToneCobalt')], ['iris', U('optToneIris')], ['amber', U('optToneAmber')], ['mono', U('optToneMono')]]),
+            RS('cornerStyle', [['sharp', U('optCornerSharp')], ['balanced', U('optCornerBalanced')], ['soft', U('optCornerSoft')]]),
+            RS('ambientIntensity', [['0', U('optAmb0', '0%')], ['35', U('optAmb35', '35%')], ['70', U('optAmb70', '70%')], ['100', U('optAmb100', '100%')]]),
+            RS('motionLevel', [['off', U('optMotionOff')], ['subtle', U('optMotionSubtle')], ['standard', U('optMotionStandard')], ['ultra', U('optMotionUltra')]]),
+            RS('targetFps', [['60', U('optFps60', '60')], ['120', U('optFps120', '120')], ['180', U('optFps180', '180')], ['native', U('optFpsNative')]]),
+            RS('homeLayout', [['studio', U('optStudio')], ['classic', U('optClassic')], ['off', U('optNativeOff')]]),
+            RS('homeRipple', onOff, 'Ripple'),
+            RS('logoInk', [['accent', U('optAccent')], ['foreground', U('optForeground')]]),
+            RS('language', langOpts),
+            RS('hostLocalization', [['auto', U('optHostI18nAuto', 'Auto')], ['on', U('onLabel', 'On')], ['off', U('offLabel', 'Off')]], 'HostI18n'),
+            RS('composerRestyle', onOff, 'Composer'),
+            RS('placeholderStyle', [['studio', 'Studio'], ['host', U('optPlaceholderHost')]], 'Placeholder'),
+            RS('smoothCaret', onOff),
+            RS('scrollBottomMotion', [['smooth', U('optScrollBottomSmooth', 'Glide')], ['instant', U('optScrollBottomInstant', 'Instant')]], 'ScrollBottom'),
+            R('contextMenu', 'rowContextMenuTitle', 'rowContextMenuDesc', onOff),
+            RS('codeFont', [['default', U('optFontDefault')], ['jetbrains', 'JetBrains Mono'], ['cascadia', 'Cascadia Code'], ['sfmono', U('optFontSfmono', 'SF Mono')]]),
+            RS('codeLigatures', onOff),
+            RS('mascot', [['crab', mDual], ['minis', mMinis], ['off', mOff]]),
+            RS('sidebarRestyle', onOff, 'Sidebar'),
+            RS('sidebarCompact', onOff),
+            R('sidebarNavFold', 'setSidebarNavFoldLabel', 'setSidebarNavFoldDesc', [['off', U('optSidebarNavFoldOff', 'Show All')], ['on', U('optSidebarNavFoldOn', 'Fold Extra')]]),
+            RS('thoughtTranslate', [['off', U('optThoughtOff')], ['machine', U('optThoughtMachine')], ['ai', U('optThoughtAi')]], 'ThoughtMode'),
+            RS('thoughtTrigger', [['preload', U('optTriggerPreload')], ['expand', U('optTriggerExpand')]]),
+            RS('thoughtView', [['immersive', U('optThoughtImmersive')], ['bilingual', U('optThoughtBilingual')]]),
+            RS('telemetryModule', autoOnOff, 'Telemetry'),
+            RS('effortSliderModule', autoOnOff, 'EffortSlider'),
+            RS('omniModule', onOffStr, 'Omni'),
+            RS('linkTarget', [['builtin', U('optLinkBuiltin')], ['external', U('optLinkExternal')]]),
+            RS('sidebarStudio', onOffStr),
+            RS('autoUpdate', onOffStr),
+            RS('updateChannel', [['stable', U('optChannelStable', 'Stable')], ['beta', U('optChannelBeta', 'Beta')]]),
+          ]) rowDefs[r.key] = r;
 
           const groups = [
             { id: 'appearance', title: U('grpAppearance'), keys: ['palette', 'lightPreset', 'accentTone', 'cornerStyle', 'ambientIntensity', 'motionLevel', 'targetFps', 'homeLayout', 'homeRipple', 'logoInk', 'language', 'hostLocalization'] },
@@ -830,6 +835,12 @@
               thoughtListEl = list;
             }
             ap(groupsWrap, ap(grpEl, mkEl('div', 'ag-cs-settings-subhead', grp.title), list));
+            if (grp.id === 'appearance') {
+              wpSlot = mkEl('div');
+              sa(wpSlot, 'data-testid', K_WP);
+              setVis(wpSlot, false);
+              ap(grpEl, wpSlot);
+            }
           }
 
           const aboutGrp = mkEl('div', 'ag-cs-settings-group');
@@ -1103,7 +1114,7 @@
             runGuardedMut(() => { uConfirm.disabled = true; });
             void invokePrismRepoAction('uninstall', version, { confirm: true, purgeData })
               .then((r) => {
-                if (!uChip.isConnected) return;
+                if (!uChip[K_IC]) return;
                 const u = uiText(getLang()) || ui;
                 runGuardedMut(() => {
                   setVis(uChip, true);
@@ -1117,7 +1128,7 @@
               })
               .finally(() => {
                 uBusy = false;
-                runGuardedMut(() => { if (uConfirm.isConnected) uConfirm.disabled = false; });
+                runGuardedMut(() => { if (uConfirm[K_IC]) uConfirm.disabled = false; });
               });
           });
 
@@ -1127,7 +1138,7 @@
           sa(cfgHint, 'data-ag-cs-cfg-status');
           const setCfgStatus = (msg, tone = '') =>
             runGuardedMut(() => {
-              cfgHint.textContent = msg;
+              cfgHint[K_TC] = msg;
               if (tone) sa(cfgHint, 'data-tone', tone);
               else ra(cfgHint, 'data-tone');
             });
@@ -1138,19 +1149,19 @@
             if (toastMsg) setCfgStatus(toastMsg, toastTone);
           } else {
             pendingCfgToast = null;
-          };
+          }
 
           const exportBtn = mkB('ag-cs-cfg-btn', U('cfgExportBtn', 'Export JSON'), 'data-ag-cs-cfg-action', 'export');
           onClk(exportBtn, async () => {
             const lNow = getLang(), uNow = uiText(lNow), cur = {};
             for (const k of SCHEMA_KEYS) cur[k] = effVal(k, lNow);
-            const win = typeof window !== 'undefined' ? window : G;
+            const win = getWin();
             const rawThought = await Promise.resolve(
               win?.__agPrismThought?.getConfig ? win.__agPrismThought.getConfig() : win?.__agPrismThoughtBridge?.call?.({ action: 'get-config' })
             ).catch(() => null);
             const jsonStr = JSON.stringify(buildSanitizedConfigExport(cur, rawThought || null, version), null, 2);
             try {
-              if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+              if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && isFn(URL.createObjectURL)) {
                 const url = URL.createObjectURL(new Blob([jsonStr], { type: 'application/json;charset=utf-8' }));
                 const dl = mkEl('a');
                 dl.href = url;
@@ -1160,7 +1171,7 @@
               } else win?.navigator?.clipboard?.writeText?.(jsonStr);
             } catch {
               try { win?.navigator?.clipboard?.writeText?.(jsonStr); } catch {}
-            };
+            }
             setCfgStatus(uNow.cfgExportOk || 'OK', 'ok');
           });
 
@@ -1180,7 +1191,7 @@
               if (res.settings.thoughtView) getThoughtUiHandle()?.onViewSwitched?.(res.settings.thoughtView);
             }
             if (res.thought) {
-              const win = typeof window !== 'undefined' ? window : G;
+              const win = getWin();
               try {
                 void Promise.resolve(
                   win?.__agPrismThought?.saveConfig
@@ -1197,7 +1208,7 @@
               getThoughtUiHandle()?.reloadConfig?.();
             }
             const rl = getLang(), ru = uiText(rl);
-            if (sec.isConnected) {
+            if (sec[K_IC]) {
               pendingCfgToast = null;
               runGuardedMut(() => syncRootState(sec, rl, ru));
               setCfgStatus(ru.cfgImportOk || 'OK', 'ok');
@@ -1207,8 +1218,8 @@
           on(fileInput, 'change', () => {
             const f = fileInput.files?.[0];
             if (!f) return;
-            if (typeof f.text === 'function') void f.text().then(handleImportRaw).catch(() => handleImportRaw(''));
-            else if (typeof FileReader === 'function') {
+            if (isFn(f.text)) void f.text().then(handleImportRaw).catch(() => handleImportRaw(''));
+            else if (isFn(FileReader)) {
               const rd = new FileReader();
               rd.onload = () => handleImportRaw(String(rd.result || ''));
               rd.readAsText(f);
@@ -1230,7 +1241,7 @@
               curTh.onViewSwitched?.(defs.thoughtView);
             }
             const rl = getLang(), ru = uiText(rl);
-            if (sec.isConnected) {
+            if (sec[K_IC]) {
               pendingCfgToast = null;
               runGuardedMut(() => syncRootState(sec, rl, ru));
               setCfgStatus(ru.cfgResetOk || 'OK', 'ok');
@@ -1258,14 +1269,13 @@
         runGuardedMut(() => {
           sa(sec, 'data-open', openStr);
           sa(sec, 'data-ag-cs-open', openStr);
-          if (nextOpen) sec.classList?.add?.('is-open');
-          else sec.classList?.remove?.('is-open');
+          const clOp = nextOpen ? 'add' : 'remove';
+          sec[K_CL]?.[clOp]?.('is-open');
           sa(foldHead, 'aria-expanded', nextOpen);
           sa(foldHead, 'aria-label', nextOpen ? ui.foldCollapseHint || 'Collapse' : ui.foldExpandHint || 'Expand');
           sa(foldBody, 'data-open', openStr);
           sa(foldBody, 'aria-hidden', !nextOpen);
-          if (nextOpen) foldBody.classList?.add?.('is-open');
-          else foldBody.classList?.remove?.('is-open');
+          foldBody[K_CL]?.[clOp]?.('is-open');
         });
         if (nextOpen && probeRepoRef) probeRepoRef();
       });

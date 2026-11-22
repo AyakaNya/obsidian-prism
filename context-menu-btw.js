@@ -15,8 +15,8 @@
   const SIDE = SA + ',' + SB;
   const SIDE_IN = SA + ' ' + CE + ',' + SB + ' ' + CE;
   const EDIT = BOX + ',' + CE + ',input,textarea,select,[role="textbox"],.monaco-editor,.cm-editor';
-  const EXCL = EDIT + ',a[href],button,[role="button"],aside,[data-testid="conversation-row-sidebar"],' + SIDE + ',[role="dialog"],[role="menu"],.ag-cs-ctx-menu,.ag-cs-diff-ctx-menu,.ag-omni-menu,#ag-prism-settings-sec,#ag-cs-settings-sec,.ces-set,.agy-overlay,[data-ag-zh-widget],.ag-zh-widget,#ag-zh-panel,[data-testid="host-i18n-widget"]';
-  const SLASH = '[role="listbox"] [role="option"],[data-testid="slash-command-menu"] [role="option"]';
+  const EXCL = EDIT + ',a[href],button,[role="button"],aside,[data-testid="conversation-row-sidebar"],[data-testid="diff-line-count"],[data-ag-diff-chip="1"],' + SIDE + ',[role="dialog"],[role="menu"],.ag-cs-ctx-menu,.ag-cs-diff-ctx-menu,.ag-omni-menu,#ag-prism-settings-sec,#ag-cs-settings-sec,.ces-set,.agy-overlay,[data-ag-zh-widget],.ag-zh-widget,#ag-zh-panel,[data-testid="host-i18n-widget"],img,video,audio,canvas,iframe,.agy-selection-pill';
+  const SLASH = '[id^="typeahead-item-"][role="option"],[role="listbox"] [role="option"],[data-testid="slash-command-menu"] [role="option"]';
   const SEND = '[data-testid="input-send-button"],[data-testid="send-button"],' + BOX + ' button[type="submit"]';
 
   // [copy, btw, plan, compact, learn, grill-me]
@@ -169,6 +169,8 @@
       return String(row?.getAttribute?.('data-cascade-id') || row?.dataset?.cascadeId || '').trim();
     };
 
+    const edTxt = (ed) => String(isFld(ed) ? (ed.value ?? '') : (ed.textContent ?? '')).replace(/\u200B/g, '').trim();
+
     const findEmptyComposer = (ex) => {
       const ed = [
         qs(BOX + ' ' + CE + ',' + BOX + ' textarea'),
@@ -176,8 +178,7 @@
         safe(() => qs('#antigravity\\.agentSidePanelInputBox ' + CE)),
       ].find((el) => el && !inSide(el));
       if (!ed) { showToast(P()[10], 'warn'); return { err: fail('no-composer', ex) }; }
-      const txt = String(isFld(ed) ? (ed.value ?? '') : (ed.textContent ?? '')).replace(/\u200B/g, '').trim();
-      if (txt) { showToast(P()[8], 'warn'); return { err: fail('draft-not-empty', ex) }; }
+      if (edTxt(ed)) { showToast(P()[8], 'warn'); return { err: fail('draft-not-empty', ex) }; }
       return { ed };
     };
 
@@ -197,17 +198,19 @@
       if (!ed || !text) return;
       safe(() => ed.focus?.());
       let emit = 0;
-      if (isFld(ed)) { ed.value = String(ed.value || '') + text; emit = 1; }
-      else {
+      if (isFld(ed)) {
+        const v = String(ed.value || '') + text, p = W['HTML' + (/^I/i.test(ed.tagName) ? 'Input' : 'TextArea') + 'Element']?.prototype;
+        if (!safe(() => (Object.getOwnPropertyDescriptor(p, 'value').set.call(ed, v), 1))) ed.value = v;
+        emit = 1;
+      } else {
         safe(() => {
           const s = getSel();
           if (s?.removeAllRanges && doc?.createRange) {
             const r = doc.createRange(); r.selectNodeContents(ed); r.collapse(false); s.removeAllRanges(); s.addRange(r);
           }
         });
-        const prev = String(ed.textContent || '');
-        if (!safe(() => doc?.execCommand?.('insertText', false, text)) || String(ed.textContent || '') === prev) {
-          ed.textContent = prev + text;
+        if (safe(() => doc?.execCommand?.('insertText', false, text)) !== true) {
+          ed.textContent = String(ed.textContent || '') + text;
           emit = 1;
         }
       }
@@ -268,21 +271,34 @@
         const quote = norm === '/compact' ? '' : clip(selectedText, 1200, 1);
         insertText(ed, norm);
 
-        // 最多 4 轮短探测原生斜杠菜单（覆盖 40~160ms React 渲染窗口，命中即停）
-        const re = new RegExp('(?:^|\\s)' + norm + '(?:\\s|$)', 'i');
-        let opt = null;
-        for (let t = 0; t < 4 && !opt; t++) {
+        // 最多 10 轮短探测原生斜杠菜单（兼容 v2.34 typeahead-item-* 无前导 / 的 label 与旧版 listbox，命中即停）
+        const bare = norm.slice(1);
+        const re = new RegExp('(?:^|\\s)/?' + bare.replace('-', '\\-') + '(?:\\s|$)', 'i');
+        let opt = null, pickEl = null;
+        for (let t = 0; t < 10 && !opt; t++) {
           await waitStep();
           const ab = guard();
           if (ab) return ab;
           for (const o of qa(SLASH)) {
+            if (o.getAttribute?.('aria-disabled') === 'true' || qs('[data-testid="menu-category-row"],[aria-disabled="true"]', o)) continue;
+            const le = qs('[data-testid="menu-option-label"]', o);
+            if (le) {
+              const lv = String(le.textContent || '').trim().toLowerCase();
+              if (lv === bare || lv === norm) { opt = o; pickEl = le; break; }
+              continue;
+            }
             const lbl = String(o.textContent || o.getAttribute?.('data-value') || '').trim();
             if (re.test(lbl)) { opt = o; break; }
             if (!opt && lbl.toLowerCase().includes(norm)) opt = o;
           }
         }
-        const pickedFromMenu = !!opt?.click;
-        if (pickedFromMenu) safe(() => opt.click());
+        pickEl = pickEl || opt;
+        const pickedFromMenu = !!pickEl?.click;
+        if (pickedFromMenu) safe(() => pickEl.click());
+        else {
+          const cur = edTxt(ed).toLowerCase();
+          if (cur.startsWith(norm) && cur.slice(norm.length).trimStart().startsWith(norm)) return fail('duplicate-command', cx);
+        }
 
         if (quote) {
           if (pickedFromMenu) {
@@ -446,13 +462,18 @@
     };
 
     const onCtx = (ev) => {
-      safe(() => {
-        if (destroyed || !enabled || !ev || ev.shiftKey === true) return;
+      try {
+        if (destroyed || !enabled || !ev || ev.shiftKey === true || ev.defaultPrevented) return;
         const el = toEl(ev.target);
         if (!el || el.isContentEditable === true || !el.closest?.(CONV) || el.closest?.(EXCL)) return;
+        if (el.closest?.('.ag-cs-inline-diff-box')) {
+          const s = getSel();
+          const selTxt = !s || s.isCollapsed === true ? '' : clip(s.toString?.());
+          if (!selTxt) return;
+        }
         stop(ev);
         openAt(ev.clientX, ev.clientY);
-      });
+      } catch {}
     };
     const onOutside = (ev) => { safe(() => { const t = ev?.target; if (menuEl && !(t && (menuEl.contains?.(t) || toEl(t)?.closest?.('.ag-cs-ctx-menu') === menuEl))) close(); }); };
     const onScroll = (ev) => { safe(() => { if (menuEl && ev?.target !== menuEl) close(); }); };
@@ -470,7 +491,7 @@
     const toggleCtx = (on) => {
       if (bound === on || (on && (destroyed || !doc))) return;
       bound = on;
-      doc?.[on ? 'addEventListener' : 'removeEventListener']?.('contextmenu', onCtx, false);
+      doc?.[on ? 'addEventListener' : 'removeEventListener']?.('contextmenu', onCtx, true);
     };
 
     const isOpen = () => !!(menuEl && menuEl.isConnected !== false);
