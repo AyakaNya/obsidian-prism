@@ -44,7 +44,7 @@ namespace AgyClaudeStyle
             string manifestPath = Path.Combine(baseDir, "manifest.json");
             Dictionary<string, object> raw = MiniJson.ParseObject(File.ReadAllText(manifestPath, Encoding.UTF8));
             PluginManifest m = new PluginManifest();
-            m.Version = GetString(raw, "version", "1.0.6");
+            m.Version = GetString(raw, "version", "1.0.7-beta.1");
             m.StyleId = GetString(raw, "styleId", "ag-prism-css");
             m.SettingBinding = GetString(raw, "settingBinding", "__agPrismSetting");
             m.RemoveExpression = GetString(raw, "removeExpression", "");
@@ -571,6 +571,10 @@ namespace AgyClaudeStyle
             {
                 res["smoothCaret"] = ToBoolOnOff(res["smoothCaret"]);
             }
+            if (res.ContainsKey("contextMenu"))
+            {
+                res["contextMenu"] = ToBoolOnOff(res["contextMenu"]);
+            }
             if (res.ContainsKey("codeLigatures"))
             {
                 object cl = res["codeLigatures"];
@@ -583,6 +587,26 @@ namespace AgyClaudeStyle
                     string cls = cl as string;
                     res["codeLigatures"] = cls != null && (string.Equals(cls, "on", StringComparison.OrdinalIgnoreCase) || string.Equals(cls, "true", StringComparison.OrdinalIgnoreCase));
                 }
+            }
+            string[] boolOnOffKeys = new string[] { "telemetryModule", "effortSliderModule", "omniModule", "sidebarStudio", "autoUpdate", "sidebarNavFold" };
+            for (int i = 0; i < boolOnOffKeys.Length; i++)
+            {
+                string k = boolOnOffKeys[i];
+                object bv;
+                if (res.TryGetValue(k, out bv) && bv is bool)
+                {
+                    res[k] = (bool)bv ? "on" : "off";
+                }
+            }
+            object palVal;
+            if (res.TryGetValue("palette", out palVal) && string.Equals(palVal as string, "claude", StringComparison.Ordinal))
+            {
+                res["palette"] = "warm";
+            }
+            object mascotVal;
+            if (res.TryGetValue("mascot", out mascotVal) && string.Equals(mascotVal as string, "dual", StringComparison.Ordinal))
+            {
+                res["mascot"] = "crab";
             }
             return res;
         }
@@ -1956,8 +1980,22 @@ namespace AgyClaudeStyle
             sb.Append("    try { window.__agPrismTelemetry?.sync?.(effectiveCfg); } catch {}\n");
             sb.Append("    try { window.__agPrismEffortSlider?.sync?.(effectiveCfg); } catch {}\n");
             sb.Append("    try { window.__agPrismThought?.sync?.(effectiveCfg); } catch {}\n");
+            sb.Append("    try { window.__agPrismInlineDiff?.sync?.(effectiveCfg); } catch {}\n");
             sb.Append("    try { if (effectiveCfg.omniModule === 'off') window.__agPrismOmni?.destroy?.(); else window.__agPrismOmni?.sync?.(effectiveCfg, window.__agPrismOmniServerMeta || null); } catch {}\n");
+            sb.Append("    if (effectiveCfg && effectiveCfg.sidebarStudio !== 'on') {\n");
+            sb.Append("      try { window.__agPrismSidebar?.sync?.(effectiveCfg, window.__agPrismSidebarMeta || null); } catch {}\n");
+            sb.Append("      try { window.__agPrismSidebar?.destroy?.(); } catch {}\n");
+            sb.Append("      try { delete window.__agPrismSidebar; } catch {}\n");
+            sb.Append("      try { if (document.documentElement) ['data-ag-prism-mode', 'data-ag-prism-chat-kind', 'data-ag-prism-chat-telemetry', 'data-ag-cs-space', 'data-ag-cs-space-palette', 'data-ag-cs-space-accent'].forEach((a) => document.documentElement.removeAttribute(a)); } catch {}\n");
+            sb.Append("    } else {\n");
+            sb.Append("      try { window.__agPrismSidebar?.sync?.(effectiveCfg, window.__agPrismSidebarMeta || null); } catch {}\n");
+            sb.Append("    }\n");
             sb.Append("    try { if (effectiveCfg.hostLocalization === 'off' || (effectiveCfg.hostLocalization !== 'on' && effectiveCfg.language && effectiveCfg.language !== 'zh-CN' && effectiveCfg.language !== 'auto')) window.__agPrismHostI18n?.destroy?.(); } catch {}\n");
+            sb.Append("    if (document.documentElement) {\n");
+            sb.Append("      if (effectiveCfg && effectiveCfg.thoughtTranslate && effectiveCfg.thoughtTranslate !== 'off') document.documentElement.setAttribute('data-ag-prism-thought-view', effectiveCfg.thoughtView === 'bilingual' ? 'bilingual' : 'immersive');\n");
+            sb.Append("      else document.documentElement.removeAttribute('data-ag-prism-thought-view');\n");
+            sb.Append("      document.documentElement.setAttribute('data-ag-prism-sidebar-studio', effectiveCfg && effectiveCfg.sidebarStudio === 'on' ? 'on' : 'off');\n");
+            sb.Append("    }\n");
             sb.Append("    return { ok: true, refreshed: true, state: liveState };\n");
             sb.Append("  })()");
             return sb.ToString();
@@ -1995,6 +2033,427 @@ namespace AgyClaudeStyle
             sb.Append("  try { window.__agPrismOmni?.sync?.(liveCfg, serverMeta); } catch {}\n");
             sb.Append("  if (liveCfg && liveCfg.omniModule === 'off') return { ok: true, status: 'disabled' };\n");
             sb.Append("  return { ok: true, status: reused ? 'synced' : (window.__agPrismOmni ? 'mounted' : 'ready') };\n");
+            sb.Append("})()");
+            return sb.ToString();
+        }
+
+        public const string ThoughtRemoveExpression =
+            "(() => {\n" +
+            "  try { window.__agPrismThought?.destroy?.(); } catch {}\n" +
+            "  try { document.querySelectorAll?.('[data-testid=\"prism-thought-ai-config\"]')?.forEach?.((el) => el.remove()); } catch {}\n" +
+            "  try { delete window.__agPrismThought; } catch {}\n" +
+            "  try { delete globalThis.__agPrismThought; } catch {}\n" +
+            "  try { delete window.__agPrismThoughtSettingsUi; } catch {}\n" +
+            "  try { delete globalThis.__agPrismThoughtSettingsUi; } catch {}\n" +
+            "  try {\n" +
+            "    const sec = document.getElementById?.('ag-cs-settings-sec') || document.getElementById?.('ag-prism-settings-sec');\n" +
+            "    if (sec) {\n" +
+            "      sec.__prismThoughtUiHandle = null;\n" +
+            "      sec.__prismMountThoughtUi?.();\n" +
+            "    }\n" +
+            "  } catch {}\n" +
+            "  return { ok: true, status: 'off' };\n" +
+            "})()";
+
+        public static bool ShouldEnableThought(Dictionary<string, object> cfg)
+        {
+            if (cfg == null) return false;
+            Dictionary<string, object> reconciled = ReconcileConfigAliases(cfg);
+            object rawObj;
+            if (!reconciled.TryGetValue("thoughtTranslate", out rawObj)) return false;
+            string rawStr = rawObj as string;
+            if (string.IsNullOrEmpty(rawStr)) return false;
+            string raw = rawStr.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(raw) || raw == "off" || raw == "false" || raw == "0" || raw == "none")
+            {
+                return false;
+            }
+            return raw == "machine" || raw == "ai" || raw == "on" || raw == "auto";
+        }
+
+        private static string ResolveSafePluginFile(string pluginDir, string relPath)
+        {
+            if (string.IsNullOrEmpty(pluginDir) || string.IsNullOrEmpty(relPath)) return null;
+            try
+            {
+                string rootFull = Path.GetFullPath(pluginDir).TrimEnd('\\', '/');
+                if (string.IsNullOrEmpty(rootFull)) return null;
+                string rootPrefix = rootFull + Path.DirectorySeparatorChar;
+                string normalizedRel = relPath.Replace('/', Path.DirectorySeparatorChar).TrimStart('\\', '/');
+                string fullPath = Path.GetFullPath(Path.Combine(rootFull, normalizedRel));
+                if (!fullPath.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase)) return null;
+                if (!File.Exists(fullPath)) return null;
+                FileAttributes fileAttrs = File.GetAttributes(fullPath);
+                if ((fileAttrs & FileAttributes.ReparsePoint) != 0) return null;
+                string curDir = Path.GetDirectoryName(fullPath);
+                while (!string.IsNullOrEmpty(curDir) &&
+                       curDir.Length > rootFull.Length &&
+                       curDir.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    if ((File.GetAttributes(curDir) & FileAttributes.ReparsePoint) != 0) return null;
+                    string parent = Path.GetDirectoryName(curDir);
+                    if (string.Equals(parent, curDir, StringComparison.OrdinalIgnoreCase)) break;
+                    curDir = parent;
+                }
+                return fullPath;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static string BuildThoughtExpression(string baseDir, PluginManifest manifest)
+        {
+            Dictionary<string, object> config = ReadConfig(baseDir, manifest);
+            return BuildThoughtExpression(baseDir, config);
+        }
+
+        public static string BuildThoughtExpression(string pluginDir, Dictionary<string, object> cfg)
+        {
+            if (!ShouldEnableThought(cfg)) return "";
+            string clientPath = ResolveSafePluginFile(pluginDir, "vendor/thought-translator/thought-client.js");
+            string settingsUiPath = ResolveSafePluginFile(pluginDir, "vendor/thought-translator/thought-settings-ui.js");
+            if (string.IsNullOrEmpty(clientPath) || string.IsNullOrEmpty(settingsUiPath)) return "";
+
+            string clientSource;
+            string settingsUiSource;
+            try
+            {
+                clientSource = File.ReadAllText(clientPath, Encoding.UTF8);
+                settingsUiSource = File.ReadAllText(settingsUiPath, Encoding.UTF8);
+            }
+            catch
+            {
+                return "";
+            }
+            if (string.IsNullOrEmpty(clientSource) || string.IsNullOrEmpty(settingsUiSource)) return "";
+
+            Dictionary<string, object> reconciled = ReconcileConfigAliases(cfg);
+            Dictionary<string, object> bootCfg = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, object> kv in reconciled)
+            {
+                bootCfg[kv.Key] = kv.Value;
+            }
+            object rawModeObj;
+            string rawMode = (reconciled.TryGetValue("thoughtTranslate", out rawModeObj) && rawModeObj is string)
+                ? ((string)rawModeObj).Trim().ToLowerInvariant()
+                : "";
+            bootCfg["thoughtTranslate"] = (rawMode == "machine") ? "machine" : "ai";
+
+            string bootCfgJson = MiniJson.Stringify(bootCfg, false);
+            string codeHash = ComputeHash(clientSource + "\n" + settingsUiSource);
+            string hashJson = MiniJson.StringifyString(codeHash);
+
+            StringBuilder sb = new StringBuilder(clientSource.Length + settingsUiSource.Length + bootCfgJson.Length + 3072);
+            sb.Append("(() => {\n");
+            sb.Append("  try {\n");
+            sb.Append("    if (window.self !== window.top) return { ok: false, status: 'skipped-subframe' };\n");
+            sb.Append("  } catch {\n");
+            sb.Append("    return { ok: false, status: 'skipped-subframe' };\n");
+            sb.Append("  }\n");
+            sb.Append("  const hasDomMarker = () => {\n");
+            sb.Append("    try {\n");
+            sb.Append("      if (\n");
+            sb.Append("        document.body &&\n");
+            sb.Append("        document.body.classList &&\n");
+            sb.Append("        (document.body.classList.contains('theme-standalone') || document.body.classList.contains('monaco-workbench'))\n");
+            sb.Append("      ) {\n");
+            sb.Append("        return true;\n");
+            sb.Append("      }\n");
+            sb.Append("      return Boolean(\n");
+            sb.Append("        typeof document.querySelector === 'function' &&\n");
+            sb.Append("          document.querySelector(\n");
+            sb.Append("            '.agy-shell, .agy-home, [data-testid=\"aux-pane-split\"], [data-testid=\"conversation-view\"], [data-testid=\"agent-input-box\"], [data-testid=\"model-selector-trigger\"], .monaco-workbench'\n");
+            sb.Append("          )\n");
+            sb.Append("      );\n");
+            sb.Append("    } catch {\n");
+            sb.Append("      return false;\n");
+            sb.Append("    }\n");
+            sb.Append("  };\n");
+            sb.Append("  let needDomMarkerOnReady = false;\n");
+            sb.Append("  let isPlainHttpLocalhost = false;\n");
+            sb.Append("  try {\n");
+            sb.Append("    const loc = typeof window !== 'undefined' && window.location;\n");
+            sb.Append("    const href = loc && typeof loc.href === 'string' ? loc.href : '';\n");
+            sb.Append("    if (href) {\n");
+            sb.Append("      const low = href.toLowerCase();\n");
+            sb.Append("      if (low.startsWith('devtools://') || low.startsWith('data:') || low.startsWith('chrome:') || low.startsWith('chrome-extension:') || low.startsWith('edge:') || low.startsWith('blob:') || low.startsWith('plugin:')) {\n");
+            sb.Append("        return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("      }\n");
+            sb.Append("      if (low.startsWith('vscode-file://') || low.startsWith('app://') || low.startsWith('about:')) {\n");
+            sb.Append("        const ttl = String(document.title || '').trim();\n");
+            sb.Append("        if (/^(?:untitled|launchpad)$/i.test(ttl) || /\\/launchpad(?:\\.html)?(?:[?#]|$)/i.test(low)) {\n");
+            sb.Append("          return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("        }\n");
+            sb.Append("      }\n");
+            sb.Append("      if (low.startsWith('http:') || low.startsWith('https:')) {\n");
+            sb.Append("        const m = /^(https?):\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\])(?::\\d+)?(\\/[^?#]*)?(?:[?#]|$)/i.exec(href);\n");
+            sb.Append("        if (!m) return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("        const pathname = (m[3] || '/').toLowerCase();\n");
+            sb.Append("        if (/^\\/(?:viewer(?:\\/|$)|sandbox(?:\\/|$)|stream(?:\\/|$)|api(?:\\/|$))/.test(pathname)) {\n");
+            sb.Append("          return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("        }\n");
+            sb.Append("        if (!hasDomMarker()) {\n");
+            sb.Append("          isPlainHttpLocalhost = m[1].toLowerCase() === 'http';\n");
+            sb.Append("          const rs = String(document.readyState || '');\n");
+            sb.Append("          if (isPlainHttpLocalhost) {\n");
+            sb.Append("            if (rs === 'loading') needDomMarkerOnReady = true;\n");
+            sb.Append("            else return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("          } else if (!/\\bantigravity\\b/i.test(String(document.title || ''))) {\n");
+            sb.Append("            if (rs === 'loading') needDomMarkerOnReady = true;\n");
+            sb.Append("            else return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("          }\n");
+            sb.Append("        }\n");
+            sb.Append("      }\n");
+            sb.Append("    }\n");
+            sb.Append("  } catch {}\n");
+            sb.Append("  const getSettingsSec = () => {\n");
+            sb.Append("    try {\n");
+            sb.Append("      return document.getElementById?.('ag-cs-settings-sec') || document.getElementById?.('ag-prism-settings-sec') || null;\n");
+            sb.Append("    } catch {\n");
+            sb.Append("      return null;\n");
+            sb.Append("    }\n");
+            sb.Append("  };\n");
+            sb.Append("  const cleanupThought = () => {\n");
+            sb.Append("    try { window.__agPrismThought?.destroy?.(); } catch {}\n");
+            sb.Append("    try { document.querySelectorAll?.('[data-testid=\"prism-thought-ai-config\"]')?.forEach?.((el) => el.remove()); } catch {}\n");
+            sb.Append("    try { delete window.__agPrismThought; } catch {}\n");
+            sb.Append("    try { delete globalThis.__agPrismThought; } catch {}\n");
+            sb.Append("    try { delete window.__agPrismThoughtSettingsUi; } catch {}\n");
+            sb.Append("    try { delete globalThis.__agPrismThoughtSettingsUi; } catch {}\n");
+            sb.Append("    try {\n");
+            sb.Append("      const sec = getSettingsSec();\n");
+            sb.Append("      if (sec) {\n");
+            sb.Append("        sec.__prismThoughtUiHandle = null;\n");
+            sb.Append("        sec.__prismMountThoughtUi?.();\n");
+            sb.Append("      }\n");
+            sb.Append("    } catch {}\n");
+            sb.Append("  };\n");
+            sb.Append("  const getLiveCfg = () => {\n");
+            sb.Append("    try {\n");
+            sb.Append("      const st = window.__agPrism?.getState?.();\n");
+            sb.Append("      return st && st.cfg && typeof st.cfg === 'object' ? st.cfg : null;\n");
+            sb.Append("    } catch {\n");
+            sb.Append("      return null;\n");
+            sb.Append("    }\n");
+            sb.Append("  };\n");
+            sb.Append("  const bootCfg = ").Append(bootCfgJson).Append(";\n");
+            sb.Append("  const initialLiveCfg = getLiveCfg();\n");
+            sb.Append("  if (initialLiveCfg && initialLiveCfg.thoughtTranslate === 'off') {\n");
+            sb.Append("    cleanupThought();\n");
+            sb.Append("    return { ok: true, status: 'off', skippedByLiveCfg: true };\n");
+            sb.Append("  }\n");
+            sb.Append("  const targetHash = ").Append(hashJson).Append(";\n");
+            sb.Append("  const mountOrReuse = () => {\n");
+            sb.Append("    if (needDomMarkerOnReady && !hasDomMarker() && (isPlainHttpLocalhost || !/\\bantigravity\\b/i.test(String(document.title || '')))) {\n");
+            sb.Append("      return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("    }\n");
+            sb.Append("    const liveCfg = getLiveCfg();\n");
+            sb.Append("    if (liveCfg && liveCfg.thoughtTranslate === 'off') {\n");
+            sb.Append("      cleanupThought();\n");
+            sb.Append("      return { ok: true, status: 'off', skippedByLiveCfg: true };\n");
+            sb.Append("    }\n");
+            sb.Append("    const effectiveCfg = liveCfg || bootCfg;\n");
+            sb.Append("    const existingThought = window.__agPrismThought;\n");
+            sb.Append("    const existingUi = window.__agPrismThoughtSettingsUi || globalThis.__agPrismThoughtSettingsUi;\n");
+            sb.Append("    if (\n");
+            sb.Append("      existingThought &&\n");
+            sb.Append("      existingThought.__prismCodeHash === targetHash &&\n");
+            sb.Append("      existingUi &&\n");
+            sb.Append("      existingUi.__prismCodeHash === targetHash\n");
+            sb.Append("    ) {\n");
+            sb.Append("      try { existingThought.sync?.(effectiveCfg); } catch {}\n");
+            sb.Append("      try { window.__agPrism?.syncAbsorbed?.(); } catch {}\n");
+            sb.Append("      try { getSettingsSec()?.__prismMountThoughtUi?.(); } catch {}\n");
+            sb.Append("      return { ok: true, reused: true, codeHash: targetHash };\n");
+            sb.Append("    }\n");
+            sb.Append("    cleanupThought();\n");
+            sb.Append("    ;").Append(clientSource).Append(";\n");
+            sb.Append("    ;").Append(settingsUiSource).Append(";\n");
+            sb.Append("    const mountedThought = window.__agPrismThought || globalThis.__agPrismThought;\n");
+            sb.Append("    const mountedUi = window.__agPrismThoughtSettingsUi || globalThis.__agPrismThoughtSettingsUi;\n");
+            sb.Append("    if (mountedThought && typeof mountedThought === 'object') {\n");
+            sb.Append("      mountedThought.__prismCodeHash = targetHash;\n");
+            sb.Append("      try { window.__agPrismThought = mountedThought; } catch {}\n");
+            sb.Append("      try { globalThis.__agPrismThought = mountedThought; } catch {}\n");
+            sb.Append("    }\n");
+            sb.Append("    if (mountedUi && typeof mountedUi === 'object') {\n");
+            sb.Append("      mountedUi.__prismCodeHash = targetHash;\n");
+            sb.Append("      try { window.__agPrismThoughtSettingsUi = mountedUi; } catch {}\n");
+            sb.Append("      try { globalThis.__agPrismThoughtSettingsUi = mountedUi; } catch {}\n");
+            sb.Append("    }\n");
+            sb.Append("    try { mountedThought?.sync?.(effectiveCfg); } catch {}\n");
+            sb.Append("    try { window.__agPrism?.syncAbsorbed?.(); } catch {}\n");
+            sb.Append("    try { getSettingsSec()?.__prismMountThoughtUi?.(); } catch {}\n");
+            sb.Append("    return { ok: true, status: 'mounted', codeHash: targetHash };\n");
+            sb.Append("  };\n");
+            sb.Append("  if ((needDomMarkerOnReady || !document.documentElement) && typeof document.addEventListener === 'function') {\n");
+            sb.Append("    document.addEventListener('DOMContentLoaded', () => { try { mountOrReuse(); } catch {} }, { once: true });\n");
+            sb.Append("    return { ok: true, status: 'deferred', codeHash: targetHash };\n");
+            sb.Append("  }\n");
+            sb.Append("  return mountOrReuse();\n");
+            sb.Append("})()");
+            return sb.ToString();
+        }
+
+        public const string InlineDiffRemoveExpression =
+            "(() => {\n" +
+            "  try { window.__agPrismInlineDiff?.destroy?.(); } catch {}\n" +
+            "  try { document.getElementById?.('ag-prism-inline-diff-css')?.remove?.(); } catch {}\n" +
+            "  try { document.querySelectorAll?.('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu')?.forEach?.((el) => el.remove()); } catch {}\n" +
+            "  try { delete window.__agPrismInlineDiff; } catch {}\n" +
+            "  try { delete globalThis.__agPrismInlineDiff; } catch {}\n" +
+            "  try { delete window.__agPrismInlineDiffFactory; } catch {}\n" +
+            "  try { delete globalThis.__agPrismInlineDiffFactory; } catch {}\n" +
+            "  try { delete window.__agPrismInlineDiffResolve; } catch {}\n" +
+            "  return { ok: true, status: 'off' };\n" +
+            "})()";
+
+        public static string BuildInlineDiffExpression(string baseDir, PluginManifest manifest)
+        {
+            Dictionary<string, object> config = ReadConfig(baseDir, manifest);
+            return BuildInlineDiffExpression(baseDir, config);
+        }
+
+        public static string BuildInlineDiffExpression(string pluginDir, Dictionary<string, object> cfg)
+        {
+            string clientPath = ResolveSafePluginFile(pluginDir, "vendor/inline-diff/inline-diff-client.js");
+            if (string.IsNullOrEmpty(clientPath)) return "";
+
+            string clientSource;
+            try
+            {
+                clientSource = File.ReadAllText(clientPath, Encoding.UTF8);
+            }
+            catch
+            {
+                return "";
+            }
+            if (string.IsNullOrEmpty(clientSource)) return "";
+
+            Dictionary<string, object> bootCfg = ReconcileConfigAliases(cfg);
+            string bootCfgJson = MiniJson.Stringify(bootCfg, false);
+            string codeHash = ComputeHash(clientSource);
+            string hashJson = MiniJson.StringifyString(codeHash);
+
+            StringBuilder sb = new StringBuilder(clientSource.Length + bootCfgJson.Length + 2560);
+            sb.Append("(() => {\n");
+            sb.Append("  try {\n");
+            sb.Append("    if (window.self !== window.top) return { ok: false, status: 'skipped-subframe' };\n");
+            sb.Append("  } catch {\n");
+            sb.Append("    return { ok: false, status: 'skipped-subframe' };\n");
+            sb.Append("  }\n");
+            sb.Append("  const hasDomMarker = () => {\n");
+            sb.Append("    try {\n");
+            sb.Append("      if (\n");
+            sb.Append("        document.body &&\n");
+            sb.Append("        document.body.classList &&\n");
+            sb.Append("        (document.body.classList.contains('theme-standalone') || document.body.classList.contains('monaco-workbench'))\n");
+            sb.Append("      ) {\n");
+            sb.Append("        return true;\n");
+            sb.Append("      }\n");
+            sb.Append("      return Boolean(\n");
+            sb.Append("        typeof document.querySelector === 'function' &&\n");
+            sb.Append("          document.querySelector(\n");
+            sb.Append("            '.agy-shell, .agy-home, [data-testid=\"aux-pane-split\"], [data-testid=\"conversation-view\"], [data-testid=\"agent-input-box\"], [data-testid=\"model-selector-trigger\"], .monaco-workbench'\n");
+            sb.Append("          )\n");
+            sb.Append("      );\n");
+            sb.Append("    } catch {\n");
+            sb.Append("      return false;\n");
+            sb.Append("    }\n");
+            sb.Append("  };\n");
+            sb.Append("  let needDomMarkerOnReady = false;\n");
+            sb.Append("  let isPlainHttpLocalhost = false;\n");
+            sb.Append("  try {\n");
+            sb.Append("    const loc = typeof window !== 'undefined' && window.location;\n");
+            sb.Append("    const href = loc && typeof loc.href === 'string' ? loc.href : '';\n");
+            sb.Append("    if (href) {\n");
+            sb.Append("      const low = href.toLowerCase();\n");
+            sb.Append("      if (low.startsWith('devtools://') || low.startsWith('data:') || low.startsWith('chrome:') || low.startsWith('chrome-extension:') || low.startsWith('edge:') || low.startsWith('blob:') || low.startsWith('plugin:')) {\n");
+            sb.Append("        return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("      }\n");
+            sb.Append("      if (low.startsWith('vscode-file://') || low.startsWith('app://') || low.startsWith('about:')) {\n");
+            sb.Append("        const ttl = String(document.title || '').trim();\n");
+            sb.Append("        if (/^(?:untitled|launchpad)$/i.test(ttl) || /\\/launchpad(?:\\.html)?(?:[?#]|$)/i.test(low)) {\n");
+            sb.Append("          return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("        }\n");
+            sb.Append("      }\n");
+            sb.Append("      if (low.startsWith('http:') || low.startsWith('https:')) {\n");
+            sb.Append("        const m = /^(https?):\\/\\/(127\\.0\\.0\\.1|localhost|\\[::1\\])(?::\\d+)?(\\/[^?#]*)?(?:[?#]|$)/i.exec(href);\n");
+            sb.Append("        if (!m) return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("        const pathname = (m[3] || '/').toLowerCase();\n");
+            sb.Append("        if (/^\\/(?:viewer(?:\\/|$)|sandbox(?:\\/|$)|stream(?:\\/|$)|api(?:\\/|$))/.test(pathname)) {\n");
+            sb.Append("          return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("        }\n");
+            sb.Append("        if (!hasDomMarker()) {\n");
+            sb.Append("          isPlainHttpLocalhost = m[1].toLowerCase() === 'http';\n");
+            sb.Append("          const rs = String(document.readyState || '');\n");
+            sb.Append("          if (isPlainHttpLocalhost) {\n");
+            sb.Append("            if (rs === 'loading') needDomMarkerOnReady = true;\n");
+            sb.Append("            else return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("          } else if (!/\\bantigravity\\b/i.test(String(document.title || ''))) {\n");
+            sb.Append("            if (rs === 'loading') needDomMarkerOnReady = true;\n");
+            sb.Append("            else return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("          }\n");
+            sb.Append("        }\n");
+            sb.Append("      }\n");
+            sb.Append("    }\n");
+            sb.Append("  } catch {}\n");
+            sb.Append("  const cleanupInlineDiff = () => {\n");
+            sb.Append("    try { (window.__agPrismInlineDiff || globalThis.__agPrismInlineDiff)?.destroy?.(); } catch {}\n");
+            sb.Append("    try { document.getElementById?.('ag-prism-inline-diff-css')?.remove?.(); } catch {}\n");
+            sb.Append("    try { document.querySelectorAll?.('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu')?.forEach?.((el) => el.remove()); } catch {}\n");
+            sb.Append("    try { delete window.__agPrismInlineDiff; } catch {}\n");
+            sb.Append("    try { delete globalThis.__agPrismInlineDiff; } catch {}\n");
+            sb.Append("    try { delete window.__agPrismInlineDiffFactory; } catch {}\n");
+            sb.Append("    try { delete globalThis.__agPrismInlineDiffFactory; } catch {}\n");
+            sb.Append("    try { delete window.__agPrismInlineDiffResolve; } catch {}\n");
+            sb.Append("  };\n");
+            sb.Append("  const getLiveCfg = () => {\n");
+            sb.Append("    try {\n");
+            sb.Append("      const st = window.__agPrism?.getState?.();\n");
+            sb.Append("      return st && st.cfg && typeof st.cfg === 'object' ? st.cfg : null;\n");
+            sb.Append("    } catch {\n");
+            sb.Append("      return null;\n");
+            sb.Append("    }\n");
+            sb.Append("  };\n");
+            sb.Append("  const bootCfg = ").Append(bootCfgJson).Append(";\n");
+            sb.Append("  const targetHash = ").Append(hashJson).Append(";\n");
+            sb.Append("  const mountOrReuse = () => {\n");
+            sb.Append("    if (needDomMarkerOnReady && !hasDomMarker() && (isPlainHttpLocalhost || !/\\bantigravity\\b/i.test(String(document.title || '')))) {\n");
+            sb.Append("      return { ok: false, status: 'skipped-non-host' };\n");
+            sb.Append("    }\n");
+            sb.Append("    const effectiveCfg = getLiveCfg() || bootCfg;\n");
+            sb.Append("    const existing = window.__agPrismInlineDiff || globalThis.__agPrismInlineDiff;\n");
+            sb.Append("    if (existing && !existing.getDebugState?.()?.destroyed && existing.__prismCodeHash === targetHash && typeof existing.sync === 'function') {\n");
+            sb.Append("      try { existing.sync(effectiveCfg); } catch {}\n");
+            sb.Append("      return { ok: true, reused: true, codeHash: targetHash };\n");
+            sb.Append("    }\n");
+            sb.Append("    cleanupInlineDiff();\n");
+            sb.Append("    ;").Append(clientSource).Append(";\n");
+            sb.Append("    let mounted = window.__agPrismInlineDiff || globalThis.__agPrismInlineDiff;\n");
+            sb.Append("    const factory = window.__agPrismInlineDiffFactory || globalThis.__agPrismInlineDiffFactory;\n");
+            sb.Append("    if (!mounted && typeof factory === 'function') {\n");
+            sb.Append("      try { mounted = factory({ window, document }); } catch {}\n");
+            sb.Append("    }\n");
+            sb.Append("    if (mounted && typeof mounted === 'object') {\n");
+            sb.Append("      mounted.__prismCodeHash = targetHash;\n");
+            sb.Append("      try { window.__agPrismInlineDiff = mounted; } catch {}\n");
+            sb.Append("      try { globalThis.__agPrismInlineDiff = mounted; } catch {}\n");
+            sb.Append("    }\n");
+            sb.Append("    if (typeof factory === 'function') {\n");
+            sb.Append("      try { window.__agPrismInlineDiffFactory = factory; } catch {}\n");
+            sb.Append("      try { globalThis.__agPrismInlineDiffFactory = factory; } catch {}\n");
+            sb.Append("    }\n");
+            sb.Append("    try { mounted?.sync?.(effectiveCfg); } catch {}\n");
+            sb.Append("    return { ok: true, status: 'mounted', codeHash: targetHash };\n");
+            sb.Append("  };\n");
+            sb.Append("  if ((needDomMarkerOnReady || !document.documentElement) && typeof document.addEventListener === 'function') {\n");
+            sb.Append("    document.addEventListener('DOMContentLoaded', () => { try { mountOrReuse(); } catch {} }, { once: true });\n");
+            sb.Append("    return { ok: true, status: 'deferred', codeHash: targetHash };\n");
+            sb.Append("  }\n");
+            sb.Append("  return mountOrReuse();\n");
             sb.Append("})()");
             return sb.ToString();
         }
@@ -2056,7 +2515,12 @@ namespace AgyClaudeStyle
             sb.Append("      try { window.__agPrismTelemetry?.destroy?.(); } catch {}\n");
             sb.Append("      try { window.__agPrismEffortSlider?.destroy?.(); } catch {}\n");
             sb.Append("      try { window.__agPrismThought?.destroy?.(); } catch {}\n");
+            sb.Append("      try { document.querySelectorAll?.('[data-testid=\"prism-thought-ai-config\"]')?.forEach?.((el) => el.remove()); } catch {}\n");
+            sb.Append("      try { window.__agPrismInlineDiff?.destroy?.(); } catch {}\n");
+            sb.Append("      try { document.querySelectorAll?.('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu')?.forEach?.((el) => el.remove()); } catch {}\n");
             sb.Append("      try { window.__agPrismOmni?.destroy?.(); } catch {}\n");
+            sb.Append("      try { window.__agPrismContextMenu?.destroy?.(); } catch {}\n");
+            sb.Append("      try { document.querySelectorAll?.('.ag-cs-ctx-menu, .ag-cs-ctx-toast')?.forEach?.((el) => el.remove()); } catch {}\n");
             sb.Append("      try { window.__agPrismHostI18n?.destroy?.(); document.documentElement?.removeAttribute?.('data-ag-prism-host-i18n'); } catch {}\n");
             sb.Append("      try { document.documentElement?.removeAttribute?.('data-ag-cs-model-menu'); document.querySelectorAll?.('[data-ag-cs-aux-dual],[data-ag-cs-model-overlay]').forEach((el) => { el.removeAttribute('data-ag-cs-aux-dual'); el.removeAttribute('data-ag-cs-model-overlay'); }); } catch {}\n");
             sb.Append("      try { window.__agPrism?.destroy?.(); } catch {}\n");
@@ -2064,7 +2528,8 @@ namespace AgyClaudeStyle
             sb.Append("      try { document.getElementById('ag-claude-style-css')?.remove(); } catch {}\n");
             sb.Append("      try { document.getElementById('ag-prism-settings-v101-css')?.remove(); } catch {}\n");
             sb.Append("      try { document.getElementById('ag-prism-omni-css')?.remove(); } catch {}\n");
-            sb.Append("      delete window.__agPrismOmni; delete window.__agPrism; delete window.__agClaudeStyle;\n");
+            sb.Append("      try { document.getElementById('ag-prism-inline-diff-css')?.remove(); } catch {}\n");
+            sb.Append("      delete window.__agPrismThought; delete window.__agPrismThoughtSettingsUi; delete globalThis.__agPrismThoughtSettingsUi; delete window.__agPrismInlineDiff; delete globalThis.__agPrismInlineDiff; delete window.__agPrismInlineDiffFactory; delete globalThis.__agPrismInlineDiffFactory; delete window.__agPrismInlineDiffResolve; delete window.__agPrismOmni; delete window.__agPrismContextMenu; delete globalThis.__agPrismContextMenu; delete window.__agPrism; delete window.__agClaudeStyle;\n");
             sb.Append("    };\n");
             sb.Append("    const hasDomWorkbenchMarkers = () => {\n");
             sb.Append("      try {\n");
@@ -2116,8 +2581,7 @@ namespace AgyClaudeStyle
             sb.Append("          existingPrism.codeHash === bootCfg.codeHash &&\n");
             sb.Append("          typeof existingPrism.refreshConfig === 'function' &&\n");
             sb.Append("          window.__agPrismTelemetry &&\n");
-            sb.Append("          window.__agPrismEffortSlider &&\n");
-            sb.Append("          window.__agPrismThought\n");
+            sb.Append("          window.__agPrismEffortSlider\n");
             sb.Append("        );\n");
             sb.Append("        if (bundleUnchanged) {\n");
             sb.Append("          existingPrism.refreshConfig(bootCfg);\n");
@@ -2126,6 +2590,7 @@ namespace AgyClaudeStyle
             sb.Append("          try { window.__agPrismEffortSlider?.destroy?.(); } catch {}\n");
             sb.Append("          try { window.__agPrismThought?.destroy?.(); } catch {}\n");
             sb.Append("          try { window.__agPrismOmni?.destroy?.(); } catch {}\n");
+            sb.Append("          try { window.__agPrismContextMenu?.destroy?.(); } catch {}\n");
             sb.Append("          try { document.querySelectorAll?.('[data-ag-prism-fallback=\"1\"]').forEach((n) => n.remove()); } catch {}\n");
             sb.Append("          ").Append(bundle).Append('\n');
             sb.Append("          if (typeof globalThis.__agCsUiMain === 'function') {\n");

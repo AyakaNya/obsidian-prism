@@ -13,10 +13,12 @@ const {
   LEGACY_SETTING_BINDING,
   OMNI_BINDING,
   SIDEBAR_BINDING,
+  INLINE_DIFF_BINDING,
   validateConfigEntry,
   reconcileConfigAliases,
   isEligibleTarget,
   readConfig,
+  writeConfig,
   readPidFromLockFile,
   isExpectedDaemonProcess,
   readPort,
@@ -29,7 +31,29 @@ const {
   shouldEnableHostI18n,
   buildHostI18nExpression,
   HOST_I18N_REMOVE_EXPRESSION,
+  shouldEnableThought,
+  buildThoughtExpression,
+  THOUGHT_REMOVE_EXPRESSION,
+  buildInlineDiffInjectExpression,
+  INLINE_DIFF_REMOVE_EXPRESSION,
 } = require('./cdp');
+
+const FALLBACK_THOUGHT_REMOVE_EXPRESSION =
+  "(() => { try { window.__agPrismThought?.destroy?.(); } catch {} try { document.querySelectorAll('[data-testid=\"prism-thought-ai-config\"]').forEach((n) => n.remove()); } catch {} try { delete window.__agPrismThought; } catch {} try { delete globalThis.__agPrismThought; } catch {} try { delete window.__agPrismThoughtSettingsUi; } catch {} try { delete globalThis.__agPrismThoughtSettingsUi; } catch {} return { ok: true, status: 'off' }; })()";
+const FALLBACK_INLINE_DIFF_REMOVE_EXPRESSION =
+  "(() => { try { window.__agPrismInlineDiff?.destroy?.(); } catch {} try { document.getElementById('ag-prism-inline-diff-css')?.remove(); } catch {} try { document.querySelectorAll('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu').forEach((n) => n.remove()); } catch {} try { delete window.__agPrismInlineDiff; } catch {} try { delete globalThis.__agPrismInlineDiff; } catch {} try { delete window.__agPrismInlineDiffFactory; } catch {} try { delete globalThis.__agPrismInlineDiffFactory; } catch {} try { delete window.__agPrismInlineDiffResolve; } catch {} return { ok: true, status: 'off' }; })()";
+const INLINE_DIFF_MAX_PAYLOAD_BYTES = 16384;
+const INLINE_DIFF_MAX_URI_LENGTH = 2048;
+
+function isThoughtEnabledForConfig(cfg, checker = shouldEnableThought) {
+  try {
+    if (typeof checker === 'function') return Boolean(checker(cfg));
+    const mode = typeof cfg?.thoughtTranslate === 'string' ? cfg.thoughtTranslate.trim().toLowerCase() : 'off';
+    return Boolean(mode && mode !== 'off');
+  } catch {
+    return false;
+  }
+}
 
 const WATCH = process.argv.includes('--watch');
 const LOG_FILE = path.join(__dirname, 'watch.log');
@@ -78,12 +102,233 @@ function updateConfigBatch(entriesObj) {
   if (count === 0) return false;
   const reconciledPatch = typeof reconcileConfigAliases === 'function' ? reconcileConfigAliases(patch) : patch;
   const next = { ...readConfig(), ...reconciledPatch };
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(next, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+  writeConfig(next);
   return true;
 }
 
 function updateConfigSetting(key, value) {
   return updateConfigBatch({ [key]: value });
+}
+
+function createFastConfigRefreshBroadcaster({
+  attached,
+  readConfig: readCfg = readConfig,
+  buildInjectExpression: buildInj = buildInjectExpression,
+  buildConfigRefreshExpression: buildRefresh = buildConfigRefreshExpression,
+  buildOmniClientExpression: buildOmni = buildOmniClientExpression,
+  buildSidebarStudioExpression: buildSidebar = buildSidebarStudioExpression,
+  shouldEnableHostI18n: shouldHostI18n = shouldEnableHostI18n,
+  buildHostI18nExpression: buildHostI18n = buildHostI18nExpression,
+  hostI18nRemoveExpression = HOST_I18N_REMOVE_EXPRESSION,
+  getThoughtHooks = () => ({
+    shouldEnable: shouldEnableThought,
+    buildExpression: buildThoughtExpression,
+    removeExpression: THOUGHT_REMOVE_EXPRESSION || FALLBACK_THOUGHT_REMOVE_EXPRESSION,
+  }),
+  getInlineDiffHooks = () => ({
+    buildExpression: buildInlineDiffInjectExpression,
+    removeExpression: INLINE_DIFF_REMOVE_EXPRESSION || FALLBACK_INLINE_DIFF_REMOVE_EXPRESSION,
+  }),
+  getOmniServerInfo = () => null,
+  getSidebarServiceReady = () => false,
+  sidebarBinding = SIDEBAR_BINDING,
+  ensureSidebarBinding = async () => false,
+  onExpressionsUpdated = null,
+} = {}) {
+  return async function broadcastFastConfigRefresh() {
+    const perEntryAck = new Map();
+    for (const entry of attached.values()) {
+      if (!entry || entry.session.closed) continue;
+      const ack = Number.isSafeInteger(entry.pendingAckEpoch) && entry.pendingAckEpoch > 0 ? entry.pendingAckEpoch : 0;
+      entry.pendingAckEpoch = 0;
+      perEntryAck.set(entry, ack);
+    }
+    const cfgNow = typeof readCfg === 'function' ? readCfg() : {};
+    const omniEnabled = cfgNow?.omniModule !== 'off';
+    const sidebarEnabled = cfgNow?.sidebarStudio === 'on';
+    const expr = buildInj();
+    const omniExpr =
+      omniEnabled && typeof buildOmni === 'function'
+        ? buildOmni(getOmniServerInfo())
+        : '';
+    const sidebarExpr =
+      sidebarEnabled && typeof buildSidebar === 'function'
+        ? buildSidebar({ binding: sidebarBinding, serviceReady: Boolean(getSidebarServiceReady()) })
+        : '';
+    const hostI18nEnabled = typeof shouldHostI18n === 'function' ? shouldHostI18n(cfgNow) : false;
+    const hostI18nExpr =
+      hostI18nEnabled && typeof buildHostI18n === 'function'
+        ? buildHostI18n(cfgNow)
+        : '';
+    const thoughtHooks = getThoughtHooks() || {};
+    const thoughtEnabled = isThoughtEnabledForConfig(cfgNow, thoughtHooks.shouldEnable);
+    const thoughtExpr =
+      thoughtEnabled && typeof thoughtHooks.buildExpression === 'function'
+        ? thoughtHooks.buildExpression(cfgNow)
+        : '';
+    const thoughtRemoveExpr = thoughtHooks.removeExpression || FALLBACK_THOUGHT_REMOVE_EXPRESSION;
+    const inlineDiffHooks = getInlineDiffHooks() || {};
+    const inlineDiffExpr =
+      typeof inlineDiffHooks.buildExpression === 'function'
+        ? inlineDiffHooks.buildExpression(cfgNow)
+        : '';
+    const inlineDiffHashMatch = inlineDiffExpr ? /const targetHash = "([^"]+)"/.exec(inlineDiffExpr) : null;
+    const inlineDiffHash = inlineDiffHashMatch ? inlineDiffHashMatch[1] : inlineDiffExpr;
+    const inlineDiffRemoveExpr = inlineDiffHooks.removeExpression || FALLBACK_INLINE_DIFF_REMOVE_EXPRESSION;
+    if (typeof onExpressionsUpdated === 'function') {
+      onExpressionsUpdated({ expr, omniExpr, sidebarExpr, hostI18nExpr, thoughtExpr, inlineDiffExpr });
+    }
+    const canFastRefresh = typeof buildRefresh === 'function';
+    const baseRefreshExpr = canFastRefresh ? buildRefresh() : null;
+    for (const entry of attached.values()) {
+      if (!entry || entry.session.closed) continue;
+      try {
+        await ensureSidebarBinding(entry.session, entry, cfgNow);
+        const entryAck = perEntryAck.get(entry) || 0;
+        const refreshExpr =
+          canFastRefresh && entryAck > 0
+            ? buildRefresh(null, { __ackEpoch: entryAck })
+            : baseRefreshExpr;
+        if (refreshExpr) {
+          const fast = await entry.session.evaluate(refreshExpr).catch(() => null);
+          if (fast && fast.refreshed) {
+            if (omniEnabled && omniExpr && !fast.skippedStale) await entry.session.evaluate(omniExpr).catch(() => {});
+            if (sidebarEnabled && sidebarExpr && !fast.skippedStale) await entry.session.evaluate(sidebarExpr).catch(() => {});
+            if (!fast.skippedStale) {
+              if (hostI18nExpr && hostI18nEnabled) await entry.session.evaluate(hostI18nExpr).catch(() => {});
+              else if (hostI18nRemoveExpression) await entry.session.evaluate(hostI18nRemoveExpression).catch(() => {});
+              if (thoughtExpr && thoughtEnabled) {
+                const thRes = await entry.session.evaluate(thoughtExpr).catch(() => null);
+                if (thRes && thRes.ok) entry.thoughtMounted = true;
+              } else if (entry.thoughtScriptId || entry.thoughtMounted) {
+                if (thoughtRemoveExpr) await entry.session.evaluate(thoughtRemoveExpr).catch(() => {});
+                entry.thoughtMounted = false;
+              }
+              if (inlineDiffExpr) {
+                if (!entry.inlineDiffSkipped && (!entry.inlineDiffMounted || !entry.inlineDiffScriptId || entry.lastInlineDiffHash !== inlineDiffHash)) {
+                  const idRes = await entry.session.evaluate(inlineDiffExpr).catch(() => null);
+                  const idSkipped = Boolean(idRes && typeof idRes.status === 'string' && idRes.status.startsWith('skipped-'));
+                  if (idRes && idRes.ok) {
+                    entry.inlineDiffMounted = true;
+                    entry.inlineDiffSkipped = false;
+                    entry.lastInlineDiffHash = inlineDiffHash;
+                  } else if (idSkipped) {
+                    entry.inlineDiffMounted = false;
+                    entry.inlineDiffSkipped = true;
+                    entry.lastInlineDiffHash = inlineDiffHash;
+                    if (idRes.status === 'skipped-non-host' && INLINE_DIFF_BINDING) {
+                      await entry.session.send('Runtime.removeBinding', { name: INLINE_DIFF_BINDING }).catch(() => {});
+                      entry.inlineDiffBindingAdded = false;
+                    }
+                  }
+                }
+              } else if (entry.inlineDiffScriptId || entry.inlineDiffMounted) {
+                if (inlineDiffRemoveExpr) await entry.session.evaluate(inlineDiffRemoveExpr).catch(() => {});
+                entry.inlineDiffMounted = false;
+                entry.inlineDiffSkipped = false;
+                entry.lastInlineDiffHash = '';
+              }
+            }
+          } else {
+            const reRes = await entry.session.evaluate(expr).catch(() => null);
+            entry.sidebarHostVerified = Boolean(reRes && reRes.status === 'ok');
+            if (reRes && reRes.status === 'skipped-non-host') {
+              if (entry.sidebarBindingAdded && sidebarBinding) {
+                await entry.session.send('Runtime.removeBinding', { name: sidebarBinding }).catch(() => {});
+                entry.sidebarBindingAdded = false;
+              }
+              if (INLINE_DIFF_BINDING) {
+                await entry.session.send('Runtime.removeBinding', { name: INLINE_DIFF_BINDING }).catch(() => {});
+                entry.inlineDiffBindingAdded = false;
+              }
+              entry.inlineDiffMounted = false;
+              entry.inlineDiffSkipped = true;
+              continue;
+            }
+            if (omniEnabled && omniExpr) await entry.session.evaluate(omniExpr).catch(() => {});
+            if (sidebarEnabled && sidebarExpr) await entry.session.evaluate(sidebarExpr).catch(() => {});
+            if (hostI18nExpr && hostI18nEnabled) await entry.session.evaluate(hostI18nExpr).catch(() => {});
+            else if (hostI18nRemoveExpression) await entry.session.evaluate(hostI18nRemoveExpression).catch(() => {});
+            if (thoughtExpr && thoughtEnabled) {
+              const thRes = await entry.session.evaluate(thoughtExpr).catch(() => null);
+              if (thRes && thRes.ok) entry.thoughtMounted = true;
+            } else if (entry.thoughtScriptId || entry.thoughtMounted) {
+              if (thoughtRemoveExpr) await entry.session.evaluate(thoughtRemoveExpr).catch(() => {});
+              entry.thoughtMounted = false;
+            }
+            if (inlineDiffExpr) {
+              const idRes = await entry.session.evaluate(inlineDiffExpr).catch(() => null);
+              const idSkipped = Boolean(idRes && typeof idRes.status === 'string' && idRes.status.startsWith('skipped-'));
+              if (idRes && idRes.ok) {
+                entry.inlineDiffMounted = true;
+                entry.inlineDiffSkipped = false;
+                entry.lastInlineDiffHash = inlineDiffHash;
+              } else if (idSkipped) {
+                entry.inlineDiffMounted = false;
+                entry.inlineDiffSkipped = true;
+                entry.lastInlineDiffHash = inlineDiffHash;
+                if (idRes.status === 'skipped-non-host' && INLINE_DIFF_BINDING) {
+                  await entry.session.send('Runtime.removeBinding', { name: INLINE_DIFF_BINDING }).catch(() => {});
+                  entry.inlineDiffBindingAdded = false;
+                }
+              }
+            } else if (entry.inlineDiffScriptId || entry.inlineDiffMounted) {
+              if (inlineDiffRemoveExpr) await entry.session.evaluate(inlineDiffRemoveExpr).catch(() => {});
+              entry.inlineDiffMounted = false;
+              entry.inlineDiffSkipped = false;
+              entry.lastInlineDiffHash = '';
+            }
+          }
+        }
+        if (entry.scriptId) {
+          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.scriptId }).catch(() => {});
+        }
+        const addRes = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: expr }).catch(() => null);
+        entry.scriptId = addRes && addRes.identifier ? addRes.identifier : null;
+        if (entry.omniScriptId) {
+          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.omniScriptId }).catch(() => {});
+          entry.omniScriptId = null;
+        }
+        if (omniEnabled && omniExpr) {
+          const omniAdd = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: omniExpr }).catch(() => null);
+          entry.omniScriptId = omniAdd && omniAdd.identifier ? omniAdd.identifier : null;
+        }
+        if (entry.sidebarScriptId) {
+          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.sidebarScriptId }).catch(() => {});
+          entry.sidebarScriptId = null;
+        }
+        if (sidebarEnabled && sidebarExpr) {
+          const sbAdd = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: sidebarExpr }).catch(() => null);
+          entry.sidebarScriptId = sbAdd && sbAdd.identifier ? sbAdd.identifier : null;
+        }
+        if (entry.hostI18nScriptId) {
+          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.hostI18nScriptId }).catch(() => {});
+          entry.hostI18nScriptId = null;
+        }
+        if (hostI18nExpr && hostI18nEnabled) {
+          const hiAdd = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: hostI18nExpr }).catch(() => null);
+          entry.hostI18nScriptId = hiAdd && hiAdd.identifier ? hiAdd.identifier : null;
+        }
+        if (entry.thoughtScriptId) {
+          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId }).catch(() => {});
+          entry.thoughtScriptId = null;
+        }
+        if (thoughtExpr && thoughtEnabled) {
+          const thAdd = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: thoughtExpr }).catch(() => null);
+          entry.thoughtScriptId = thAdd && thAdd.identifier ? thAdd.identifier : null;
+        }
+        if (entry.inlineDiffScriptId) {
+          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId }).catch(() => {});
+          entry.inlineDiffScriptId = null;
+        }
+        if (inlineDiffExpr) {
+          const idAdd = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: inlineDiffExpr }).catch(() => null);
+          entry.inlineDiffScriptId = idAdd && idAdd.identifier ? idAdd.identifier : null;
+          if (entry.inlineDiffScriptId) entry.lastInlineDiffHash = inlineDiffHash;
+        }
+      } catch {}
+    }
+  };
 }
 
 async function injectOnce() {
@@ -101,19 +346,31 @@ async function injectOnce() {
   if (targets.length === 0) throw new Error('未找到 Antigravity 窗口页面');
 
   log(`[+] 调试端口 ${port}，发现 ${targets.length} 个窗口`);
+  const cfgNow = typeof readConfig === 'function' ? readConfig() : {};
+  const omniEnabled = cfgNow?.omniModule !== 'off';
+  const sidebarEnabled = cfgNow?.sidebarStudio === 'on';
   const expr = buildInjectExpression();
-  const omniExpr = typeof buildOmniClientExpression === 'function' ? buildOmniClientExpression(null) : '';
+  const omniExpr = omniEnabled && typeof buildOmniClientExpression === 'function' ? buildOmniClientExpression(null) : '';
   const sidebarExpr =
-    typeof buildSidebarStudioExpression === 'function'
+    sidebarEnabled && typeof buildSidebarStudioExpression === 'function'
       ? buildSidebarStudioExpression({ binding: SIDEBAR_BINDING })
       : '';
   const hostI18nExpr =
     typeof buildHostI18nExpression === 'function'
       ? buildHostI18nExpression()
       : '';
+  const thoughtExpr =
+    isThoughtEnabledForConfig(cfgNow) && typeof buildThoughtExpression === 'function'
+      ? buildThoughtExpression(cfgNow)
+      : '';
+  const inlineDiffExpr =
+    typeof buildInlineDiffInjectExpression === 'function'
+      ? buildInlineDiffInjectExpression(cfgNow)
+      : '';
   for (const page of targets) {
-    const session = await CdpSession.connect(page.webSocketDebuggerUrl);
+    let session = null;
     try {
+      session = await CdpSession.connect(page.webSocketDebuggerUrl);
       const res = await session.evaluate(expr);
       if (omniExpr) {
         await session.evaluate(omniExpr).catch(() => {});
@@ -126,9 +383,19 @@ async function injectOnce() {
       } else if (HOST_I18N_REMOVE_EXPRESSION) {
         await session.evaluate(HOST_I18N_REMOVE_EXPRESSION).catch(() => {});
       }
+      if (thoughtExpr) {
+        await session.evaluate(thoughtExpr).catch(() => {});
+      } else if (THOUGHT_REMOVE_EXPRESSION) {
+        await session.evaluate(THOUGHT_REMOVE_EXPRESSION).catch(() => {});
+      }
+      if (inlineDiffExpr) {
+        await session.evaluate(inlineDiffExpr).catch(() => {});
+      }
       log(`[✓] ${shortTitle(page)} (obsidian-prism ${res.version} · 状态: ${res.status})`);
+    } catch (err) {
+      log(`[!] 跳过异常窗口 ${shortTitle(page)}: ${err.message}`);
     } finally {
-      session.close();
+      if (session) session.close();
     }
   }
 }
@@ -227,120 +494,112 @@ async function watch() {
     log(`[!] Sidebar Studio 后端服务启动跳过: ${err.message}`);
   }
 
+  const initCfg = readConfig();
   let expr = buildInjectExpression();
   let omniExpr =
-    typeof buildOmniClientExpression === 'function'
+    initCfg?.omniModule !== 'off' && typeof buildOmniClientExpression === 'function'
       ? buildOmniClientExpression(omniServer ? omniServer.getServerInfo() : null)
       : '';
   let sidebarExpr =
-    typeof buildSidebarStudioExpression === 'function'
+    initCfg?.sidebarStudio === 'on' && typeof buildSidebarStudioExpression === 'function'
       ? buildSidebarStudioExpression({ binding: SIDEBAR_BINDING, serviceReady: Boolean(sidebarService) })
       : '';
   let hostI18nExpr =
     typeof buildHostI18nExpression === 'function'
       ? buildHostI18nExpression()
       : '';
+  let activeShouldEnableThought = shouldEnableThought;
+  let activeBuildThoughtExpression = buildThoughtExpression;
+  let activeThoughtRemoveExpression = THOUGHT_REMOVE_EXPRESSION || FALLBACK_THOUGHT_REMOVE_EXPRESSION;
+  let thoughtExpr = (() => {
+    const cfg = readConfig();
+    return isThoughtEnabledForConfig(cfg, activeShouldEnableThought) && typeof activeBuildThoughtExpression === 'function'
+      ? activeBuildThoughtExpression(cfg)
+      : '';
+  })();
+  let activeBuildInlineDiffExpression = buildInlineDiffInjectExpression;
+  let activeInlineDiffRemoveExpression = INLINE_DIFF_REMOVE_EXPRESSION || FALLBACK_INLINE_DIFF_REMOVE_EXPRESSION;
+  let inlineDiffExpr =
+    typeof activeBuildInlineDiffExpression === 'function'
+      ? activeBuildInlineDiffExpression(initCfg)
+      : '';
+  let _lazyReadSafeInlineDiff = null;
+  async function loadReadSafeInlineDiff() {
+    if (typeof _lazyReadSafeInlineDiff === 'function') return _lazyReadSafeInlineDiff;
+    try {
+      const daemonMod = await import('./sidecars/daemon/main.mjs');
+      if (typeof daemonMod?.readSafeInlineDiff === 'function') {
+        _lazyReadSafeInlineDiff = daemonMod.readSafeInlineDiff;
+        return _lazyReadSafeInlineDiff;
+      }
+    } catch {}
+    return null;
+  }
 
   let selfConfigWriteUntil = 0;
 
   function isTrustedMainFrameContext(entry, executionContextId) {
-    if (!entry) return false;
-    const hasCtxId = typeof executionContextId === 'number';
-    if (hasCtxId && entry.contextFrames && entry.contextFrames.has(executionContextId)) {
-      const meta = entry.contextFrames.get(executionContextId);
-      if (!meta.isDefault || (meta.type && meta.type !== 'default')) return false;
-      if (entry.mainFrameId && meta.frameId && meta.frameId !== entry.mainFrameId) return false;
-      return true;
+    if (!entry || typeof executionContextId !== 'number') return false;
+    if (!entry.hasFrameTree || !entry.mainFrameId || !entry.contextFrames || !entry.contextFrames.has(executionContextId)) {
+      return false;
     }
-    if (entry.hasFrameTree) {
-      if (!hasCtxId) return false;
-      if (entry.contextFrames && entry.contextFrames.size > 0) return false;
-    }
+    const meta = entry.contextFrames.get(executionContextId);
+    if (!meta || !meta.isDefault || (meta.type && meta.type !== 'default')) return false;
+    if (!meta.frameId || meta.frameId !== entry.mainFrameId) return false;
     return true;
   }
 
-  async function broadcastFastConfigRefresh() {
-    const perEntryAck = new Map();
-    for (const entry of attached.values()) {
-      if (!entry || entry.session.closed) continue;
-      const ack = Number.isSafeInteger(entry.pendingAckEpoch) && entry.pendingAckEpoch > 0 ? entry.pendingAckEpoch : 0;
-      entry.pendingAckEpoch = 0;
-      perEntryAck.set(entry, ack);
-    }
-    expr = buildInjectExpression();
-    omniExpr =
-      typeof buildOmniClientExpression === 'function'
-        ? buildOmniClientExpression(omniServer ? omniServer.getServerInfo() : null)
-        : '';
-    sidebarExpr =
-      typeof buildSidebarStudioExpression === 'function'
-        ? buildSidebarStudioExpression({ binding: SIDEBAR_BINDING, serviceReady: Boolean(sidebarService) })
-        : '';
-    const cfgNow = readConfig();
-    const sidebarEnabled = cfgNow?.sidebarStudio === 'on';
-    const hostI18nEnabled = typeof shouldEnableHostI18n === 'function' ? shouldEnableHostI18n(cfgNow) : false;
-    hostI18nExpr =
-      hostI18nEnabled && typeof buildHostI18nExpression === 'function'
-        ? buildHostI18nExpression(cfgNow)
-        : '';
-    const canFastRefresh = typeof buildConfigRefreshExpression === 'function';
-    const baseRefreshExpr = canFastRefresh ? buildConfigRefreshExpression() : null;
-    for (const entry of attached.values()) {
-      if (!entry || entry.session.closed) continue;
-      try {
-        const entryAck = perEntryAck.get(entry) || 0;
-        const refreshExpr =
-          canFastRefresh && entryAck > 0
-            ? buildConfigRefreshExpression(null, { __ackEpoch: entryAck })
-            : baseRefreshExpr;
-        if (refreshExpr) {
-          const fast = await entry.session.evaluate(refreshExpr).catch(() => null);
-          if (fast && fast.refreshed) {
-            if (omniExpr && !fast.skippedStale) await entry.session.evaluate(omniExpr).catch(() => {});
-            if (sidebarExpr && !fast.skippedStale) await entry.session.evaluate(sidebarExpr).catch(() => {});
-            if (!fast.skippedStale) {
-              if (hostI18nExpr && hostI18nEnabled) await entry.session.evaluate(hostI18nExpr).catch(() => {});
-              else if (HOST_I18N_REMOVE_EXPRESSION) await entry.session.evaluate(HOST_I18N_REMOVE_EXPRESSION).catch(() => {});
-            }
-          } else {
-            await entry.session.evaluate(expr).catch(() => {});
-            if (omniExpr) await entry.session.evaluate(omniExpr).catch(() => {});
-            if (sidebarExpr) await entry.session.evaluate(sidebarExpr).catch(() => {});
-            if (hostI18nExpr && hostI18nEnabled) await entry.session.evaluate(hostI18nExpr).catch(() => {});
-            else if (HOST_I18N_REMOVE_EXPRESSION) await entry.session.evaluate(HOST_I18N_REMOVE_EXPRESSION).catch(() => {});
-          }
-        }
-        if (entry.scriptId) {
-          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.scriptId }).catch(() => {});
-        }
-        const addRes = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: expr }).catch(() => null);
-        entry.scriptId = addRes && addRes.identifier ? addRes.identifier : null;
-        if (entry.omniScriptId) {
-          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.omniScriptId }).catch(() => {});
-        }
-        if (omniExpr) {
-          const omniAdd = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: omniExpr }).catch(() => null);
-          entry.omniScriptId = omniAdd && omniAdd.identifier ? omniAdd.identifier : null;
-        }
-        if (entry.sidebarScriptId) {
-          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.sidebarScriptId }).catch(() => {});
-          entry.sidebarScriptId = null;
-        }
-        if (sidebarExpr && sidebarEnabled) {
-          const sbAdd = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: sidebarExpr }).catch(() => null);
-          entry.sidebarScriptId = sbAdd && sbAdd.identifier ? sbAdd.identifier : null;
-        }
-        if (entry.hostI18nScriptId) {
-          await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.hostI18nScriptId }).catch(() => {});
-          entry.hostI18nScriptId = null;
-        }
-        if (hostI18nExpr && hostI18nEnabled) {
-          const hiAdd = await entry.session.send('Page.addScriptToEvaluateOnNewDocument', { source: hostI18nExpr }).catch(() => null);
-          entry.hostI18nScriptId = hiAdd && hiAdd.identifier ? hiAdd.identifier : null;
-        }
-      } catch {}
-    }
+  async function ensureSidebarBinding(session, entry, cfg = readConfig()) {
+    if (!SIDEBAR_BINDING || !session || session.closed || !entry) return false;
+    if (cfg?.sidebarStudio !== 'on') return false;
+    if (entry.sidebarBindingAdded) return true;
+    if (entry.sidebarBindingPending) return entry.sidebarBindingPending;
+    const pending = session
+      .send('Runtime.addBinding', { name: SIDEBAR_BINDING })
+      .then(() => {
+        entry.sidebarBindingAdded = true;
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => {
+        if (entry.sidebarBindingPending === pending) entry.sidebarBindingPending = null;
+      });
+    entry.sidebarBindingPending = pending;
+    return pending;
   }
+
+  const broadcastFastConfigRefresh = createFastConfigRefreshBroadcaster({
+    attached,
+    readConfig,
+    buildInjectExpression,
+    buildConfigRefreshExpression,
+    buildOmniClientExpression,
+    buildSidebarStudioExpression,
+    shouldEnableHostI18n,
+    buildHostI18nExpression,
+    hostI18nRemoveExpression: HOST_I18N_REMOVE_EXPRESSION,
+    getThoughtHooks: () => ({
+      shouldEnable: activeShouldEnableThought,
+      buildExpression: activeBuildThoughtExpression,
+      removeExpression: activeThoughtRemoveExpression,
+    }),
+    getInlineDiffHooks: () => ({
+      buildExpression: activeBuildInlineDiffExpression,
+      removeExpression: activeInlineDiffRemoveExpression,
+    }),
+    getOmniServerInfo: () => (omniServer ? omniServer.getServerInfo() : null),
+    getSidebarServiceReady: () => Boolean(sidebarService),
+    sidebarBinding: SIDEBAR_BINDING,
+    ensureSidebarBinding,
+    onExpressionsUpdated: (next) => {
+      expr = next.expr;
+      omniExpr = next.omniExpr;
+      sidebarExpr = next.sidebarExpr;
+      hostI18nExpr = next.hostI18nExpr;
+      thoughtExpr = next.thoughtExpr;
+      inlineDiffExpr = next.inlineDiffExpr;
+    },
+  });
 
   async function apply(entry) {
     if (entry.scriptId) {
@@ -355,14 +614,40 @@ async function watch() {
     entry.scriptId = identifier;
     const res = await entry.session.evaluate(expr);
     entry.sidebarHostVerified = Boolean(res && res.status === 'ok');
+    if (res && res.status === 'skipped-non-host') {
+      for (const key of ['scriptId', 'omniScriptId', 'sidebarScriptId', 'hostI18nScriptId', 'thoughtScriptId', 'inlineDiffScriptId']) {
+        if (entry[key]) {
+          await entry.session
+            .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry[key] })
+            .catch(() => {});
+          entry[key] = null;
+        }
+      }
+      if (entry.sidebarBindingAdded && SIDEBAR_BINDING) {
+        await entry.session.send('Runtime.removeBinding', { name: SIDEBAR_BINDING }).catch(() => {});
+        entry.sidebarBindingAdded = false;
+      }
+      if (INLINE_DIFF_BINDING) {
+        await entry.session.send('Runtime.removeBinding', { name: INLINE_DIFF_BINDING }).catch(() => {});
+        entry.inlineDiffBindingAdded = false;
+      }
+      entry.thoughtMounted = false;
+      entry.inlineDiffMounted = false;
+      entry.inlineDiffSkipped = true;
+      entry.lastInlineDiffHash = '';
+      return res;
+    }
 
+    const cfgNow = readConfig();
+    const omniEnabled = cfgNow?.omniModule !== 'off';
+    const sidebarEnabled = cfgNow?.sidebarStudio === 'on';
     if (entry.omniScriptId) {
       await entry.session
         .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.omniScriptId })
         .catch(() => {});
       entry.omniScriptId = null;
     }
-    if (omniExpr) {
+    if (omniEnabled && omniExpr) {
       const omniAdd = await entry.session
         .send('Page.addScriptToEvaluateOnNewDocument', { source: omniExpr })
         .catch(() => null);
@@ -376,14 +661,12 @@ async function watch() {
         .catch(() => {});
       entry.sidebarScriptId = null;
     }
-    if (sidebarExpr) {
-      const sidebarEnabled = readConfig()?.sidebarStudio === 'on';
-      if (sidebarEnabled) {
-        const sbAdd = await entry.session
-          .send('Page.addScriptToEvaluateOnNewDocument', { source: sidebarExpr })
-          .catch(() => null);
-        if (sbAdd && sbAdd.identifier) entry.sidebarScriptId = sbAdd.identifier;
-      }
+    await ensureSidebarBinding(entry.session, entry, cfgNow);
+    if (sidebarEnabled && sidebarExpr) {
+      const sbAdd = await entry.session
+        .send('Page.addScriptToEvaluateOnNewDocument', { source: sidebarExpr })
+        .catch(() => null);
+      if (sbAdd && sbAdd.identifier) entry.sidebarScriptId = sbAdd.identifier;
       await entry.session.evaluate(sidebarExpr).catch(() => {});
     }
     if (entry.hostI18nScriptId) {
@@ -401,6 +684,71 @@ async function watch() {
     } else if (HOST_I18N_REMOVE_EXPRESSION) {
       await entry.session.evaluate(HOST_I18N_REMOVE_EXPRESSION).catch(() => {});
     }
+    const hadThought = Boolean(entry.thoughtScriptId || entry.thoughtMounted);
+    if (entry.thoughtScriptId) {
+      await entry.session
+        .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId })
+        .catch(() => {});
+      entry.thoughtScriptId = null;
+    }
+    const thoughtEnabledNow = isThoughtEnabledForConfig(readConfig(), activeShouldEnableThought);
+    if (thoughtExpr && thoughtEnabledNow) {
+      const thAdd = await entry.session
+        .send('Page.addScriptToEvaluateOnNewDocument', { source: thoughtExpr })
+        .catch(() => null);
+      if (thAdd && thAdd.identifier) entry.thoughtScriptId = thAdd.identifier;
+      const thRes = await entry.session.evaluate(thoughtExpr).catch(() => null);
+      entry.thoughtMounted = Boolean(thRes && thRes.ok);
+    } else {
+      if (hadThought && activeThoughtRemoveExpression) {
+        await entry.session.evaluate(activeThoughtRemoveExpression).catch(() => {});
+      }
+      entry.thoughtMounted = false;
+    }
+    const hadInlineDiff = Boolean(entry.inlineDiffScriptId || entry.inlineDiffMounted);
+    if (entry.inlineDiffScriptId) {
+      await entry.session
+        .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId })
+        .catch(() => {});
+      entry.inlineDiffScriptId = null;
+    }
+    if (inlineDiffExpr) {
+      if (INLINE_DIFF_BINDING) {
+        await entry.session.send('Runtime.addBinding', { name: INLINE_DIFF_BINDING }).catch(() => {});
+        entry.inlineDiffBindingAdded = true;
+      }
+      const idAdd = await entry.session
+        .send('Page.addScriptToEvaluateOnNewDocument', { source: inlineDiffExpr })
+        .catch(() => null);
+      if (idAdd && idAdd.identifier) entry.inlineDiffScriptId = idAdd.identifier;
+      const idRes = await entry.session.evaluate(inlineDiffExpr).catch(() => null);
+      const idHashMatch = /const targetHash = "([^"]+)"/.exec(inlineDiffExpr);
+      const idSkipped = Boolean(idRes && typeof idRes.status === 'string' && idRes.status.startsWith('skipped-'));
+      if (idRes && idRes.ok) {
+        entry.inlineDiffMounted = true;
+        entry.inlineDiffSkipped = false;
+        entry.lastInlineDiffHash = idHashMatch ? idHashMatch[1] : inlineDiffExpr;
+      } else if (idSkipped) {
+        entry.inlineDiffMounted = false;
+        entry.inlineDiffSkipped = true;
+        entry.lastInlineDiffHash = idHashMatch ? idHashMatch[1] : inlineDiffExpr;
+        if (idRes.status === 'skipped-non-host' && INLINE_DIFF_BINDING) {
+          await entry.session.send('Runtime.removeBinding', { name: INLINE_DIFF_BINDING }).catch(() => {});
+          entry.inlineDiffBindingAdded = false;
+        }
+      } else {
+        entry.inlineDiffMounted = false;
+        entry.inlineDiffSkipped = false;
+        entry.lastInlineDiffHash = '';
+      }
+    } else {
+      if (hadInlineDiff && activeInlineDiffRemoveExpression) {
+        await entry.session.evaluate(activeInlineDiffRemoveExpression).catch(() => {});
+      }
+      entry.inlineDiffMounted = false;
+      entry.inlineDiffSkipped = false;
+      entry.lastInlineDiffHash = '';
+    }
     return res;
   }
 
@@ -414,7 +762,17 @@ async function watch() {
         scriptId: null,
         omniScriptId: null,
         sidebarScriptId: null,
+        sidebarBindingAdded: false,
+        sidebarBindingPending: null,
         hostI18nScriptId: null,
+        thoughtScriptId: null,
+        thoughtMounted: false,
+        inlineDiffScriptId: null,
+        inlineDiffBindingAdded: false,
+        inlineDiffMounted: false,
+        inlineDiffSkipped: false,
+        lastInlineDiffHash: '',
+        docGen: 0,
         mainFrameId: null,
         hasFrameTree: false,
         sidebarHostVerified: false,
@@ -432,8 +790,9 @@ async function watch() {
         const aux = ctx.auxData && typeof ctx.auxData === 'object' ? ctx.auxData : {};
         entry.contextFrames.set(ctx.id, {
           frameId: typeof aux.frameId === 'string' ? aux.frameId : '',
-          isDefault: aux.isDefault !== false,
+          isDefault: aux.isDefault === true,
           type: typeof aux.type === 'string' ? aux.type : 'default',
+          docGen: entry.docGen,
         });
       });
       session.on('Runtime.executionContextDestroyed', (params) => {
@@ -441,16 +800,20 @@ async function watch() {
       });
       session.on('Runtime.executionContextsCleared', () => {
         entry.contextFrames.clear();
+        entry.docGen += 1;
         entry.pendingAckEpoch = 0;
         entry.sidebarHostVerified = false;
+        entry.inlineDiffSkipped = false;
       });
       session.on('Page.frameNavigated', (params) => {
         const frame = params?.frame;
         if (frame && !frame.parentId && typeof frame.id === 'string' && frame.id) {
           entry.mainFrameId = frame.id;
           entry.hasFrameTree = true;
+          entry.docGen += 1;
           entry.pendingAckEpoch = 0;
           entry.sidebarHostVerified = false;
+          entry.inlineDiffSkipped = false;
         }
       });
       await session.send('Page.enable');
@@ -544,6 +907,58 @@ async function watch() {
           }
           return;
         }
+        if (name === INLINE_DIFF_BINDING) {
+          const context = typeof executionContextId === 'number' ? entry.contextFrames?.get(executionContextId) : undefined;
+          const expectedDocGen = entry.docGen;
+          const isCurrentContext = () =>
+            !session.closed &&
+            entry.sidebarHostVerified === true &&
+            isTrustedMainFrameContext(entry, executionContextId) &&
+            Boolean(context) &&
+            entry.contextFrames.get(executionContextId) === context &&
+            entry.docGen === expectedDocGen &&
+            context.docGen === entry.docGen;
+          if (!isCurrentContext()) return;
+          if (typeof payload !== 'string') return;
+          if (payload.length > INLINE_DIFF_MAX_PAYLOAD_BYTES) return;
+          if (Buffer.byteLength(payload, 'utf8') > INLINE_DIFF_MAX_PAYLOAD_BYTES) return;
+          let parsed;
+          try {
+            parsed = JSON.parse(payload);
+          } catch {
+            return;
+          }
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+          if (!Number.isSafeInteger(parsed.id) || parsed.id < 0) return;
+          if (parsed.action !== 'readInlineDiff') return;
+          if (typeof parsed.uri !== 'string' || parsed.uri.length > INLINE_DIFF_MAX_URI_LENGTH) return;
+          const reqId = serializeJsonForEval(Math.trunc(Number(parsed.id)));
+          const hints =
+            parsed.hints && typeof parsed.hints === 'object' && !Array.isArray(parsed.hints)
+              ? {
+                  additions: Number.isSafeInteger(parsed.hints.additions) && parsed.hints.additions >= 0 ? parsed.hints.additions : 0,
+                  deletions: Number.isSafeInteger(parsed.hints.deletions) && parsed.hints.deletions >= 0 ? parsed.hints.deletions : 0,
+                }
+              : undefined;
+          let resp;
+          try {
+            const reader = await loadReadSafeInlineDiff();
+            resp = reader ? await reader(parsed.uri, hints ? { hints } : {}) : { ok: false, error: 'unavailable' };
+          } catch {
+            resp = { ok: false, error: 'internal_error' };
+          }
+          if (isCurrentContext()) {
+            const resolveExpr = `window.__agPrismInlineDiffResolve?.(${reqId}, ${serializeJsonForEval(resp)})`;
+            await session
+              .send('Runtime.evaluate', {
+                expression: resolveExpr,
+                contextId: executionContextId,
+                returnByValue: true,
+              })
+              .catch(() => {});
+          }
+          return;
+        }
         if (name !== SETTING_BINDING && name !== LEGACY_SETTING_BINDING) return;
         try {
           const parsed = JSON.parse(payload);
@@ -575,9 +990,11 @@ async function watch() {
       if (OMNI_BINDING) {
         await session.send('Runtime.addBinding', { name: OMNI_BINDING }).catch(() => {});
       }
-      if (SIDEBAR_BINDING) {
-        await session.send('Runtime.addBinding', { name: SIDEBAR_BINDING }).catch(() => {});
+      if (INLINE_DIFF_BINDING) {
+        await session.send('Runtime.addBinding', { name: INLINE_DIFF_BINDING }).catch(() => {});
+        entry.inlineDiffBindingAdded = true;
       }
+      await ensureSidebarBinding(session, entry, readConfig());
       const res = await apply(entry);
       log(`[✓] 已注入 obsidian-prism: ${shortTitle(page)} (${res.status})`);
     } catch (err) {
@@ -588,6 +1005,8 @@ async function watch() {
           if (entry.omniScriptId) await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.omniScriptId });
           if (entry.sidebarScriptId) await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.sidebarScriptId });
           if (entry.hostI18nScriptId) await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.hostI18nScriptId });
+          if (entry.thoughtScriptId) await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId });
+          if (entry.inlineDiffScriptId) await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId });
         } catch {}
         entry.session.close();
       }
@@ -631,18 +1050,32 @@ async function watch() {
       try {
         delete require.cache[require.resolve('./cdp')];
         const freshCdp = require('./cdp');
+        const freshCfg = typeof freshCdp.readConfig === 'function' ? freshCdp.readConfig() : readConfig();
         expr = freshCdp.buildInjectExpression();
         omniExpr =
-          typeof freshCdp.buildOmniClientExpression === 'function'
+          freshCfg?.omniModule !== 'off' && typeof freshCdp.buildOmniClientExpression === 'function'
             ? freshCdp.buildOmniClientExpression(omniServer ? omniServer.getServerInfo() : null)
             : '';
         sidebarExpr =
-          typeof freshCdp.buildSidebarStudioExpression === 'function'
+          freshCfg?.sidebarStudio === 'on' && typeof freshCdp.buildSidebarStudioExpression === 'function'
             ? freshCdp.buildSidebarStudioExpression({ binding: SIDEBAR_BINDING, serviceReady: Boolean(sidebarService) })
             : '';
         hostI18nExpr =
           typeof freshCdp.buildHostI18nExpression === 'function'
             ? freshCdp.buildHostI18nExpression()
+            : '';
+        activeShouldEnableThought = freshCdp.shouldEnableThought;
+        activeBuildThoughtExpression = freshCdp.buildThoughtExpression;
+        activeThoughtRemoveExpression = freshCdp.THOUGHT_REMOVE_EXPRESSION || FALLBACK_THOUGHT_REMOVE_EXPRESSION;
+        thoughtExpr =
+          isThoughtEnabledForConfig(freshCfg, activeShouldEnableThought) && typeof activeBuildThoughtExpression === 'function'
+            ? activeBuildThoughtExpression(freshCfg)
+            : '';
+        activeBuildInlineDiffExpression = freshCdp.buildInlineDiffInjectExpression;
+        activeInlineDiffRemoveExpression = freshCdp.INLINE_DIFF_REMOVE_EXPRESSION || FALLBACK_INLINE_DIFF_REMOVE_EXPRESSION;
+        inlineDiffExpr =
+          typeof activeBuildInlineDiffExpression === 'function'
+            ? activeBuildInlineDiffExpression(freshCfg)
             : '';
       } catch (err) {
         log(`[!] 读取文件失败: ${err.message}`);
@@ -673,7 +1106,17 @@ async function watch() {
   setInterval(tick, 2000);
 }
 
-(WATCH ? watch() : injectOnce()).catch((err) => {
-  console.error(`[✗] ${err.message}`);
-  process.exit(1);
-});
+module.exports = {
+  injectOnce,
+  watch,
+  updateConfigBatch,
+  updateConfigSetting,
+  _createFastConfigRefreshBroadcaster: createFastConfigRefreshBroadcaster,
+};
+
+if (require.main === module) {
+  (WATCH ? watch() : injectOnce()).catch((err) => {
+    console.error(`[✗] ${err.message}`);
+    process.exit(1);
+  });
+}

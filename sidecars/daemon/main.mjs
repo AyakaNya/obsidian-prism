@@ -1,7 +1,7 @@
 // Obsidian Prism Native Sidecar Daemon (sidecars/daemon/main.mjs)
 // - Auto-discovers DevToolsActivePort across Windows/macOS/Linux + fast Target.setDiscoverTargets push
 // - Registers Page.addScriptToEvaluateOnNewDocument + Runtime.evaluate (survives Ctrl+Shift+R reloads with zero app.asar touch!)
-// - Hot-upgrades legacy instances to Obsidian Prism v1.0.6
+// - Hot-upgrades legacy instances to Obsidian Prism v1.0.7-beta.1
 // - Lazily serves real MetricsStore + DesktopUsage snapshots over __agPrismMetricsCall only when requested (0 idle CPU)
 // - Registers __agPrismRepoCall (paired with window.__agPrismRepoBridge) for live Git status & safe git pull --ff-only + hot-reload!
 
@@ -34,12 +34,20 @@ export const METRICS_BINDING = '__agPrismMetricsCall';
 export const REPO_BINDING = '__agPrismRepoCall';
 export const THOUGHT_BINDING = '__agPrismThoughtCall';
 export const USAGE_BINDING = '__agPrismUsageCall';
+export const INLINE_DIFF_BINDING = '__agPrismInlineDiffCall';
 export const SIDEBAR_BINDING = '__agPrismSidebarCall';
 export { OmniServer, OMNI_BINDING };
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function execGit(args, cwd, timeoutMs = 12000, extraConfigs = []) {
-  const cfgFlags = ['-c', 'protocol.ext.allow=never', '-c', 'submodule.recurse=false'];
+  const cfgFlags = [
+    '-c',
+    'protocol.ext.allow=never',
+    '-c',
+    'submodule.recurse=false',
+    '-c',
+    'core.fsmonitor=false',
+  ];
   for (const flag of extraConfigs) cfgFlags.push(flag);
   return new Promise((resolve, reject) => {
     execFile(
@@ -366,6 +374,1260 @@ export function copyUpdatedRuntimeFromRepo(repoDir, pluginDir, syncFilesList) {
   return synced;
 }
 
+const INLINE_DIFF_MAX_URI_LENGTH = 2048;
+const INLINE_DIFF_MAX_PAYLOAD_BYTES = 16384;
+const INLINE_DIFF_MAX_DIFF_LINES = 120;
+const INLINE_DIFF_MAX_SNAPSHOT_LINES = 80;
+const INLINE_DIFF_MAX_LINE_CHARS = 240;
+const INLINE_DIFF_MAX_READ_BYTES = 24 * 1024;
+const INLINE_DIFF_GIT_MAX_BUFFER = 512 * 1024;
+const INLINE_DIFF_REV_PARSE_TIMEOUT_MS = 3000;
+const INLINE_DIFF_GIT_DIFF_TIMEOUT_MS = 4500;
+const INLINE_DIFF_MAX_GIT_POINTER_BYTES = 4096;
+
+const INLINE_DIFF_SENSITIVE_BASENAMES = new Set([
+  'config.json',
+  'model-hub.config.json',
+  'secrets.json',
+  'credentials.json',
+  'auth.json',
+  'token.json',
+  'mcp_config.json',
+  'transcript.jsonl',
+  'transcript_full.jsonl',
+  'state.vscdb',
+  '.claude.json',
+  'keys.txt',
+  '.npmrc',
+  '.pypirc',
+  '.git-credentials',
+  '.netrc',
+  'kubeconfig',
+  'cookies',
+  'cookies-journal',
+  'login data',
+  'login data-journal',
+  'local state',
+  'web data',
+]);
+
+const INLINE_DIFF_SENSITIVE_EXTS = new Set([
+  '.env',
+  '.pem',
+  '.key',
+  '.p12',
+  '.pfx',
+  '.kdbx',
+  '.jks',
+  '.keystore',
+  '.ppk',
+  '.ovpn',
+  '.vscdb',
+  '.sqlite',
+  '.sqlite3',
+  '.db',
+]);
+
+const INLINE_DIFF_SENSITIVE_DIRS = new Set([
+  '.ssh',
+  '.aws',
+  '.gnupg',
+  '.kube',
+  '.gemini',
+  '.azure',
+  '.claude',
+  '.codex',
+]);
+
+const INLINE_DIFF_SENSITIVE_SSH_KEYS = new Set([
+  'id_rsa',
+  'id_ed25519',
+  'id_ecdsa',
+  'id_dsa',
+  'id_ed25519_sk',
+  'id_ecdsa_sk',
+]);
+
+const INLINE_DIFF_SENSITIVE_SYS_PREFIX_RE =
+  /^(?:\/(?:proc|sys|dev|etc)(?:\/|$)|(?:[a-z]:)?\/(?:windows|program files(?: \(x86\))?|programdata)(?:\/|$))/;
+
+const INLINE_DIFF_SENSITIVE_SUBPATH_RE =
+  /(?:^|\/)(?:\.config\/(?:gcloud|gh)|appdata\/roaming|appdata\/local\/google|library\/application support\/google|library\/keychains)(?:\/|$)/;
+
+const INLINE_DIFF_SENSITIVE_SYS_SUFFIXES = [
+  '/etc/shadow',
+  '/etc/gshadow',
+  '/etc/master.passwd',
+  '/etc/sudoers',
+  '/windows/system32/config/sam',
+  '/windows/system32/config/system',
+  '/windows/system32/config/security',
+];
+
+function clampPositiveInt(value, fallback, maxAllowed) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(maxAllowed, Math.floor(n));
+}
+
+function hasBlockedInlineDiffUnc(rawInput) {
+  if (typeof rawInput !== 'string' || !rawInput) return false;
+  const s = rawInput.trim();
+  if (!s) return false;
+  if (isBlockedUncPath(s)) return true;
+  // 拦截一切双斜杠/混合斜杠前导（\\、//、\/、/\、\\?\、\\.\），防止 SMB/NetNTLMv2 凭据泄露与 NT 设备路径绕过
+  if (/^[\\/]{2}/.test(s)) return true;
+  // 拦截单斜杠变体 NT 设备/对象管理器前缀（/?/、/./、\??\、/GLOBAL/UNC/、/GLOBALROOT/Device/Mup|LanmanRedirector|WebDavRedirector）
+  if (/^[\\/](?:[?.]+[\\/])+/.test(s)) return true;
+  if (/^[\\/]globalroot[\\/]/i.test(s)) return true;
+  if (
+    /^[\\/](?:global(?:root)?[\\/]+)*(?:unc|device[\\/]+(?:mup|lanmanredirector|webdavredirector|hgfs|vmhgfs|vboxsvr))(?:[\\/]|$)/i.test(
+      s
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function hasDotDotPathSegment(rawPath) {
+  if (typeof rawPath !== 'string') return true;
+  const parts = rawPath.split(/[\\/]+/);
+  return parts.some((seg) => seg === '..');
+}
+
+function isSensitiveInlineDiffPath(filePath) {
+  if (typeof filePath !== 'string' || !filePath) return true;
+  let normalized = filePath.replace(/\\/g, '/');
+  while (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+  if (!normalized) return true;
+  const lower = normalized.toLowerCase();
+  const base = path.posix.basename(lower);
+  if (!base) return true;
+  // 防 Windows 末尾点/空格归一化绕过（例如 config.json. / .env ）
+  const cleanBase = base.replace(/[. ]+$/, '');
+  const basesToCheck = cleanBase && cleanBase !== base ? [base, cleanBase] : [base];
+  for (const b of basesToCheck) {
+    // 拦截 .env* 及隐私配置与凭据文件
+    if (b.startsWith('.env')) return true;
+    if (b.endsWith('_history')) return true;
+    if (b.startsWith('obsidian-prism-thought') && (b.endsWith('.json') || b.endsWith('.json.tmp'))) {
+      return true;
+    }
+    if (INLINE_DIFF_SENSITIVE_BASENAMES.has(b)) return true;
+    if (INLINE_DIFF_SENSITIVE_SSH_KEYS.has(b)) return true;
+    const ext = path.posix.extname(b);
+    if (ext && INLINE_DIFF_SENSITIVE_EXTS.has(ext)) return true;
+  }
+  const cleanLower = lower.replace(/[. ]+$/, '');
+  if (
+    INLINE_DIFF_SENSITIVE_SYS_PREFIX_RE.test(lower) ||
+    INLINE_DIFF_SENSITIVE_SYS_PREFIX_RE.test(cleanLower) ||
+    INLINE_DIFF_SENSITIVE_SUBPATH_RE.test(lower) ||
+    INLINE_DIFF_SENSITIVE_SUBPATH_RE.test(cleanLower)
+  ) {
+    return true;
+  }
+  const segs = lower.split('/').filter(Boolean);
+  for (let i = 0; i < segs.length; i += 1) {
+    const seg = segs[i];
+    if (INLINE_DIFF_SENSITIVE_DIRS.has(seg)) return true;
+    if (i < segs.length - 1 && seg === '.git') return true;
+    if (seg === 'thought-translator' && basesToCheck.some((b) => b.endsWith('.json'))) return true;
+  }
+  for (const suffix of INLINE_DIFF_SENSITIVE_SYS_SUFFIXES) {
+    if (lower === suffix || lower.endsWith(suffix) || cleanLower === suffix || cleanLower.endsWith(suffix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function truncateInlineDiffLine(text, maxChars = INLINE_DIFF_MAX_LINE_CHARS) {
+  const s = String(text ?? '');
+  if (s.length <= maxChars) return s;
+  return `${s.slice(0, Math.max(0, maxChars - 1))}…`;
+}
+
+function resolveInlineDiffCandidatePath(rawUri) {
+  if (typeof rawUri !== 'string') {
+    return { ok: false, error: 'invalid_uri' };
+  }
+  const raw = rawUri.trim();
+  if (!raw || raw.length > INLINE_DIFF_MAX_URI_LENGTH) {
+    return { ok: false, error: 'invalid_uri' };
+  }
+  if (/[\x00-\x1f\x7f]/.test(raw) || /%00/i.test(raw)) {
+    return { ok: false, error: 'invalid_uri' };
+  }
+  if (hasBlockedInlineDiffUnc(raw)) {
+    return { ok: false, error: 'blocked_unc' };
+  }
+
+  let candidatePath = '';
+  if (/^file:/i.test(raw)) {
+    if (!/^file:\/\//i.test(raw)) {
+      return { ok: false, error: 'invalid_uri' };
+    }
+    const afterScheme = raw.slice(7);
+    const rawPathPart = afterScheme.split(/[?#]/, 1)[0];
+    // 仅允许本机空主机 file:///...，拒绝 file://host/... 远程共享与 SMB 访问
+    if (!rawPathPart.startsWith('/')) {
+      return { ok: false, error: 'blocked_unc' };
+    }
+    if (hasDotDotPathSegment(rawPathPart)) {
+      return { ok: false, error: 'blocked_traversal' };
+    }
+    let decodedPart;
+    try {
+      decodedPart = decodeURIComponent(rawPathPart);
+    } catch {
+      return { ok: false, error: 'invalid_uri' };
+    }
+    if (!decodedPart || /[\x00-\x1f\x7f]/.test(decodedPart)) {
+      return { ok: false, error: 'invalid_uri' };
+    }
+    if (
+      hasBlockedInlineDiffUnc(decodedPart) ||
+      (decodedPart.startsWith('/') && hasBlockedInlineDiffUnc(decodedPart.slice(1)))
+    ) {
+      return { ok: false, error: 'blocked_unc' };
+    }
+    if (hasDotDotPathSegment(decodedPart)) {
+      return { ok: false, error: 'blocked_traversal' };
+    }
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(raw);
+    } catch {
+      return { ok: false, error: 'invalid_uri' };
+    }
+    if (parsedUrl.protocol !== 'file:') {
+      return { ok: false, error: 'invalid_uri' };
+    }
+    if (parsedUrl.hostname) {
+      return { ok: false, error: 'blocked_unc' };
+    }
+    if (/^\/[A-Za-z]:[\\/]/.test(decodedPart)) {
+      candidatePath = process.platform === 'win32' ? path.resolve(decodedPart.slice(1)) : decodedPart;
+    } else if (decodedPart.startsWith('/')) {
+      candidatePath = decodedPart;
+    } else {
+      return { ok: false, error: 'invalid_uri' };
+    }
+  } else {
+    const isWinDriveAbs = /^[A-Za-z]:[\\/]/.test(raw);
+    if (!isWinDriveAbs && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)) {
+      return { ok: false, error: 'invalid_uri' };
+    }
+    if (hasDotDotPathSegment(raw)) {
+      return { ok: false, error: 'blocked_traversal' };
+    }
+    if (!isWinDriveAbs && !raw.startsWith('/')) {
+      return { ok: false, error: 'invalid_uri' };
+    }
+    candidatePath = isWinDriveAbs && process.platform === 'win32' ? path.resolve(raw) : raw;
+  }
+
+  if (hasBlockedInlineDiffUnc(candidatePath)) {
+    return { ok: false, error: 'blocked_unc' };
+  }
+  if (isSensitiveInlineDiffPath(candidatePath)) {
+    return { ok: false, error: 'blocked_sensitive' };
+  }
+  if (process.platform === 'win32') {
+    if (!/^[A-Za-z]:[\\/]/.test(candidatePath)) {
+      return { ok: false, error: 'invalid_uri' };
+    }
+    // 拦截 Windows NTFS 备用数据流（ADS，如 file.txt::$DATA）
+    if (candidatePath.slice(2).includes(':')) {
+      return { ok: false, error: 'invalid_uri' };
+    }
+  } else if (!candidatePath.startsWith('/')) {
+    return { ok: false, error: 'invalid_uri' };
+  }
+  return { ok: true, candidatePath };
+}
+
+function resolveSafeGitCwd() {
+  const tmp = os.tmpdir();
+  if (typeof tmp !== 'string' || !tmp || tmp.includes('\0') || hasBlockedInlineDiffUnc(tmp)) {
+    return null;
+  }
+  try {
+    const realTmp = canonicalRealpathSync(tmp);
+    const st = fs.lstatSync(realTmp);
+    if (st.isSymbolicLink() || !st.isDirectory() || hasBlockedInlineDiffUnc(realTmp)) return null;
+    return realTmp;
+  } catch {
+    return null;
+  }
+}
+
+function execGitInlineDiff(
+  args,
+  { timeoutMs = INLINE_DIFF_REV_PARSE_TIMEOUT_MS, maxBuffer = INLINE_DIFF_GIT_MAX_BUFFER } = {}
+) {
+  const safeCwd = resolveSafeGitCwd();
+  if (!safeCwd) {
+    return Promise.resolve({ ok: false, code: 'INVALID_CWD', stdout: '' });
+  }
+  const fullArgs = [
+    '--no-optional-locks',
+    '--literal-pathspecs',
+    '-c',
+    'protocol.ext.allow=never',
+    '-c',
+    'submodule.recurse=false',
+    '-c',
+    'core.fsmonitor=false',
+    '-c',
+    'core.pager=cat',
+    '-c',
+    'diff.external=',
+    ...args,
+  ];
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      fullArgs,
+      {
+        cwd: safeCwd,
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: timeoutMs,
+        maxBuffer,
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_LITERAL_PATHSPECS: '1',
+          GIT_OPTIONAL_LOCKS: '0',
+          NoDefaultCurrentDirectoryInExePath: '1',
+        },
+      },
+      (err, stdout) => {
+        resolve({
+          ok: !err,
+          code: err?.code || null,
+          stdout: typeof stdout === 'string' ? stdout : '',
+        });
+      }
+    );
+  });
+}
+
+function unescapeGitQuotedPath(rawToken) {
+  if (typeof rawToken !== 'string') return '';
+  let s = rawToken.trim();
+  if (!s) return '';
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+    s = s.slice(1, -1);
+    const bytes = [];
+    for (let i = 0; i < s.length; i += 1) {
+      const ch = s[i];
+      if (ch === '\\' && i + 1 < s.length) {
+        const next = s[i + 1];
+        if (next >= '0' && next <= '7') {
+          let oct = next;
+          if (i + 2 < s.length && s[i + 2] >= '0' && s[i + 2] <= '7') {
+            oct += s[i + 2];
+            if (i + 3 < s.length && s[i + 3] >= '0' && s[i + 3] <= '7') {
+              oct += s[i + 3];
+            }
+          }
+          bytes.push(parseInt(oct, 8) & 0xff);
+          i += oct.length;
+          continue;
+        }
+        const escMap = { n: 0x0a, r: 0x0d, t: 0x09, b: 0x08, f: 0x0c, a: 0x07, v: 0x0b, '"': 0x22, '\\': 0x5c };
+        if (Object.prototype.hasOwnProperty.call(escMap, next)) {
+          bytes.push(escMap[next]);
+        } else {
+          const encoded = Buffer.from(next, 'utf8');
+          for (const b of encoded) bytes.push(b);
+        }
+        i += 1;
+      } else {
+        const encoded = Buffer.from(ch, 'utf8');
+        for (const b of encoded) bytes.push(b);
+      }
+    }
+    return Buffer.from(bytes).toString('utf8');
+  }
+  return s;
+}
+
+function stripGitDiffPrefix(p) {
+  const s = unescapeGitQuotedPath(p);
+  if (!s || s === '/dev/null') return '';
+  return s.replace(/^(?:a|b|i|w|c|o|1|2)\//, '');
+}
+
+function parseDiffGitHeaderPaths(line) {
+  const rest = line.slice('diff --git '.length).trim();
+  if (!rest) return null;
+  const candidates = [];
+  // 解析 C-style 引号或空白分隔的 2 个 token
+  const tokens = [];
+  let idx = 0;
+  while (idx < rest.length && tokens.length < 3) {
+    while (idx < rest.length && rest[idx] === ' ') idx += 1;
+    if (idx >= rest.length) break;
+    if (rest[idx] === '"') {
+      let end = idx + 1;
+      while (end < rest.length) {
+        if (rest[end] === '\\' && end + 1 < rest.length) {
+          end += 2;
+          continue;
+        }
+        if (rest[end] === '"') {
+          end += 1;
+          break;
+        }
+        end += 1;
+      }
+      tokens.push(rest.slice(idx, end));
+      idx = end;
+    } else {
+      let end = idx;
+      while (end < rest.length && rest[end] !== ' ') end += 1;
+      tokens.push(rest.slice(idx, end));
+      idx = end;
+    }
+  }
+  if (tokens.length === 2 && idx >= rest.length) {
+    const p1 = stripGitDiffPrefix(tokens[0]);
+    const p2 = stripGitDiffPrefix(tokens[1]);
+    if (p1) candidates.push(p1);
+    if (p2) candidates.push(p2);
+  }
+  // 兜底：无引号且文件名含空格时枚举所有 " b/" 切分点，宁严勿漏
+  let splitPos = rest.indexOf(' b/');
+  while (splitPos !== -1) {
+    const left = stripGitDiffPrefix(rest.slice(0, splitPos));
+    const right = stripGitDiffPrefix(rest.slice(splitPos + 1));
+    if (left) candidates.push(left);
+    if (right) candidates.push(right);
+    splitPos = rest.indexOf(' b/', splitPos + 3);
+  }
+  return candidates.length > 0 ? candidates : null;
+}
+
+function isBlockedDiffHeaderPath(relPath) {
+  if (typeof relPath !== 'string' || !relPath) return true;
+  if (/[\x00-\x1f\x7f]/.test(relPath)) return true;
+  if (hasBlockedInlineDiffUnc(relPath) || hasDotDotPathSegment(relPath)) return true;
+  if (isSensitiveInlineDiffPath(relPath)) return true;
+  return false;
+}
+
+function makeBlockedDiffParseResult() {
+  return {
+    ok: false,
+    reason: 'blocked',
+    blocked: true,
+    isBinary: false,
+    additions: 0,
+    deletions: 0,
+    truncated: false,
+    focusedByHint: false,
+    lines: [],
+  };
+}
+
+function parseInlineUnifiedDiff(rawDiff, { maxLines = INLINE_DIFF_MAX_DIFF_LINES, maxLineChars = INLINE_DIFF_MAX_LINE_CHARS, hints = null } = {}) {
+  const normalized = String(rawDiff || '').replace(/\r\n/g, '\n');
+  const rawLines = normalized.split('\n');
+  if (rawLines.length > 0 && rawLines[rawLines.length - 1] === '') {
+    rawLines.pop();
+  }
+  const hunks = [];
+  let curHunk = null;
+  let additions = 0;
+  let deletions = 0;
+  let isBinary = false;
+  let inHunk = false;
+  let seenDiffHeaders = 0;
+  let oldLn = 1;
+  let newLn = 1;
+
+  for (let i = 0; i < rawLines.length; i += 1) {
+    const line = rawLines[i];
+    if (line.startsWith('diff --git ')) {
+      // 强制单文件输出：遇到第二个 diff --git 立即截断停止，防 glob/pathspec 多文件泄露
+      if (seenDiffHeaders >= 1) {
+        break;
+      }
+      seenDiffHeaders += 1;
+      inHunk = false;
+      curHunk = null;
+      const headerPaths = parseDiffGitHeaderPaths(line);
+      if (!headerPaths || headerPaths.some((p) => isBlockedDiffHeaderPath(p))) {
+        return makeBlockedDiffParseResult();
+      }
+      continue;
+    }
+    if (!inHunk) {
+      if (seenDiffHeaders >= 1 || /^(?:---|\+\+\+)\s+"?(?:a|b)\//.test(line)) {
+        if (line.startsWith('--- ') || line.startsWith('+++ ')) {
+          const rawHeaderPath = line.slice(4).split('\t', 1)[0].trim();
+          if (rawHeaderPath && rawHeaderPath !== '/dev/null') {
+            const p = stripGitDiffPrefix(rawHeaderPath);
+            if (!p || isBlockedDiffHeaderPath(p)) {
+              return makeBlockedDiffParseResult();
+            }
+          }
+          continue;
+        }
+        if (seenDiffHeaders >= 1) {
+          const metaPrefix = /^(?:rename from |rename to |copy from |copy to )/.exec(line);
+          if (metaPrefix) {
+            const p = unescapeGitQuotedPath(line.slice(metaPrefix[0].length));
+            if (!p || isBlockedDiffHeaderPath(p)) {
+              return makeBlockedDiffParseResult();
+            }
+            continue;
+          }
+        }
+      }
+      if ((line.startsWith('Binary files ') && line.endsWith(' differ')) || line === 'GIT binary patch') {
+        if (line.startsWith('Binary files ')) {
+          const bm = /^Binary files (.+) and (.+) differ$/.exec(line);
+          if (bm) {
+            const p1 = stripGitDiffPrefix(bm[1]);
+            const p2 = stripGitDiffPrefix(bm[2]);
+            if ((p1 && isBlockedDiffHeaderPath(p1)) || (p2 && isBlockedDiffHeaderPath(p2))) {
+              return makeBlockedDiffParseResult();
+            }
+          }
+        }
+        isBinary = true;
+        break;
+      }
+      const hm = /^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/.exec(line);
+      if (!hm) continue;
+      inHunk = true;
+      oldLn = Number(hm[1]);
+      newLn = Number(hm[2]);
+      curHunk = {
+        idx: hunks.length,
+        adds: 0,
+        dels: 0,
+        rows: [{ kind: 'hunk', ln: '', sign: '@@', text: truncateInlineDiffLine(line, maxLineChars) }],
+      };
+      hunks.push(curHunk);
+      continue;
+    }
+
+    const hm = /^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/.exec(line);
+    if (hm) {
+      oldLn = Number(hm[1]);
+      newLn = Number(hm[2]);
+      curHunk = {
+        idx: hunks.length,
+        adds: 0,
+        dels: 0,
+        rows: [{ kind: 'hunk', ln: '', sign: '@@', text: truncateInlineDiffLine(line, maxLineChars) }],
+      };
+      hunks.push(curHunk);
+      continue;
+    }
+    if (line.startsWith('\\')) {
+      continue;
+    }
+    if (line.startsWith('+')) {
+      additions += 1;
+      if (curHunk) {
+        curHunk.adds += 1;
+        curHunk.rows.push({ kind: 'add', ln: String(newLn), sign: '+', text: truncateInlineDiffLine(line.slice(1), maxLineChars) });
+      }
+      newLn += 1;
+    } else if (line.startsWith('-')) {
+      deletions += 1;
+      if (curHunk) {
+        curHunk.dels += 1;
+        curHunk.rows.push({ kind: 'del', ln: String(oldLn), sign: '-', text: truncateInlineDiffLine(line.slice(1), maxLineChars) });
+      }
+      oldLn += 1;
+    } else if (line.startsWith(' ') || line === '') {
+      if (curHunk) {
+        curHunk.rows.push({
+          kind: 'ctx',
+          ln: String(newLn),
+          sign: ' ',
+          text: truncateInlineDiffLine(line.startsWith(' ') ? line.slice(1) : '', maxLineChars),
+        });
+      }
+      oldLn += 1;
+      newLn += 1;
+    }
+  }
+
+  if (isBinary) {
+    return { blocked: false, isBinary: true, additions: 0, deletions: 0, truncated: false, focusedByHint: false, lines: [] };
+  }
+
+  let totalRowCount = 0;
+  for (let i = 0; i < hunks.length; i += 1) totalRowCount += hunks[i].rows.length;
+
+  const hintAdd = Math.max(0, Number(hints?.additions) || 0);
+  const hintDel = Math.max(0, Number(hints?.deletions) || 0);
+  const useHintFocus = totalRowCount > maxLines && hunks.length > 1 && (hintDel > 0 || hintAdd > 0);
+
+  if (!useHintFocus) {
+    const lines = [];
+    for (let i = 0; i < hunks.length && lines.length < maxLines; i += 1) {
+      const rows = hunks[i].rows;
+      for (let j = 0; j < rows.length && lines.length < maxLines; j += 1) {
+        lines.push(rows[j]);
+      }
+    }
+    return { blocked: false, isBinary: false, additions, deletions, truncated: totalRowCount > maxLines, focusedByHint: false, lines };
+  }
+
+  // Hint-Aware Hunk Windowing：当步骤徽章带 -N 删除但文件很大时，优先挑选含红色删除/替换的变更块，避免被文件头部纯绿新增塞满切丢
+  const scored = hunks.map((h) => {
+    let score = 0;
+    if (hintDel > 0) {
+      if (h.dels > 0) score += 10000;
+      if (hintAdd > 0 && h.adds > 0 && h.dels > 0) score += 5000;
+    } else if (hintAdd > 0 && h.adds > 0 && h.dels === 0) {
+      score += 4000;
+    }
+    score -= Math.abs(h.adds - hintAdd) * 4 + Math.abs(h.dels - hintDel) * 6;
+    score -= h.idx * 0.5;
+    return { h, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+
+  const firstDelHunkIdx = hintDel > 0 ? hunks.findIndex((x) => x.dels > 0) : -1;
+  const picked = [];
+  let used = 0;
+  const singleHunkCap = Math.max(48, Math.floor(maxLines * 0.8));
+  for (let i = 0; i < scored.length && used < maxLines; i += 1) {
+    const h = scored[i].h;
+    if (firstDelHunkIdx >= 0 && h.dels === 0 && h.idx < firstDelHunkIdx) continue;
+    const rem = maxLines - used;
+    if (rem < 4) break;
+    const take = Math.min(h.rows.length, picked.length === 0 ? Math.min(rem, Math.max(singleHunkCap, Math.min(h.rows.length, maxLines))) : rem);
+    picked.push({ idx: h.idx, slice: h.rows.slice(0, take) });
+    used += take;
+  }
+  picked.sort((a, b) => a.idx - b.idx);
+
+  const lines = [];
+  for (let i = 0; i < picked.length; i += 1) {
+    for (let j = 0; j < picked[i].slice.length && lines.length < maxLines; j += 1) {
+      lines.push(picked[i].slice[j]);
+    }
+  }
+  const skippedLeading = picked.length > 0 && picked[0].idx > 0;
+  return {
+    blocked: false,
+    isBinary: false,
+    additions,
+    deletions,
+    truncated: totalRowCount > lines.length,
+    focusedByHint: skippedLeading || (hintDel > 0 && lines.some((r) => r.kind === 'del')),
+    lines,
+  };
+}
+
+function canonicalRealpathSync(targetPath) {
+  if (typeof fs.realpathSync.native === 'function') {
+    try {
+      return fs.realpathSync.native(targetPath);
+    } catch (err) {
+      if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR' || err.code === 'EACCES' || err.code === 'EPERM')) {
+        throw err;
+      }
+    }
+  }
+  return fs.realpathSync(targetPath);
+}
+
+const INLINE_DIFF_CACHE_MAX = 48;
+const INLINE_DIFF_MAX_CONCURRENCY = 3;
+const INLINE_DIFF_MAX_QUEUE = 16;
+const INLINE_DIFF_MAX_GIT_CONFIG_BYTES = 64 * 1024;
+const INLINE_DIFF_UNSAFE_GIT_CONFIG_FILTER_RE = /(^|\r?\n)\s*\[filter\s+/i;
+const INLINE_DIFF_UNSAFE_GIT_CONFIG_FSMONITOR_RE = /\bfsmonitor\s*=/i;
+
+const inlineDiffLruCache = new Map();
+const inlineDiffInFlight = new Map();
+let inlineDiffActiveCount = 0;
+const inlineDiffWaitQueue = [];
+
+function normalizeComparablePath(p) {
+  let norm = path.normalize(String(p || ''));
+  if (norm.length > 1 && (norm.endsWith(path.sep) || norm.endsWith('/'))) {
+    norm = norm.slice(0, -1);
+  }
+  return process.platform === 'win32' ? norm.toLowerCase() : norm;
+}
+
+function isSameCanonicalPath(candidatePath, realPath, allowDarwinSystemRootAlias = false) {
+  const a = normalizeComparablePath(candidatePath);
+  const b = normalizeComparablePath(realPath);
+  if (a === b) return true;
+  if (allowDarwinSystemRootAlias && process.platform === 'darwin') {
+    if ((a.startsWith('/var/') && `/private${a}` === b) || (a.startsWith('/tmp/') && `/private${a}` === b)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function readSmallNoFollowFileSync(filePath, maxBytes) {
+  let fd = null;
+  try {
+    const openFlags =
+      process.platform !== 'win32' && typeof fs.constants?.O_NOFOLLOW === 'number'
+        ? fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW
+        : 'r';
+    fd = fs.openSync(filePath, openFlags);
+    const fdStat = fs.fstatSync(fd);
+    if (!fdStat.isFile() || fdStat.size > maxBytes) return null;
+    const postStat = fs.lstatSync(filePath);
+    if (postStat.isSymbolicLink() || !postStat.isFile()) return null;
+    if (process.platform !== 'win32' && (fdStat.ino !== postStat.ino || fdStat.dev !== postStat.dev)) {
+      return null;
+    }
+    const buf = Buffer.alloc(fdStat.size);
+    let offset = 0;
+    while (offset < fdStat.size) {
+      const n = fs.readSync(fd, buf, offset, fdStat.size - offset, offset);
+      if (n <= 0) break;
+      offset += n;
+    }
+    return buf.subarray(0, offset).toString('utf8');
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch {}
+    }
+  }
+}
+
+function resolveValidatedCommonGitDir(realGitDir) {
+  const commonPtrPath = path.join(realGitDir, 'commondir');
+  let st;
+  try {
+    st = fs.lstatSync(commonPtrPath);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return realGitDir;
+    return null;
+  }
+  if (st.isSymbolicLink() || !st.isFile() || st.size <= 0 || st.size > INLINE_DIFF_MAX_GIT_POINTER_BYTES) {
+    return null;
+  }
+  const rawCommon = readSmallNoFollowFileSync(commonPtrPath, INLINE_DIFF_MAX_GIT_POINTER_BYTES);
+  if (typeof rawCommon !== 'string') return null;
+  const trimmed = rawCommon.trim();
+  if (!trimmed || /[\x00-\x1f\x7f]/.test(trimmed) || hasBlockedInlineDiffUnc(trimmed)) return null;
+  const commonPath = path.resolve(realGitDir, trimmed);
+  if (hasBlockedInlineDiffUnc(commonPath)) return null;
+  try {
+    const cst = fs.lstatSync(commonPath);
+    if (cst.isSymbolicLink() || !cst.isDirectory()) return null;
+    const realCommon = canonicalRealpathSync(commonPath);
+    if (hasBlockedInlineDiffUnc(realCommon)) return null;
+    const rcst = fs.lstatSync(realCommon);
+    if (rcst.isSymbolicLink() || !rcst.isDirectory()) return null;
+    if (!isSameCanonicalPath(commonPath, realCommon, path.isAbsolute(trimmed))) return null;
+    return realCommon;
+  } catch {
+    return null;
+  }
+}
+
+function readGitIndexMtimeSafe(realGitDir) {
+  const idxPath = path.join(realGitDir, 'index');
+  try {
+    const idxSt = fs.lstatSync(idxPath);
+    if (idxSt.isSymbolicLink() || !idxSt.isFile()) return null;
+    return idxSt.mtimeMs || 0;
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return 0;
+    return null;
+  }
+}
+
+function findGitRootFast(startDir) {
+  let cur = startDir;
+  for (let depth = 0; depth < 24 && cur; depth += 1) {
+    const gitMarker = path.join(cur, '.git');
+    let gst;
+    try {
+      gst = fs.lstatSync(gitMarker);
+    } catch (err) {
+      if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) {
+        const parent = path.dirname(cur);
+        if (!parent || parent === cur) break;
+        cur = parent;
+        continue;
+      }
+      return null;
+    }
+
+    // 严格 Fail-Closed：.git 为符号链接或非常规文件/目录时一律立即拒绝
+    if (gst.isSymbolicLink()) {
+      return null;
+    }
+
+    let realCur;
+    try {
+      realCur = canonicalRealpathSync(cur);
+    } catch {
+      return null;
+    }
+    if (hasBlockedInlineDiffUnc(realCur)) return null;
+
+    if (gst.isDirectory()) {
+      let realGitDir;
+      try {
+        realGitDir = canonicalRealpathSync(gitMarker);
+        const rgst = fs.lstatSync(realGitDir);
+        if (rgst.isSymbolicLink() || !rgst.isDirectory()) return null;
+      } catch {
+        return null;
+      }
+      if (hasBlockedInlineDiffUnc(realGitDir)) return null;
+      if (!isSameCanonicalPath(path.join(realCur, '.git'), realGitDir, false)) return null;
+      const commonGitDir = resolveValidatedCommonGitDir(realGitDir);
+      if (!commonGitDir) return null;
+      const indexMtimeMs = readGitIndexMtimeSafe(realGitDir);
+      if (indexMtimeMs === null) return null;
+      return { root: realCur, gitDir: realGitDir, commonGitDir, indexMtimeMs };
+    }
+
+    if (gst.isFile()) {
+      // gitfile 指针严格 Fail-Closed：超 4KB、非合法 gitdir:、UNC、含符号链接或 realpath 失败均立即 return null
+      if (gst.size <= 0 || gst.size > INLINE_DIFF_MAX_GIT_POINTER_BYTES) {
+        return null;
+      }
+      const gitPtrRaw = readSmallNoFollowFileSync(gitMarker, INLINE_DIFF_MAX_GIT_POINTER_BYTES);
+      if (typeof gitPtrRaw !== 'string') return null;
+      const gitPtr = gitPtrRaw.trim();
+      const m = /^gitdir:\s*([^\r\n]+)$/i.exec(gitPtr);
+      if (!m || !m[1]) return null;
+      const rawPtr = m[1].trim();
+      if (!rawPtr || /[\x00-\x1f\x7f]/.test(rawPtr) || hasBlockedInlineDiffUnc(rawPtr)) {
+        return null;
+      }
+      const gitDirPath = path.resolve(realCur, rawPtr);
+      if (hasBlockedInlineDiffUnc(gitDirPath)) return null;
+      let realGitDir;
+      try {
+        const gdLstat = fs.lstatSync(gitDirPath);
+        if (gdLstat.isSymbolicLink() || !gdLstat.isDirectory()) return null;
+        realGitDir = canonicalRealpathSync(gitDirPath);
+        if (hasBlockedInlineDiffUnc(realGitDir)) return null;
+        const rgst = fs.lstatSync(realGitDir);
+        if (rgst.isSymbolicLink() || !rgst.isDirectory()) return null;
+      } catch {
+        return null;
+      }
+      if (!isSameCanonicalPath(gitDirPath, realGitDir, path.isAbsolute(rawPtr))) {
+        return null;
+      }
+      const commonGitDir = resolveValidatedCommonGitDir(realGitDir);
+      if (!commonGitDir) return null;
+      const indexMtimeMs = readGitIndexMtimeSafe(realGitDir);
+      if (indexMtimeMs === null) return null;
+      return { root: realCur, gitDir: realGitDir, commonGitDir, indexMtimeMs };
+    }
+
+    return null;
+  }
+  return null;
+}
+
+function hasUnsafeGitConfig(gitDir, commonGitDir = null) {
+  const dirs = [];
+  if (gitDir) dirs.push(gitDir);
+  if (commonGitDir && commonGitDir !== gitDir) dirs.push(commonGitDir);
+  for (const dir of dirs) {
+    const cfgPath = path.join(dir, 'config');
+    let st;
+    try {
+      st = fs.lstatSync(cfgPath);
+    } catch (err) {
+      if (err && err.code === 'ENOENT') continue;
+      return true;
+    }
+    if (st.isSymbolicLink() || !st.isFile() || st.size > INLINE_DIFF_MAX_GIT_CONFIG_BYTES) {
+      return true;
+    }
+    const content = readSmallNoFollowFileSync(cfgPath, INLINE_DIFF_MAX_GIT_CONFIG_BYTES);
+    if (typeof content !== 'string') return true;
+    if (
+      INLINE_DIFF_UNSAFE_GIT_CONFIG_FILTER_RE.test(content) ||
+      INLINE_DIFF_UNSAFE_GIT_CONFIG_FSMONITOR_RE.test(content)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getInlineDiffCached(cacheKey) {
+  const hit = inlineDiffLruCache.get(cacheKey);
+  if (!hit) return null;
+  inlineDiffLruCache.delete(cacheKey);
+  inlineDiffLruCache.set(cacheKey, hit);
+  return hit;
+}
+
+function setInlineDiffCached(cacheKey, value) {
+  if (!value || !value.ok) return value;
+  while (inlineDiffLruCache.size >= INLINE_DIFF_CACHE_MAX) {
+    const oldest = inlineDiffLruCache.keys().next().value;
+    if (oldest === undefined) break;
+    inlineDiffLruCache.delete(oldest);
+  }
+  inlineDiffLruCache.set(cacheKey, value);
+  return value;
+}
+
+async function runWithInlineDiffSemaphore(taskFn) {
+  if (inlineDiffActiveCount >= INLINE_DIFF_MAX_CONCURRENCY) {
+    if (inlineDiffWaitQueue.length >= INLINE_DIFF_MAX_QUEUE) {
+      return { ok: false, reason: 'busy', error: 'busy' };
+    }
+    await new Promise((resolve) => {
+      inlineDiffWaitQueue.push(resolve);
+    });
+  } else {
+    inlineDiffActiveCount += 1;
+  }
+  try {
+    return await taskFn();
+  } finally {
+    const next = inlineDiffWaitQueue.shift();
+    if (typeof next === 'function') {
+      next();
+    } else {
+      inlineDiffActiveCount = Math.max(0, inlineDiffActiveCount - 1);
+    }
+  }
+}
+
+function projectInlineDiffEntry(rawEntry, { maxDiffLines, maxSnapshotLines, maxLineChars, hintAdd, hintDel }) {
+  if (!rawEntry || !rawEntry.ok) {
+    return rawEntry || { ok: false, error: 'read_failed' };
+  }
+  if (rawEntry.kind === 'binary') {
+    return {
+      ok: true,
+      mode: 'binary',
+      fileName: rawEntry.fileName,
+      additions: 0,
+      deletions: 0,
+      truncated: false,
+      lines: [],
+    };
+  }
+  if (rawEntry.kind === 'git-diff') {
+    const parsed = parseInlineUnifiedDiff(rawEntry.rawDiff, {
+      maxLines: maxDiffLines,
+      maxLineChars,
+      hints: hintAdd > 0 || hintDel > 0 ? { additions: hintAdd, deletions: hintDel } : null,
+    });
+    if (parsed.ok === false || parsed.blocked) {
+      return { ok: false, reason: 'blocked', error: 'blocked' };
+    }
+    if (parsed.isBinary) {
+      return {
+        ok: true,
+        mode: 'binary',
+        fileName: rawEntry.fileName,
+        additions: 0,
+        deletions: 0,
+        truncated: false,
+        lines: [],
+      };
+    }
+    return {
+      ok: true,
+      mode: 'git-diff',
+      fileName: rawEntry.fileName,
+      additions: parsed.additions,
+      deletions: parsed.deletions,
+      truncated: parsed.truncated || Boolean(rawEntry.bufferTruncated),
+      focused: Boolean(parsed.focusedByHint),
+      lines: parsed.lines,
+    };
+  }
+  const textLines = rawEntry.rawText.length > 0 ? rawEntry.rawText.split('\n') : [];
+  if (!rawEntry.byteTruncated && textLines.length > 0 && textLines[textLines.length - 1] === '') {
+    textLines.pop();
+  }
+  const lineTruncated = textLines.length > maxSnapshotLines;
+  const capped = lineTruncated ? textLines.slice(0, maxSnapshotLines) : textLines;
+  const isNewFile = Boolean(rawEntry.isUntracked || (hintAdd > 0 && hintDel === 0));
+  const mode = isNewFile ? 'new-file' : 'snapshot';
+  const kind = isNewFile ? 'add' : 'ctx';
+  const sign = isNewFile ? '+' : ' ';
+  const lines = capped.map((line, idx) => ({
+    kind,
+    ln: String(idx + 1),
+    sign,
+    text: truncateInlineDiffLine(line, maxLineChars),
+  }));
+  return {
+    ok: true,
+    mode,
+    fileName: rawEntry.fileName,
+    additions: isNewFile ? lines.length : 0,
+    deletions: 0,
+    truncated: Boolean(rawEntry.byteTruncated || lineTruncated),
+    lines,
+  };
+}
+
+// 受限只读行内 Diff 读取器：严防 UNC/NT 设备路径/路径穿越/符号链接逃逸/敏感凭据读取、非 Git 越界读取与 Shell 注入
+export async function readSafeInlineDiff(rawUri, opts = {}) {
+  const maxDiffLines = clampPositiveInt(opts?.maxDiffLines, INLINE_DIFF_MAX_DIFF_LINES, INLINE_DIFF_MAX_DIFF_LINES);
+  const maxSnapshotLines = clampPositiveInt(
+    opts?.maxSnapshotLines,
+    INLINE_DIFF_MAX_SNAPSHOT_LINES,
+    INLINE_DIFF_MAX_SNAPSHOT_LINES
+  );
+  const maxLineChars = clampPositiveInt(opts?.maxLineChars, INLINE_DIFF_MAX_LINE_CHARS, INLINE_DIFF_MAX_LINE_CHARS);
+  const maxReadBytes = clampPositiveInt(opts?.maxReadBytes, INLINE_DIFF_MAX_READ_BYTES, INLINE_DIFF_MAX_READ_BYTES);
+  const revParseTimeoutMs = clampPositiveInt(
+    opts?.revParseTimeoutMs,
+    INLINE_DIFF_REV_PARSE_TIMEOUT_MS,
+    INLINE_DIFF_REV_PARSE_TIMEOUT_MS * 2
+  );
+  const diffTimeoutMs = clampPositiveInt(
+    opts?.diffTimeoutMs,
+    INLINE_DIFF_GIT_DIFF_TIMEOUT_MS,
+    INLINE_DIFF_GIT_DIFF_TIMEOUT_MS * 2
+  );
+  const gitMaxBuffer = clampPositiveInt(opts?.gitMaxBuffer, INLINE_DIFF_GIT_MAX_BUFFER, INLINE_DIFF_GIT_MAX_BUFFER);
+  const hintAdd = Number.isFinite(Number(opts?.hints?.additions)) ? Math.max(0, Math.trunc(Number(opts.hints.additions))) : 0;
+  const hintDel = Number.isFinite(Number(opts?.hints?.deletions)) ? Math.max(0, Math.trunc(Number(opts.hints.deletions))) : 0;
+
+  const resolved = resolveInlineDiffCandidatePath(rawUri);
+  if (!resolved.ok) {
+    return resolved;
+  }
+
+  let realPath;
+  try {
+    realPath = canonicalRealpathSync(resolved.candidatePath);
+  } catch (err) {
+    const code = err?.code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { ok: false, error: 'not_found' };
+    if (code === 'EACCES' || code === 'EPERM') return { ok: false, error: 'access_denied' };
+    return { ok: false, error: 'read_failed' };
+  }
+
+  // 解析符号链接后的二次安全校验：防符号链接逃逸到 UNC 共享或敏感文件
+  if (hasBlockedInlineDiffUnc(realPath)) {
+    return { ok: false, error: 'blocked_unc' };
+  }
+  if (isSensitiveInlineDiffPath(realPath)) {
+    return { ok: false, error: 'blocked_sensitive' };
+  }
+
+  let st;
+  try {
+    st = fs.lstatSync(realPath);
+  } catch {
+    return { ok: false, error: 'read_failed' };
+  }
+  if (!st.isFile() || st.isSymbolicLink()) {
+    return { ok: false, error: 'not_a_file' };
+  }
+
+  const fileName = path.basename(realPath);
+  const dir = path.dirname(realPath);
+
+  // 0.1ms 纯 Node 向上探测 .git 仓根（严格 Fail-Closed，非 Git 仓库强制拒绝）
+  let realRepoRoot = null;
+  let realGitDir = null;
+  let realCommonGitDir = null;
+  let gitRelPath = '';
+  let gitIndexMtimeMs = 0;
+  const fastGit = findGitRootFast(dir);
+  if (fastGit && fastGit.root && fastGit.gitDir && !hasBlockedInlineDiffUnc(fastGit.root)) {
+    try {
+      const candidateRoot = canonicalRealpathSync(fastGit.root);
+      const rootStat = fs.lstatSync(candidateRoot);
+      if (
+        rootStat.isDirectory() &&
+        !rootStat.isSymbolicLink() &&
+        !hasBlockedInlineDiffUnc(candidateRoot) &&
+        isPathWithinRoot(candidateRoot, realPath)
+      ) {
+        const relNative = path.relative(candidateRoot, realPath);
+        const relPosix = relNative.split(path.sep).join('/');
+        if (relPosix && !relPosix.includes('\0') && !path.isAbsolute(relNative) && !hasDotDotPathSegment(relPosix)) {
+          realRepoRoot = candidateRoot;
+          realGitDir = fastGit.gitDir;
+          realCommonGitDir = fastGit.commonGitDir || fastGit.gitDir;
+          gitRelPath = relPosix;
+          gitIndexMtimeMs = fastGit.indexMtimeMs || 0;
+        }
+      }
+    } catch {}
+  }
+
+  if (!realRepoRoot || !gitRelPath || !realGitDir) {
+    return { ok: false, reason: 'outside_git_repo', error: 'outside_git_repo' };
+  }
+
+  // 调用 git 前扫描 <gitDir>/config（限 64 KiB），含 [filter 或 fsmonitor= 时跳过 git 子进程降级安全纯文件只读切片
+  const skipGitSubprocess = hasUnsafeGitConfig(realGitDir, realCommonGitDir);
+  const wantCommitFallback = hintDel > 0 ? 1 : 0;
+  // rawDiff 缓存键彻底解耦客户端可控整数 hints 与输出窗口行数，防变换 hints 穿透缓存触发 git log 风暴
+  const rawCacheKey = `${realPath}|${st.mtimeMs}|${st.size}|${gitIndexMtimeMs}|${skipGitSubprocess ? 1 : 0}|${wantCommitFallback}|${maxReadBytes}|${gitMaxBuffer}`;
+  const projectionOpts = { maxDiffLines, maxSnapshotLines, maxLineChars, hintAdd, hintDel };
+
+  if (!opts?.noCache) {
+    const cachedRaw = getInlineDiffCached(rawCacheKey);
+    if (cachedRaw) {
+      return projectInlineDiffEntry(cachedRaw, projectionOpts);
+    }
+    const existingInFlight = inlineDiffInFlight.get(rawCacheKey);
+    if (existingInFlight) {
+      const sharedRaw = await existingInFlight;
+      return projectInlineDiffEntry(sharedRaw, projectionOpts);
+    }
+  }
+
+  const fetchRaw = () =>
+    runWithInlineDiffSemaphore(async () => {
+      if (!skipGitSubprocess) {
+        // 单次 git diff HEAD 同时覆盖工作区未暂存与已暂存变更，直接砍半子进程冷启动时间
+        let diffRes = await execGitInlineDiff(
+          ['-C', realRepoRoot, 'diff', 'HEAD', '--no-color', '--no-ext-diff', '--no-textconv', '--unified=2', '--', gitRelPath],
+          { timeoutMs: diffTimeoutMs, maxBuffer: gitMaxBuffer }
+        );
+        let rawDiff = diffRes.ok || diffRes.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? diffRes.stdout : '';
+        let bufferTruncated = diffRes.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+
+        // 兼容刚 git init 尚无 HEAD 的仓库：回退一次 --cached
+        if (!diffRes.ok && !rawDiff.trim()) {
+          diffRes = await execGitInlineDiff(
+            ['-C', realRepoRoot, 'diff', '--cached', '--no-color', '--no-ext-diff', '--no-textconv', '--unified=2', '--', gitRelPath],
+            { timeoutMs: diffTimeoutMs, maxBuffer: gitMaxBuffer }
+          );
+          rawDiff = diffRes.ok || diffRes.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? diffRes.stdout : '';
+          bufferTruncated = diffRes.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+        }
+
+        // 若工作区已提交干净但徽章明确提示有删改（历史步骤），拉取该文件最近一次真实 commit diff
+        if (!rawDiff.trim() && wantCommitFallback) {
+          const logRes = await execGitInlineDiff(
+            ['-C', realRepoRoot, 'log', '-n', '1', '-p', '--no-color', '--no-ext-diff', '--no-textconv', '--unified=2', '--', gitRelPath],
+            { timeoutMs: diffTimeoutMs, maxBuffer: gitMaxBuffer }
+          );
+          if (logRes.ok || logRes.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+            rawDiff = logRes.stdout || '';
+            bufferTruncated = logRes.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+          }
+        }
+
+        if (rawDiff.trim()) {
+          const probeParsed = parseInlineUnifiedDiff(rawDiff, { maxLines: 1, maxLineChars: 32 });
+          if (probeParsed.ok === false || probeParsed.blocked) {
+            return { ok: false, reason: 'blocked', error: 'blocked' };
+          }
+          if (probeParsed.isBinary) {
+            return { ok: true, kind: 'binary', fileName };
+          }
+          if (probeParsed.lines.length > 0) {
+            return { ok: true, kind: 'git-diff', fileName, rawDiff, bufferTruncated };
+          }
+        }
+      }
+
+      // 未命中 git diff（或跳过不安全 git config）时执行有界只读切片（最多 24 KiB），防符号链接 TOCTOU 替换
+      const buf = Buffer.alloc(maxReadBytes);
+      let bytesRead = 0;
+      let fileSize = st.size;
+      let fd = null;
+      try {
+        const openFlags =
+          process.platform !== 'win32' && typeof fs.constants?.O_NOFOLLOW === 'number'
+            ? fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW
+            : 'r';
+        fd = fs.openSync(realPath, openFlags);
+        const fdStat = fs.fstatSync(fd);
+        if (!fdStat.isFile()) {
+          return { ok: false, error: 'not_a_file' };
+        }
+        const postStat = fs.lstatSync(realPath);
+        if (postStat.isSymbolicLink() || !postStat.isFile()) {
+          return { ok: false, error: 'not_a_file' };
+        }
+        if (process.platform !== 'win32' && (fdStat.ino !== postStat.ino || fdStat.dev !== postStat.dev)) {
+          return { ok: false, error: 'read_failed' };
+        }
+        fileSize = fdStat.size;
+        bytesRead = fs.readSync(fd, buf, 0, maxReadBytes, 0);
+      } catch (err) {
+        const code = err?.code;
+        if (code === 'ELOOP') return { ok: false, error: 'not_a_file' };
+        if (code === 'EACCES' || code === 'EPERM') return { ok: false, error: 'access_denied' };
+        return { ok: false, error: 'read_failed' };
+      } finally {
+        if (fd !== null) {
+          try { fs.closeSync(fd); } catch {}
+        }
+      }
+
+      const slice = buf.subarray(0, bytesRead);
+      if (slice.includes(0)) {
+        return { ok: true, kind: 'binary', fileName };
+      }
+
+      let isUntracked = false;
+      if (!skipGitSubprocess) {
+        const statusRes = await execGitInlineDiff(
+          ['-C', realRepoRoot, 'status', '--porcelain', '-uall', '--', gitRelPath],
+          { timeoutMs: revParseTimeoutMs, maxBuffer: 64 * 1024 }
+        );
+        if (statusRes.ok && statusRes.stdout) {
+          const firstLine = statusRes.stdout.replace(/^[\r\n]+/, '').split(/\r?\n/, 1)[0] || '';
+          if (firstLine.startsWith('?? ')) {
+            isUntracked = true;
+          }
+        }
+      }
+
+      const rawText = slice.toString('utf8').replace(/\r\n/g, '\n');
+      const byteTruncated = bytesRead < fileSize;
+      return { ok: true, kind: 'file', fileName, rawText, byteTruncated, isUntracked };
+    });
+
+  if (opts?.noCache) {
+    const rawResult = await fetchRaw();
+    return projectInlineDiffEntry(rawResult, projectionOpts);
+  }
+
+  const inFlightPromise = fetchRaw().then((rawResult) => {
+    if (rawResult && rawResult.ok) {
+      setInlineDiffCached(rawCacheKey, rawResult);
+    }
+    return rawResult;
+  });
+  inlineDiffInFlight.set(rawCacheKey, inFlightPromise);
+  try {
+    const rawResult = await inFlightPromise;
+    return projectInlineDiffEntry(rawResult, projectionOpts);
+  } finally {
+    if (inlineDiffInFlight.get(rawCacheKey) === inFlightPromise) {
+      inlineDiffInFlight.delete(rawCacheKey);
+    }
+  }
+}
+
 export function resolvePortFileCandidates() {
   const candidates = [];
   if (process.platform === 'win32') {
@@ -380,6 +1642,18 @@ export function resolvePortFileCandidates() {
   return candidates;
 }
 
+const _portFileCache = new Map();
+const _hostCfgEnabledCache = new Map();
+
+function _setBoundedFileCache(map, key, val, limit = 16) {
+  if (map.has(key)) map.delete(key);
+  else if (map.size >= limit) {
+    const oldest = map.keys().next().value;
+    if (oldest !== undefined) map.delete(oldest);
+  }
+  map.set(key, val);
+}
+
 export function discoverActivePort(overridePort = null, customPortFile = null) {
   if (overridePort && Number.isInteger(Number(overridePort)) && Number(overridePort) > 0) {
     return Number(overridePort);
@@ -390,13 +1664,41 @@ export function discoverActivePort(overridePort = null, customPortFile = null) {
   }
   const files = customPortFile ? [customPortFile] : resolvePortFileCandidates();
   for (const file of files) {
+    const key = path.resolve(file);
     try {
-      if (!fs.existsSync(file)) continue;
+      let st;
+      try {
+        st = fs.statSync(file);
+      } catch {
+        _portFileCache.delete(key);
+        continue;
+      }
+      if (!st.isFile()) {
+        _portFileCache.delete(key);
+        continue;
+      }
+      const sig = `${st.mtimeMs}:${st.size}:${st.ctimeMs}`;
+      const cached = _portFileCache.get(key);
+      if (cached && cached.sig === sig) {
+        if (cached.port) return cached.port;
+        continue;
+      }
+      if (st.size > 2048) {
+        _setBoundedFileCache(_portFileCache, key, { sig, port: null });
+        continue;
+      }
       const text = fs.readFileSync(file, 'utf8');
-      if (text.length > 2048) continue;
+      if (text.length > 2048) {
+        _setBoundedFileCache(_portFileCache, key, { sig, port: null });
+        continue;
+      }
       const port = parseInt(text.split(/\r?\n/)[0].trim(), 10);
-      if (Number.isInteger(port) && port > 0 && port <= 65535) return port;
-    } catch {}
+      const validPort = Number.isInteger(port) && port > 0 && port <= 65535 ? port : null;
+      _setBoundedFileCache(_portFileCache, key, { sig, port: validPort });
+      if (validPort) return validPort;
+    } catch {
+      _portFileCache.delete(key);
+    }
   }
   return null;
 }
@@ -406,14 +1708,33 @@ export function isEligibleTarget(target) {
 }
 
 export function isPluginEnabledInHostConfig(customConfigPath = null) {
+  const cfgPath = customConfigPath || path.join(os.homedir(), '.gemini', 'config', 'config.json');
+  const key = path.resolve(cfgPath);
   try {
-    const cfgPath = customConfigPath || path.join(os.homedir(), '.gemini', 'config', 'config.json');
-    if (!fs.existsSync(cfgPath)) return true;
+    let st;
+    try {
+      st = fs.statSync(cfgPath);
+    } catch {
+      _hostCfgEnabledCache.delete(key);
+      return true;
+    }
+    if (!st.isFile()) {
+      _hostCfgEnabledCache.delete(key);
+      return true;
+    }
+    const sig = `${st.mtimeMs}:${st.size}:${st.ctimeMs}`;
+    const cached = _hostCfgEnabledCache.get(key);
+    if (cached && cached.sig === sig) {
+      return cached.enabled;
+    }
     const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf8').replace(/^\uFEFF/, ''));
-    if (raw?.plugins?.['obsidian-prism']?.enabled === false) return false;
-    if (raw?.plugins?.['antigravity-prism']?.enabled === false && !raw?.plugins?.['obsidian-prism']) return false;
-    return true;
+    let enabled = true;
+    if (raw?.plugins?.['obsidian-prism']?.enabled === false) enabled = false;
+    else if (raw?.plugins?.['antigravity-prism']?.enabled === false && !raw?.plugins?.['obsidian-prism']) enabled = false;
+    _setBoundedFileCache(_hostCfgEnabledCache, key, { sig, enabled });
+    return enabled;
   } catch {
+    _hostCfgEnabledCache.delete(key);
     return true;
   }
 }
@@ -486,6 +1807,7 @@ export class PrismDaemon {
   constructor({
     rootDir = DEFAULT_ROOT_DIR,
     gitRepoDir = null,
+    bundleCachePath = undefined,
     overridePort = null,
     portFile = null,
     pollIntervalMs = 3000,
@@ -498,6 +1820,8 @@ export class PrismDaemon {
     daemonPidVerifier = null,
     noPortRelaunchThresholdMs = 8000,
     shortcutCheckIntervalMs = 300000,
+    shortcutBackoffIntervalMs = 45 * 60 * 1000,
+    listPagesFallbackIntervalMs = 12000,
     _testUpdateService = null,
     updateCheckInitialDelayMs = 45000,
     updateCheckIntervalMs = 6 * 60 * 60 * 1000,
@@ -506,6 +1830,7 @@ export class PrismDaemon {
   } = {}) {
     this.rootDir = path.resolve(rootDir);
     this.gitRepoDir = gitRepoDir ? path.resolve(gitRepoDir) : null;
+    this._bundleCachePathOpt = bundleCachePath;
     this.overridePort = overridePort;
     this.portFile = portFile;
     this.pollIntervalMs = Math.max(200, Number(pollIntervalMs) || 3000);
@@ -524,8 +1849,14 @@ export class PrismDaemon {
     this.ignoredTargets = new Map();
     this.browserSession = null;
     this.browserPort = null;
+    this._browserDiscoverySubscribed = false;
+    this._lastListPagesAt = 0;
+    this._forceListPagesNextTick = false;
+    const fallbackListMs = Number(listPagesFallbackIntervalMs);
+    this._listPagesFallbackIntervalMs = Number.isFinite(fallbackListMs) ? Math.max(100, fallbackListMs) : 12000;
     this._discoverTimer = null;
     this._reloadTimer = null;
+    this._bundleCacheFlushTimer = null;
     this._managedTimers = new Set();
     this._pendingTick = false;
     this.running = false;
@@ -535,10 +1866,20 @@ export class PrismDaemon {
     this.injectExpr = '';
     this.omniExpr = '';
     this.sidebarExpr = '';
+    this.hostI18nExpr = '';
+    this.thoughtExpr = '';
+    this.thoughtCodeHash = '';
+    this._thoughtHashSource = '';
+    this.inlineDiffExpr = '';
+    this.inlineDiffCodeHash = '';
+    this._inlineDiffHashSource = '';
     this.codeHash = '';
     this.ownerToken = `${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
     this.pidFile = path.join(this.rootDir, '.daemon.pid');
     this.logFile = path.join(this.rootDir, 'daemon.log');
+    this._logBytes = -1;
+    this._ownerFileCache = null;
+    this._safeSidebarFileCache = null;
     this._lazyStore = null;
     this._lazyUsage = null;
     this._lazyLsClient = null;
@@ -559,6 +1900,13 @@ export class PrismDaemon {
     this._relaunchHooks = relaunchHooks;
     this.noPortRelaunchThresholdMs = Math.max(50, Number(noPortRelaunchThresholdMs) || 8000);
     this.shortcutCheckIntervalMs = Math.max(1000, Number(shortcutCheckIntervalMs) || 300000);
+    const backoffMs = Number(shortcutBackoffIntervalMs);
+    this._shortcutBackoffIntervalMs = Math.max(
+      this.shortcutCheckIntervalMs,
+      Number.isFinite(backoffMs) && backoffMs > 0 ? backoffMs : 45 * 60 * 1000
+    );
+    this._shortcutAllClean = false;
+    this._hasActiveCdpPort = false;
     this._noPortSinceMs = 0;
     this._promptInFlight = false;
     this._lastShortcutCheckAt = 0;
@@ -572,11 +1920,12 @@ export class PrismDaemon {
     this._updateIntervalTimer = null;
     this._lastUpdateState = null;
     this._updateCheckInFlight = null;
+    this._updateCheckInFlightChannel = null;
     const initialUpdateChannel = this._getUpdateChannelSetting();
     this.updateService =
       _testUpdateService ||
       new UpdateService({
-        currentVersion: this.cdp?.PLUGIN_VERSION || '1.0.6',
+        currentVersion: this.cdp?.PLUGIN_VERSION || '1.0.7-beta.1',
         channel: initialUpdateChannel,
       });
     if (_testUpdateService && typeof _testUpdateService.setChannel === 'function') {
@@ -589,9 +1938,20 @@ export class PrismDaemon {
   log(msg) {
     if (!this.silent) {
       try {
-        const fi = fs.existsSync(this.logFile) ? fs.statSync(this.logFile) : null;
-        if (fi && fi.size > 512 * 1024) fs.writeFileSync(this.logFile, '', 'utf8');
-        fs.appendFileSync(this.logFile, `[${new Date().toISOString()}] ${msg}\n`, 'utf8');
+        if (this._logBytes < 0) {
+          try {
+            this._logBytes = fs.statSync(this.logFile).size;
+          } catch {
+            this._logBytes = 0;
+          }
+        }
+        if (this._logBytes > 512 * 1024) {
+          fs.writeFileSync(this.logFile, '', 'utf8');
+          this._logBytes = 0;
+        }
+        const line = `[${new Date().toISOString()}] ${msg}\n`;
+        fs.appendFileSync(this.logFile, line, 'utf8');
+        this._logBytes += Buffer.byteLength(line, 'utf8');
       } catch {}
     }
   }
@@ -664,13 +2024,22 @@ export class PrismDaemon {
         }
       }
 
-      const scan = arch.scanConversationStorage({
-        convDir,
-        archiveDir,
-        summaries: liveSummaries,
-        subagentMaxAgeHours: action === 'prepare-archive' ? 1 : 6,
-        now,
-      });
+      const scan =
+        typeof arch.scanConversationStorageAsync === 'function'
+          ? await arch.scanConversationStorageAsync({
+              convDir,
+              archiveDir,
+              summaries: liveSummaries,
+              subagentMaxAgeHours: action === 'prepare-archive' ? 1 : 6,
+              now,
+            })
+          : arch.scanConversationStorage({
+              convDir,
+              archiveDir,
+              summaries: liveSummaries,
+              subagentMaxAgeHours: action === 'prepare-archive' ? 1 : 6,
+              now,
+            });
       const base = {
         ok: true,
         action,
@@ -1022,12 +2391,33 @@ export class PrismDaemon {
     return { channel: ch, changed };
   }
 
-  _buildCombinedUpdateStatus({ relState = null, gitState = null, action = 'update-status' } = {}) {
-    const currentVersion = this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.6';
+  _extractExplicitUpdateChannel(rawInput) {
+    if (!rawInput || typeof rawInput !== 'object') return null;
+    const candidates = [
+      rawInput.channel,
+      rawInput.updateChannel,
+      rawInput.version && typeof rawInput.version === 'object' ? rawInput.version.channel : undefined,
+      rawInput.version && typeof rawInput.version === 'object' ? rawInput.version.updateChannel : undefined,
+      rawInput.input && typeof rawInput.input === 'object' ? rawInput.input.channel : undefined,
+      rawInput.input && typeof rawInput.input === 'object' ? rawInput.input.updateChannel : undefined,
+      rawInput.payload && typeof rawInput.payload === 'object' ? rawInput.payload.channel : undefined,
+      rawInput.payload && typeof rawInput.payload === 'object' ? rawInput.payload.updateChannel : undefined,
+    ];
+    for (const c of candidates) {
+      if (c === 'stable' || c === 'beta') return c;
+    }
+    return null;
+  }
+
+  _buildCombinedUpdateStatus({ relState = null, gitState = null, action = 'update-status', channelOverride = null } = {}) {
+    const currentVersion = this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.7-beta.1';
     const rel = relState || this.updateService?.getStatus?.() || {};
     const autoUpdate = this._getAutoUpdateSetting();
-    const updateChannel = this._getUpdateChannelSetting();
-    const channel = rel.channel === 'beta' || rel.channel === 'stable' ? rel.channel : updateChannel;
+    const explicitChannel = channelOverride === 'beta' || channelOverride === 'stable' ? channelOverride : null;
+    const updateChannel = explicitChannel || this._getUpdateChannelSetting();
+    const channel =
+      explicitChannel ||
+      (rel.channel === 'beta' || rel.channel === 'stable' ? rel.channel : updateChannel);
     const isGitRemote = Boolean(gitState?.hasRemote);
     const isPrerelease = isGitRemote ? false : Boolean(rel.isPrerelease);
     const gitHasUpdate = Boolean(isGitRemote && gitState.behind > 0);
@@ -1064,12 +2454,12 @@ export class PrismDaemon {
   }
 
   async runUpdateCheck({ force = false, manual = false, allowAutoApply = false, channel = null } = {}) {
-    const { channel: activeChannel, changed: channelChanged } =
-      channel !== null && channel !== undefined
-        ? this._syncUpdateServiceChannel({ updateChannel: channel })
-        : this._syncUpdateServiceChannel();
+    const explicitChannel = channel === 'beta' || channel === 'stable' ? channel : null;
+    const { channel: activeChannel, changed: channelChanged } = explicitChannel
+      ? this._syncUpdateServiceChannel({ updateChannel: explicitChannel })
+      : this._syncUpdateServiceChannel();
     const effectiveForce = Boolean(force || channelChanged);
-    if (this._updateCheckInFlight && !channelChanged) {
+    if (this._updateCheckInFlight && !channelChanged && this._updateCheckInFlightChannel === activeChannel) {
       return this._updateCheckInFlight;
     }
     const run = async () => {
@@ -1090,12 +2480,19 @@ export class PrismDaemon {
             lastError: String(err?.message || err || 'check_failed'),
           };
         }
-        const combined = this._buildCombinedUpdateStatus({ relState, gitState, action: manual ? 'check-update' : 'update-status' });
-        if (this._getUpdateChannelSetting() === activeChannel || channel !== null) {
+        const combined = this._buildCombinedUpdateStatus({
+          relState,
+          gitState,
+          action: manual ? 'check-update' : 'update-status',
+          channelOverride: activeChannel,
+        });
+        const svcChannel = this.updateService?.channel;
+        const channelStillCurrent = !svcChannel || svcChannel === activeChannel;
+        if (channelStillCurrent && (this._getUpdateChannelSetting() === activeChannel || explicitChannel !== null)) {
           this._lastUpdateState = combined;
         }
 
-        if (allowAutoApply && this._getAutoUpdateSetting() === 'on' && combined.hasUpdate) {
+        if (channelStillCurrent && allowAutoApply && this._getAutoUpdateSetting() === 'on' && combined.hasUpdate) {
           if (gitState.hasRemote && gitState.behind > 0) {
             const pullRes = await this._executeGitPullHotReload(gitState, 'apply-update');
             this._lastUpdateState = {
@@ -1114,19 +2511,30 @@ export class PrismDaemon {
             };
           }
         }
-        return this._lastUpdateState || combined;
+        return channelStillCurrent ? this._lastUpdateState || combined : combined;
       } finally {
         if (this._updateCheckInFlight === p) {
           this._updateCheckInFlight = null;
+          this._updateCheckInFlightChannel = null;
         }
       }
     };
     const p = run();
     this._updateCheckInFlight = p;
+    this._updateCheckInFlightChannel = activeChannel;
     return p;
   }
 
-  async executeRepoAction(rawInput = {}) {
+  async executeRepoAction(rawInput = {}, secondArg = undefined) {
+    if (typeof rawInput === 'string') {
+      const extra =
+        secondArg && typeof secondArg === 'object' && !Array.isArray(secondArg)
+          ? secondArg
+          : typeof secondArg === 'string'
+            ? { version: secondArg }
+            : {};
+      rawInput = { ...extra, action: rawInput };
+    }
     if (rawInput?.action === 'storage-health' || rawInput?.action === 'prepare-archive') {
       return this._handleStorageAction(rawInput.action);
     }
@@ -1134,34 +2542,92 @@ export class PrismDaemon {
       return this._handleUninstallAction(rawInput);
     }
     if (rawInput?.action === 'update-status') {
-      const { channel, changed } =
-        rawInput?.channel !== undefined
-          ? this._syncUpdateServiceChannel({ updateChannel: rawInput.channel })
-          : this._syncUpdateServiceChannel();
+      const explicitChannel = this._extractExplicitUpdateChannel(rawInput);
+      const { channel, changed } = explicitChannel
+        ? this._syncUpdateServiceChannel({ updateChannel: explicitChannel })
+        : this._syncUpdateServiceChannel();
       const gitState = await this._inspectGitRepoState({ fetchRemote: false });
       const relState = this.updateService?.getStatus?.() || null;
-      const state =
-        this._lastUpdateState && !changed && this._lastUpdateState.channel === channel
-          ? {
-              ...this._lastUpdateState,
-              action: 'update-status',
-              channel,
-              updateChannel: channel,
-              autoUpdate: this._getAutoUpdateSetting(),
-              applying: Boolean(this.updateService?.applying),
-            }
-          : this._buildCombinedUpdateStatus({ relState, gitState, action: 'update-status' });
-      if (!state.checkedAt || changed) {
-        void this.runUpdateCheck({ force: changed, manual: false, allowAutoApply: false, channel }).catch(() => {});
+      const hasFreshCached = Boolean(
+        this._lastUpdateState &&
+          !changed &&
+          this._lastUpdateState.channel === channel &&
+          this._lastUpdateState.checkedAt
+      );
+      if (hasFreshCached) {
+        return {
+          ...this._lastUpdateState,
+          action: 'update-status',
+          channel,
+          updateChannel: channel,
+          checking: false,
+          autoUpdate: this._getAutoUpdateSetting(),
+          applying: Boolean(this.updateService?.applying),
+        };
       }
-      return state;
+      const baseState = this._buildCombinedUpdateStatus({
+        relState,
+        gitState,
+        action: 'update-status',
+        channelOverride: channel,
+      });
+      const shouldAwaitFreshCheck = changed || (explicitChannel !== null && !baseState.checkedAt);
+      if (shouldAwaitFreshCheck) {
+        const rawWait = Number(rawInput?.waitTimeoutMs);
+        const waitMs = Number.isFinite(rawWait) && rawWait >= 0 ? Math.min(10000, rawWait) : 2500;
+        const checkPromise = this.runUpdateCheck({
+          force: changed,
+          manual: false,
+          allowAutoApply: false,
+          channel,
+        });
+        let timedOut = false;
+        let timer = null;
+        const settled = await Promise.race([
+          checkPromise.then((res) => ({ done: true, res })).catch(() => ({ done: false, res: null })),
+          new Promise((resolve) => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              resolve({ done: false, res: null });
+            }, waitMs);
+            if (typeof timer.unref === 'function') timer.unref();
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+        if (settled?.done && settled.res && settled.res.channel === channel) {
+          return {
+            ...settled.res,
+            action: 'update-status',
+            channel,
+            updateChannel: channel,
+            checking: false,
+            autoUpdate: this._getAutoUpdateSetting(),
+            applying: Boolean(this.updateService?.applying),
+          };
+        }
+        return {
+          ...baseState,
+          action: 'update-status',
+          channel,
+          updateChannel: channel,
+          checking: Boolean(
+            timedOut || (this._updateCheckInFlight && this._updateCheckInFlightChannel === channel)
+          ),
+        };
+      }
+      if (!baseState.checkedAt) {
+        void this.runUpdateCheck({ force: false, manual: false, allowAutoApply: false, channel }).catch(() => {});
+        return { ...baseState, checking: true };
+      }
+      return { ...baseState, checking: false };
     }
     if (rawInput?.action === 'check-update') {
+      const explicitChannel = this._extractExplicitUpdateChannel(rawInput);
       const res = await this.runUpdateCheck({
         force: rawInput?.force !== false,
         manual: Boolean(rawInput?.manual),
         allowAutoApply: false,
-        channel: rawInput?.channel !== undefined ? rawInput.channel : null,
+        channel: explicitChannel,
       });
       return { ...res, action: 'check-update' };
     }
@@ -1169,10 +2635,10 @@ export class PrismDaemon {
       if (rawInput?.confirm !== true) {
         return { ok: false, action: 'apply-update', error: 'confirmation_required' };
       }
-      const { channel } =
-        rawInput?.channel !== undefined
-          ? this._syncUpdateServiceChannel({ updateChannel: rawInput.channel })
-          : this._syncUpdateServiceChannel();
+      const explicitChannel = this._extractExplicitUpdateChannel(rawInput);
+      const { channel } = explicitChannel
+        ? this._syncUpdateServiceChannel({ updateChannel: explicitChannel })
+        : this._syncUpdateServiceChannel();
       const gitState = await this._inspectGitRepoState({ fetchRemote: false });
       if (gitState.blockedUnc) {
         return { ok: false, action: 'apply-update', error: 'Remote UNC Git paths are blocked' };
@@ -1192,7 +2658,7 @@ export class PrismDaemon {
         ...applyRes,
         action: 'apply-update',
         channel,
-        currentVersion: this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.6',
+        currentVersion: this.cdp?.PLUGIN_VERSION || this.updateService?.currentVersion || '1.0.7-beta.1',
       };
     }
 
@@ -1292,10 +2758,105 @@ export class PrismDaemon {
     }
   }
 
-  rebuildBundle({ forceReloadCdp = false } = {}) {
+  _isGitSourceDir(dirPath) {
+    if (!dirPath) return false;
+    try {
+      const resolved = path.resolve(dirPath);
+      if (this.gitRepoDir && resolved.toLowerCase() === this.gitRepoDir.toLowerCase()) {
+        return true;
+      }
+      // 兼容普通仓库 .git 目录与 git worktree .git 文件，杜绝向源码目录写入缓存文件
+      if (fs.existsSync(path.join(resolved, '.git'))) {
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  _isWritableCacheDir(dirPath) {
+    if (!dirPath) return false;
+    try {
+      const st = fs.lstatSync(dirPath);
+      if (st.isSymbolicLink() || !st.isDirectory()) return false;
+      fs.accessSync(dirPath, fs.constants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  resolveBundleCachePath() {
+    if (this._bundleCachePathOpt === false || this._bundleCachePathOpt === null) {
+      return null;
+    }
+    if (typeof this._bundleCachePathOpt === 'string') {
+      const trimmed = this._bundleCachePathOpt.trim();
+      return trimmed ? path.resolve(trimmed) : null;
+    }
+    const envRaw = process.env.AG_PRISM_BUNDLE_CACHE_PATH;
+    if (typeof envRaw === 'string' && envRaw.trim()) {
+      const trimmed = envRaw.trim();
+      if (/^(?:0|off|false|none)$/i.test(trimmed)) return null;
+      return path.resolve(trimmed);
+    }
+    const cacheFileName =
+      typeof this.cdp?.BUNDLE_CACHE_FILENAME === 'string' && this.cdp.BUNDLE_CACHE_FILENAME
+        ? this.cdp.BUNDLE_CACHE_FILENAME
+        : '.bundle-cache.json';
+
+    // 1) 首选非 Git 源码且可写的已安装插件目录（如 ~/.gemini/config/plugins/obsidian-prism/.bundle-cache.json）：
+    //    与 .daemon.pid / daemon.log / config.json 同目录，普通卸载与 --purge-data 均会随插件目录一并自动清理。
+    if (!this._isGitSourceDir(this.rootDir) && this._isWritableCacheDir(this.rootDir)) {
+      return path.join(this.rootDir, cacheFileName);
+    }
+
+    // 2) 自动化测试环境中若 rootDir 是 Git 源码目录或只读目录且未显式指定缓存路径，禁止触碰真实用户主目录
+    if (isAutomatedTestRuntime()) {
+      return null;
+    }
+
+    // 3) 若 rootDir 为 Git 源码目录（开发直跑）或只读安装目录，回退至用户可写 sidecar_data 状态目录
+    //    （~/.gemini/antigravity/sidecar_data/obsidian-prism/telemetry/.bundle-cache.json，--purge-data 时可清理）
+    try {
+      const stateDir = this.resolveTelemetryDataDir();
+      if (stateDir && this._isWritableCacheDir(stateDir)) {
+        return path.join(stateDir, cacheFileName);
+      }
+    } catch {}
+    return null;
+  }
+
+  _scheduleBundleCacheFlush() {
+    if (this._bundleCacheFlushTimer) {
+      clearTimeout(this._bundleCacheFlushTimer);
+      this._bundleCacheFlushTimer = null;
+    }
+    this._bundleCacheFlushTimer = setTimeout(() => {
+      this._bundleCacheFlushTimer = null;
+      if (!this.running) return;
+      try {
+        this.cdp?.flushPendingBundleCache?.();
+      } catch {}
+    }, 350);
+    if (this._bundleCacheFlushTimer && typeof this._bundleCacheFlushTimer.unref === 'function') {
+      this._bundleCacheFlushTimer.unref();
+    }
+  }
+
+  _getChannelCacheOpts(deferCacheWrite = true) {
+    const cachePath = this.resolveBundleCachePath();
+    if (!cachePath) return null;
+    return deferCacheWrite ? { cachePath, deferCacheWrite: true } : { cachePath };
+  }
+
+  rebuildBundle({ forceReloadCdp = false, deferDiskCacheWrite = false } = {}) {
     const cdpPath = path.join(this.rootDir, 'cdp.js');
     const nextSig = this._readCdpFileSig();
     if (forceReloadCdp || !this.cdp || (nextSig && nextSig !== this._cdpFileSig)) {
+      if (this._bundleCacheFlushTimer) {
+        clearTimeout(this._bundleCacheFlushTimer);
+        this._bundleCacheFlushTimer = null;
+      }
       try {
         delete require.cache[require.resolve(cdpPath)];
       } catch {}
@@ -1303,33 +2864,62 @@ export class PrismDaemon {
       this._loadedCdpVerifier = typeof this.cdp?.isExpectedDaemonProcess === 'function' ? this.cdp.isExpectedDaemonProcess : null;
       this._cdpFileSig = nextSig;
     }
-    this.injectExpr = this.cdp.buildInjectExpression();
+    const hasReadConfig = typeof this.cdp.readConfig === 'function';
+    const cfg = hasReadConfig ? this.cdp.readConfig() : null;
+    const bundleCachePath = this.resolveBundleCachePath();
+    const canBatchFlush = Boolean(bundleCachePath && typeof this.cdp.flushPendingBundleCache === 'function');
+    const useDeferWrite = Boolean(deferDiskCacheWrite || canBatchFlush);
+    const cacheOpts = bundleCachePath
+      ? useDeferWrite
+        ? { cachePath: bundleCachePath, deferCacheWrite: true }
+        : { cachePath: bundleCachePath }
+      : null;
+
+    this.injectExpr = cacheOpts
+      ? this.cdp.buildInjectExpression(cfg || undefined, cacheOpts)
+      : this.cdp.buildInjectExpression(cfg || undefined);
     const m = this.injectExpr.match(/"codeHash":"([^"]+)"/);
     this.codeHash = m ? m[1] : '';
     const shouldBuildOmni =
       typeof this.cdp.buildOmniClientExpression === 'function' &&
-      this._isOmniEnabled();
+      this._isOmniEnabled(cfg);
     if (shouldBuildOmni) {
       const meta = this.omniServer && this.omniServer.running ? this.omniServer.getServerInfo() : null;
-      this.omniExpr = this.cdp.buildOmniClientExpression(meta);
+      this.omniExpr = cacheOpts
+        ? this.cdp.buildOmniClientExpression(meta, null, cacheOpts)
+        : this.cdp.buildOmniClientExpression(meta);
     } else {
       this.omniExpr = '';
     }
     const shouldBuildSidebar =
       typeof this.cdp.buildSidebarStudioExpression === 'function' &&
-      (typeof this.cdp.readConfig !== 'function' || this._isSidebarStudioEnabled());
+      (!hasReadConfig || this._isSidebarStudioEnabled(cfg));
     if (shouldBuildSidebar) {
-      this.sidebarExpr = this._buildSidebarExprForCurrentClient();
+      this.sidebarExpr = this._buildSidebarExprForCurrentClient(cacheOpts);
     } else {
       this.sidebarExpr = '';
     }
     const shouldBuildHostI18n =
       typeof this.cdp.buildHostI18nExpression === 'function' &&
-      this._isHostI18nEnabled();
+      this._isHostI18nEnabled(cfg);
     if (shouldBuildHostI18n) {
-      this.hostI18nExpr = this.cdp.buildHostI18nExpression();
+      this.hostI18nExpr = cacheOpts
+        ? this.cdp.buildHostI18nExpression(cfg, null, cacheOpts)
+        : this.cdp.buildHostI18nExpression(cfg);
     } else {
       this.hostI18nExpr = '';
+    }
+    this._buildThoughtExprForConfig(cfg, cacheOpts);
+    this._buildInlineDiffExprForConfig(cfg, cacheOpts);
+
+    if (bundleCachePath) {
+      if (deferDiskCacheWrite) {
+        this._scheduleBundleCacheFlush();
+      } else if (canBatchFlush) {
+        try {
+          this.cdp.flushPendingBundleCache();
+        } catch {}
+      }
     }
     return this.injectExpr;
   }
@@ -1345,16 +2935,31 @@ export class PrismDaemon {
   _hasSafeV2SidebarClientFile() {
     try {
       const p = path.join(this.rootDir, 'vendor', 'sidebar-studio', 'sidebar-client.js');
-      if (!fs.existsSync(p)) return false;
-      const src = fs.readFileSync(p, 'utf8');
-      if (typeof this.cdp?.isSafeV2SidebarClientSource === 'function') {
-        return this.cdp.isSafeV2SidebarClientSource(src);
+      let st;
+      try {
+        st = fs.statSync(p);
+      } catch {
+        this._safeSidebarFileCache = { path: p, sig: '', ok: false };
+        return false;
       }
-      // 严禁挂载任何含旧版全局权限写入（setPrefValue/setPrefValues 任意形式）的客户端，仅放行 v2 零全局写渲染端
-      if (!src.includes('SIDEBAR_STUDIO_CLIENT_V2')) return false;
-      if (/setPrefValues?/i.test(src)) return false;
-      return true;
+      if (!st.isFile()) {
+        this._safeSidebarFileCache = { path: p, sig: '', ok: false };
+        return false;
+      }
+      const sig = `${st.mtimeMs}:${st.size}:${st.ctimeMs}`;
+      if (this._safeSidebarFileCache && this._safeSidebarFileCache.path === p && this._safeSidebarFileCache.sig === sig) {
+        return this._safeSidebarFileCache.ok;
+      }
+      const src = fs.readFileSync(p, 'utf8');
+      const ok =
+        typeof this.cdp?.isSafeV2SidebarClientSource === 'function'
+          ? Boolean(this.cdp.isSafeV2SidebarClientSource(src))
+          : // 严禁挂载任何含旧版全局权限写入（setPrefValue/setPrefValues 任意形式）的客户端，仅放行 v2 零全局写渲染端
+            src.includes('SIDEBAR_STUDIO_CLIENT_V2') && !/setPrefValues?/i.test(src);
+      this._safeSidebarFileCache = { path: p, sig, ok };
+      return ok;
     } catch {
+      this._safeSidebarFileCache = null;
       return false;
     }
   }
@@ -1372,9 +2977,10 @@ export class PrismDaemon {
     return "(() => { try { if (document.documentElement) document.documentElement.setAttribute('data-ag-prism-omni', 'off'); window.__agPrismOmni?.destroy?.(); delete window.__agPrismOmni; delete window.__agPrismOmniServerMeta; } catch {} return { ok: true, status: 'off' }; })()";
   }
 
-  _isSidebarStudioEnabled() {
+  _isSidebarStudioEnabled(cfgOverride = null) {
     try {
-      return this.cdp?.readConfig?.()?.sidebarStudio === 'on';
+      const cfg = cfgOverride || this.cdp?.readConfig?.();
+      return cfg?.sidebarStudio === 'on';
     } catch {
       return false;
     }
@@ -1408,9 +3014,139 @@ export class PrismDaemon {
     );
   }
 
-  _isTelemetryDisabled() {
+  _setThoughtExpr(expr) {
+    const next = typeof expr === 'string' ? expr : '';
+    this.thoughtExpr = next;
+    this._thoughtHashSource = next;
+    this.thoughtCodeHash = next
+      ? crypto.createHash('sha256').update(next).digest('hex').slice(0, 16)
+      : '';
+    return next;
+  }
+
+  _buildThoughtExprForConfig(cfgOverride = null, cacheOpts = undefined) {
+    const cfg = cfgOverride || (typeof this.cdp?.readConfig === 'function' ? this.cdp.readConfig() : null);
+    if (!this._isThoughtEnabled(cfg) || typeof this.cdp?.buildThoughtExpression !== 'function') {
+      return this._setThoughtExpr('');
+    }
+    const opts = cacheOpts !== undefined ? cacheOpts : this._getChannelCacheOpts(true);
+    const expr = opts ? this.cdp.buildThoughtExpression(cfg, opts) : this.cdp.buildThoughtExpression(cfg);
+    if (cacheOpts === undefined && opts && this.running) {
+      this._scheduleBundleCacheFlush();
+    }
+    return this._setThoughtExpr(expr);
+  }
+
+  _getThoughtExprHash(expr = this.thoughtExpr) {
+    const str = typeof expr === 'string' ? expr : '';
+    if (!str) return '';
+    if (str === this._thoughtHashSource && this.thoughtCodeHash) {
+      return this.thoughtCodeHash;
+    }
+    const hash = crypto.createHash('sha256').update(str).digest('hex').slice(0, 16);
+    if (str === this.thoughtExpr) {
+      this._thoughtHashSource = str;
+      this.thoughtCodeHash = hash;
+    }
+    return hash;
+  }
+
+  _isThoughtEnabled(cfgOverride = null) {
     try {
-      return this.cdp?.readConfig?.()?.telemetryModule === 'off';
+      const cfg = cfgOverride || this.cdp?.readConfig?.();
+      if (typeof this.cdp?.shouldEnableThought === 'function') {
+        return Boolean(this.cdp.shouldEnableThought(cfg));
+      }
+      const mode = typeof cfg?.thoughtTranslate === 'string' ? cfg.thoughtTranslate.trim().toLowerCase() : 'off';
+      return Boolean(mode && mode !== 'off');
+    } catch {
+      return false;
+    }
+  }
+
+  _getThoughtCfgSig(cfgOverride = null, exprOverride = null) {
+    try {
+      const cfg = cfgOverride || this.cdp?.readConfig?.() || {};
+      if (!this._isThoughtEnabled(cfg)) return '';
+      const mode = typeof cfg.thoughtTranslate === 'string' ? cfg.thoughtTranslate.trim().toLowerCase() : 'off';
+      const exprHash = this._getThoughtExprHash(typeof exprOverride === 'string' ? exprOverride : this.thoughtExpr);
+      return `1:${mode}:${exprHash}`;
+    } catch {
+      return '';
+    }
+  }
+
+  _getThoughtCleanupExpression() {
+    return (
+      this.cdp?.THOUGHT_REMOVE_EXPRESSION ||
+      "(() => { try { window.__agPrismThought?.destroy?.(); } catch {} try { document.querySelectorAll('[data-testid=\"prism-thought-ai-config\"]').forEach((n) => n.remove()); } catch {} try { delete window.__agPrismThought; } catch {} try { delete globalThis.__agPrismThought; } catch {} try { delete window.__agPrismThoughtSettingsUi; } catch {} try { delete globalThis.__agPrismThoughtSettingsUi; } catch {} return { ok: true, status: 'off' }; })()"
+    );
+  }
+
+  _hasInlineDiffClientFile() {
+    try {
+      return fs.existsSync(path.join(this.rootDir, 'vendor', 'inline-diff', 'inline-diff-client.js'));
+    } catch {
+      return false;
+    }
+  }
+
+  _extractInlineDiffCodeHash(expr) {
+    const str = typeof expr === 'string' ? expr : '';
+    if (!str) return '';
+    const m = /const targetHash = "([^"]+)"/.exec(str);
+    if (m && m[1]) return m[1];
+    return crypto.createHash('sha256').update(str).digest('hex').slice(0, 16);
+  }
+
+  _setInlineDiffExpr(expr) {
+    const next = typeof expr === 'string' ? expr : '';
+    this.inlineDiffExpr = next;
+    this._inlineDiffHashSource = next;
+    this.inlineDiffCodeHash = this._extractInlineDiffCodeHash(next);
+    return next;
+  }
+
+  _buildInlineDiffExprForConfig(cfgOverride = null, cacheOpts = undefined) {
+    const cfg = cfgOverride || (typeof this.cdp?.readConfig === 'function' ? this.cdp.readConfig() : null);
+    if (typeof this.cdp?.buildInlineDiffInjectExpression !== 'function') {
+      return this._setInlineDiffExpr('');
+    }
+    const opts = cacheOpts !== undefined ? cacheOpts : this._getChannelCacheOpts(true);
+    const expr = opts
+      ? this.cdp.buildInlineDiffInjectExpression(cfg, opts)
+      : this.cdp.buildInlineDiffInjectExpression(cfg);
+    if (cacheOpts === undefined && opts && this.running) {
+      this._scheduleBundleCacheFlush();
+    }
+    return this._setInlineDiffExpr(expr);
+  }
+
+  _getInlineDiffExprHash(expr = this.inlineDiffExpr) {
+    const str = typeof expr === 'string' ? expr : '';
+    if (!str) return '';
+    if (str === this._inlineDiffHashSource && this.inlineDiffCodeHash) {
+      return this.inlineDiffCodeHash;
+    }
+    const hash = this._extractInlineDiffCodeHash(str);
+    if (str === this.inlineDiffExpr) {
+      this._inlineDiffHashSource = str;
+      this.inlineDiffCodeHash = hash;
+    }
+    return hash;
+  }
+
+  _getInlineDiffCleanupExpression() {
+    return (
+      this.cdp?.INLINE_DIFF_REMOVE_EXPRESSION ||
+      "(() => { try { window.__agPrismInlineDiff?.destroy?.(); } catch {} try { document.getElementById('ag-prism-inline-diff-css')?.remove(); } catch {} try { document.querySelectorAll('.ag-cs-inline-diff-box, .ag-cs-diff-ctx-menu').forEach((n) => n.remove()); } catch {} try { delete window.__agPrismInlineDiff; } catch {} try { delete globalThis.__agPrismInlineDiff; } catch {} try { delete window.__agPrismInlineDiffFactory; } catch {} try { delete globalThis.__agPrismInlineDiffFactory; } catch {} try { delete window.__agPrismInlineDiffResolve; } catch {} return { ok: true, status: 'off' }; })()"
+    );
+  }
+
+  _isTelemetryDisabled(cfgOverride = null) {
+    try {
+      const cfg = cfgOverride || this.cdp?.readConfig?.();
+      return cfg?.telemetryModule === 'off';
     } catch {
       return false;
     }
@@ -1512,12 +3248,20 @@ export class PrismDaemon {
     }
   }
 
-  _buildSidebarExprForCurrentClient() {
+  _buildSidebarExprForCurrentClient(cacheOpts = undefined) {
     if (typeof this.cdp.buildSidebarStudioExpression !== 'function') return '';
     const meta = this._getSidebarServerMeta();
-    return this._hasSafeV2SidebarClientFile()
-      ? this.cdp.buildSidebarStudioExpression(meta)
-      : this.cdp.buildSidebarStudioExpression(meta, '');
+    if (!this._hasSafeV2SidebarClientFile()) {
+      return this.cdp.buildSidebarStudioExpression(meta, '');
+    }
+    const opts = cacheOpts !== undefined ? cacheOpts : this._getChannelCacheOpts(true);
+    const expr = opts
+      ? this.cdp.buildSidebarStudioExpression(meta, null, opts)
+      : this.cdp.buildSidebarStudioExpression(meta);
+    if (cacheOpts === undefined && opts && this.running) {
+      this._scheduleBundleCacheFlush();
+    }
+    return expr;
   }
 
   _pickActiveSidebarHostEntry() {
@@ -1532,7 +3276,7 @@ export class PrismDaemon {
   _getSidebarServerMeta() {
     return {
       binding: SIDEBAR_BINDING,
-      version: this.cdp?.PLUGIN_VERSION || '1.0.6',
+      version: this.cdp?.PLUGIN_VERSION || '1.0.7-beta.1',
       schemaVersion: 2,
       serviceReady: !this._sidebarStopped && typeof this.sidebarService?.handleRpc === 'function' &&
         !this.sidebarService.getBootDiagnostic?.(),
@@ -1557,6 +3301,47 @@ export class PrismDaemon {
       .send('Runtime.removeBinding', { name: SIDEBAR_BINDING }, timeoutMs)
       .catch(() => {});
     entry.sidebarBindingAdded = false;
+  }
+
+  async _ensureInlineDiffBinding(entry, timeoutMs = 2600, force = false) {
+    if (!entry || entry.session.closed) return false;
+    if (!force && entry.inlineDiffBindingAdded) return true;
+    const ok = await entry.session
+      .send('Runtime.addBinding', { name: INLINE_DIFF_BINDING }, timeoutMs)
+      .then(() => true)
+      .catch(() => false);
+    if (ok) entry.inlineDiffBindingAdded = true;
+    return ok;
+  }
+
+  async _removeInlineDiffBinding(entry, timeoutMs = 2000) {
+    if (!entry || entry.session.closed) return;
+    await entry.session
+      .send('Runtime.removeBinding', { name: INLINE_DIFF_BINDING }, timeoutMs)
+      .catch(() => {});
+    entry.inlineDiffBindingAdded = false;
+  }
+
+  async _recordInlineDiffEvalOutcome(entry, evalRes, inlineDiffHash) {
+    const isSkipped = Boolean(
+      evalRes && typeof evalRes.status === 'string' && evalRes.status.startsWith('skipped-')
+    );
+    if (evalRes && evalRes.ok) {
+      entry.inlineDiffMounted = true;
+      entry.inlineDiffSkipped = false;
+      entry.lastInlineDiffHash = inlineDiffHash;
+    } else if (isSkipped) {
+      entry.inlineDiffMounted = false;
+      entry.inlineDiffSkipped = true;
+      entry.lastInlineDiffHash = inlineDiffHash;
+      if (evalRes.status === 'skipped-non-host') {
+        await this._removeInlineDiffBinding(entry);
+      }
+    } else {
+      entry.inlineDiffMounted = false;
+      entry.inlineDiffSkipped = false;
+      entry.lastInlineDiffHash = '';
+    }
   }
 
   async ensureSidebarService() {
@@ -1617,7 +3402,13 @@ export class PrismDaemon {
       await srv.start();
       this.omniServer = srv;
       if (typeof this.cdp.buildOmniClientExpression === 'function') {
-        this.omniExpr = this.cdp.buildOmniClientExpression(srv.getServerInfo());
+        const opts = this._getChannelCacheOpts(true);
+        this.omniExpr = opts
+          ? this.cdp.buildOmniClientExpression(srv.getServerInfo(), null, opts)
+          : this.cdp.buildOmniClientExpression(srv.getServerInfo());
+        if (opts && this.running) {
+          this._scheduleBundleCacheFlush();
+        }
       }
       return srv;
     })();
@@ -1734,7 +3525,12 @@ export class PrismDaemon {
       return async (input) => {
         this.syncClientCdpPort(this._lazyStore);
         const safeId = input?.conversationId && GUID_RE.test(input.conversationId) ? input.conversationId : null;
-        const base = await this._lazyStore.snapshot({ conversationId: safeId, force: Boolean(input?.force) });
+        const base = await this._lazyStore.snapshot({
+          conversationId: safeId,
+          force: Boolean(input?.force),
+          quotaRefresh: Boolean(input?.quotaRefresh),
+          selectLatest: input?.selectLatest === false ? false : true,
+        });
         let usageSnap = null;
         if (input?.includeUsage === true) {
           if (!this._lazyUsage) {
@@ -1926,20 +3722,16 @@ export class PrismDaemon {
         const subMap = this._discoveredSubagents || null;
         try {
           const localRes = await discoverLocalConversations({ host: 'app' });
-          const convRoot = path.join(os.homedir(), '.gemini', 'antigravity', 'conversations');
-          const convRootStat = await fs.promises.lstat(convRoot).catch(() => null);
-          const rootSafe = Boolean(convRootStat && !convRootStat.isSymbolicLink() && convRootStat.isDirectory());
           for (const entry of localRes?.conversations || []) {
             const lid = String(entry?.id || '').toLowerCase();
             if (!GUID_RE.test(lid) || byId.has(lid)) continue;
-            let mtimeSec = 0;
-            if (rootSafe) {
-              const dbFile = path.join(convRoot, `${lid}.db`);
-              const st = await fs.promises.lstat(dbFile).catch(() => null);
-              if (st && !st.isSymbolicLink() && st.isFile() && Number.isFinite(st.mtimeMs) && st.mtimeMs > 0) {
-                mtimeSec = Math.floor(st.mtimeMs / 1000);
-              }
-            }
+            // 直接复用 discoverLocalConversations 并发 lstat 返回的 mtimeMs，省去二次串行 lstat
+            const rawMtimeMs = Number.isFinite(entry?.dbMtimeMs)
+              ? entry.dbMtimeMs
+              : Number.isFinite(entry?.mtimeMs)
+              ? entry.mtimeMs
+              : 0;
+            const mtimeSec = rawMtimeMs > 0 ? Math.floor(rawMtimeMs / 1000) : 0;
             const knownSub = subMap?.get(lid) || null;
             const localItem = {
               id: lid,
@@ -2212,6 +4004,7 @@ export class PrismDaemon {
     const next = { ...current, ...expandedPatch };
     this._selfConfigWriteUntil = Date.now() + 650;
     writeFileAtomicSync(cfgPath, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
+    this.cdp?.invalidateConfigCache?.();
     this._configSeq += 1;
     return true;
   }
@@ -2366,23 +4159,34 @@ export class PrismDaemon {
           }
         }
         // Warm-cache rebuild updates `this.injectExpr` bootCfg in < 3ms without re-minifying modules!
-        this.rebuildBundle();
+        this.rebuildBundle({ deferDiskCacheWrite: true });
         const injectSnap = this.injectExpr;
         const omniSnap = this.omniExpr;
         const sidebarSnap = this.sidebarExpr;
         const hostI18nSnap = this.hostI18nExpr;
+        let thoughtSnap = this.thoughtExpr;
+        let inlineDiffSnap = this.inlineDiffExpr;
         const currentCfg = typeof this.cdp.readConfig === 'function' ? this.cdp.readConfig() : {};
         if (currentCfg?.telemetryModule === 'off') {
           this._releaseIdleTelemetry(true);
         }
-        const { changed: updateChannelChanged } = this._syncUpdateServiceChannel(currentCfg);
+        const { channel: syncedUpdateChannel, changed: updateChannelChanged } = this._syncUpdateServiceChannel(currentCfg);
         if (updateChannelChanged && this.running) {
-          void this.runUpdateCheck({ force: true, manual: false, allowAutoApply: false }).catch(() => {});
+          void this.runUpdateCheck({ force: true, manual: false, allowAutoApply: false, channel: syncedUpdateChannel }).catch(() => {});
         }
         const omniEnabled = this._isOmniEnabled(currentCfg);
         const sidebarEnabled = currentCfg?.sidebarStudio === 'on';
         const hostI18nEnabled = this._isHostI18nEnabled(currentCfg);
         const hostI18nSig = hostI18nEnabled ? this._getHostI18nCfgSig(currentCfg) : '';
+        const thoughtEnabled = this._isThoughtEnabled(currentCfg);
+        if (thoughtEnabled && !thoughtSnap && typeof this.cdp.buildThoughtExpression === 'function') {
+          thoughtSnap = this._buildThoughtExprForConfig(currentCfg);
+        }
+        const thoughtSig = thoughtEnabled ? this._getThoughtCfgSig(currentCfg, thoughtSnap) : '';
+        if (!inlineDiffSnap && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
+          inlineDiffSnap = this._buildInlineDiffExprForConfig(currentCfg);
+        }
+        const inlineDiffHash = inlineDiffSnap ? this._getInlineDiffExprHash(inlineDiffSnap) : '';
         const canFastRefresh = typeof this.cdp.buildConfigRefreshExpression === 'function';
         const baseRefreshExpr = canFastRefresh ? this.cdp.buildConfigRefreshExpression() : null;
         if (activeItems.length === 0) continue;
@@ -2473,6 +4277,46 @@ export class PrismDaemon {
                 entry.hostI18nMounted = false;
                 entry.lastHostI18nSig = '';
               }
+              if (abortIfStale()) return;
+              const hadThought = Boolean(entry.thoughtScriptId || entry.thoughtMounted);
+              const thoughtChanged = Boolean(
+                thoughtEnabled &&
+                  thoughtSnap &&
+                  (entry.lastThoughtSig !== thoughtSig || !entry.thoughtScriptId || !entry.thoughtMounted)
+              );
+              if (thoughtEnabled && thoughtSnap) {
+                if (!skippedStale && !entry.session.closed && (!refreshedFast || thoughtChanged)) {
+                  await entry.session.send('Runtime.addBinding', { name: THOUGHT_BINDING }).catch(() => {});
+                  const evalRes = await entry.session.evaluate(thoughtSnap).catch(() => null);
+                  if (evalRes && evalRes.ok) {
+                    entry.thoughtMounted = true;
+                    entry.lastThoughtSig = thoughtSig;
+                  }
+                }
+              } else if (hadThought && !skippedStale && !entry.session.closed) {
+                await entry.session.evaluate(this._getThoughtCleanupExpression()).catch(() => {});
+                entry.thoughtMounted = false;
+                entry.lastThoughtSig = '';
+              }
+              if (abortIfStale()) return;
+              const hadInlineDiff = Boolean(entry.inlineDiffScriptId || entry.inlineDiffMounted);
+              const inlineDiffChanged = Boolean(
+                inlineDiffSnap &&
+                  !entry.inlineDiffSkipped &&
+                  (entry.lastInlineDiffHash !== inlineDiffHash || !entry.inlineDiffScriptId || !entry.inlineDiffMounted)
+              );
+              if (inlineDiffSnap) {
+                if (!skippedStale && !entry.session.closed && !entry.inlineDiffSkipped && (!refreshedFast || inlineDiffChanged)) {
+                  await this._ensureInlineDiffBinding(entry);
+                  const evalRes = await entry.session.evaluate(inlineDiffSnap).catch(() => null);
+                  await this._recordInlineDiffEvalOutcome(entry, evalRes, inlineDiffHash);
+                }
+              } else if (hadInlineDiff && !skippedStale && !entry.session.closed) {
+                await entry.session.evaluate(this._getInlineDiffCleanupExpression()).catch(() => {});
+                entry.inlineDiffMounted = false;
+                entry.inlineDiffSkipped = false;
+                entry.lastInlineDiffHash = '';
+              }
 
               // Coalesce persistent NewDocument script replacement if a newer mutation is already queued!
               if (this._broadcastPending || this._configSeq !== snapSeq || entry.session.closed) {
@@ -2550,6 +4394,52 @@ export class PrismDaemon {
                   entry.lastHostI18nScriptSig = hostI18nSig;
                 }
               }
+              if (!thoughtEnabled || !thoughtSnap) {
+                if (entry.thoughtScriptId) {
+                  await entry.session
+                    .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId })
+                    .catch(() => {});
+                  entry.thoughtScriptId = null;
+                }
+                entry.lastThoughtScriptSig = '';
+              } else if ((entry.lastThoughtScriptSig !== thoughtSig || !entry.thoughtScriptId) && !entry.session.closed) {
+                if (entry.thoughtScriptId) {
+                  await entry.session
+                    .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId })
+                    .catch(() => {});
+                  entry.thoughtScriptId = null;
+                }
+                const thoughtAdd = await entry.session
+                  .send('Page.addScriptToEvaluateOnNewDocument', { source: thoughtSnap })
+                  .catch(() => null);
+                if (thoughtAdd && thoughtAdd.identifier) {
+                  entry.thoughtScriptId = thoughtAdd.identifier;
+                  entry.lastThoughtScriptSig = thoughtSig;
+                }
+              }
+              if (!inlineDiffSnap) {
+                if (entry.inlineDiffScriptId) {
+                  await entry.session
+                    .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId })
+                    .catch(() => {});
+                  entry.inlineDiffScriptId = null;
+                }
+                entry.lastInlineDiffScriptHash = '';
+              } else if ((entry.lastInlineDiffScriptHash !== inlineDiffHash || !entry.inlineDiffScriptId) && !entry.session.closed) {
+                if (entry.inlineDiffScriptId) {
+                  await entry.session
+                    .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId })
+                    .catch(() => {});
+                  entry.inlineDiffScriptId = null;
+                }
+                const inlineDiffAdd = await entry.session
+                  .send('Page.addScriptToEvaluateOnNewDocument', { source: inlineDiffSnap })
+                  .catch(() => null);
+                if (inlineDiffAdd && inlineDiffAdd.identifier) {
+                  entry.inlineDiffScriptId = inlineDiffAdd.identifier;
+                  entry.lastInlineDiffScriptHash = inlineDiffHash;
+                }
+              }
             })
           )
         );
@@ -2615,26 +4505,57 @@ export class PrismDaemon {
   async applyToEntry(entry) {
     return this._runEntryExclusive(entry, async () => {
       if (!entry || entry.session.closed) return null;
-      const omniEnabledInit = this._isOmniEnabled();
+      const readCfg = () => (typeof this.cdp?.readConfig === 'function' ? this.cdp.readConfig() : null);
+      let cfgSeq = this._configSeq;
+      let cfg = readCfg();
+      const getCurrentCfg = () => {
+        if (this._configSeq !== cfgSeq) {
+          cfgSeq = this._configSeq;
+          cfg = readCfg();
+        }
+        return cfg;
+      };
+      const omniEnabledInit = this._isOmniEnabled(cfg);
       if (omniEnabledInit) {
         await this.ensureOmniServer().catch(() => null);
       }
-      const sidebarEnabledInit = this._isSidebarStudioEnabled();
+      const sidebarEnabledInit = this._isSidebarStudioEnabled(cfg);
       if (sidebarEnabledInit) {
         await this.ensureSidebarService().catch(() => null);
       }
       if (!this.injectExpr) this.rebuildBundle();
       else {
+        const curCfg = getCurrentCfg();
+        const chOpts = this._getChannelCacheOpts(true);
+        let usedChCache = false;
         if (!omniEnabledInit) {
           this.omniExpr = '';
         } else if (this.omniServer && !this.omniExpr && typeof this.cdp.buildOmniClientExpression === 'function') {
-          this.omniExpr = this.cdp.buildOmniClientExpression(this.omniServer.getServerInfo());
+          this.omniExpr = chOpts
+            ? this.cdp.buildOmniClientExpression(this.omniServer.getServerInfo(), null, chOpts)
+            : this.cdp.buildOmniClientExpression(this.omniServer.getServerInfo());
+          if (chOpts) usedChCache = true;
         }
         if (sidebarEnabledInit && !this.sidebarExpr && typeof this.cdp.buildSidebarStudioExpression === 'function') {
-          this.sidebarExpr = this._buildSidebarExprForCurrentClient();
+          this.sidebarExpr = this._buildSidebarExprForCurrentClient(chOpts);
+          if (chOpts) usedChCache = true;
         }
-        if (!this.hostI18nExpr && this._isHostI18nEnabled() && typeof this.cdp.buildHostI18nExpression === 'function') {
-          this.hostI18nExpr = this.cdp.buildHostI18nExpression();
+        if (!this.hostI18nExpr && this._isHostI18nEnabled(curCfg) && typeof this.cdp.buildHostI18nExpression === 'function') {
+          this.hostI18nExpr = chOpts
+            ? this.cdp.buildHostI18nExpression(curCfg, null, chOpts)
+            : this.cdp.buildHostI18nExpression(curCfg);
+          if (chOpts) usedChCache = true;
+        }
+        if (!this.thoughtExpr && this._isThoughtEnabled(curCfg) && typeof this.cdp.buildThoughtExpression === 'function') {
+          this._buildThoughtExprForConfig(curCfg, chOpts);
+          if (chOpts) usedChCache = true;
+        }
+        if (!this.inlineDiffExpr && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
+          this._buildInlineDiffExprForConfig(curCfg, chOpts);
+          if (chOpts && this.inlineDiffExpr) usedChCache = true;
+        }
+        if (usedChCache && this.running) {
+          this._scheduleBundleCacheFlush();
         }
       }
       if (entry.scriptId) {
@@ -2678,13 +4599,35 @@ export class PrismDaemon {
             .catch(() => {});
           entry.hostI18nScriptId = null;
         }
+        if (entry.thoughtScriptId) {
+          await entry.session
+            .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId })
+            .catch(() => {});
+          entry.thoughtScriptId = null;
+        }
+        if (entry.inlineDiffScriptId) {
+          await entry.session
+            .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId })
+            .catch(() => {});
+          entry.inlineDiffScriptId = null;
+        }
+        await this._removeSidebarBinding(entry);
+        await this._removeInlineDiffBinding(entry);
         entry.sidebarMounted = false;
         entry.hostI18nMounted = false;
         entry.lastHostI18nSig = '';
         entry.lastHostI18nScriptSig = '';
+        entry.thoughtMounted = false;
+        entry.lastThoughtSig = '';
+        entry.lastThoughtScriptSig = '';
+        entry.inlineDiffMounted = false;
+        entry.inlineDiffSkipped = true;
+        entry.lastInlineDiffHash = '';
+        entry.lastInlineDiffScriptHash = '';
         return mainRes;
       }
 
+      const cfgNow = getCurrentCfg();
       const hadOmniBefore = Boolean(entry.omniScriptId || entry.lastOmniExpr);
       if (entry.omniScriptId) {
         await entry.session
@@ -2692,7 +4635,7 @@ export class PrismDaemon {
           .catch(() => {});
         entry.omniScriptId = null;
       }
-      const omniEnabledNow = this._isOmniEnabled();
+      const omniEnabledNow = this._isOmniEnabled(cfgNow);
       if (omniEnabledNow && this.omniExpr) {
         await entry.session.send('Runtime.addBinding', { name: OMNI_BINDING }).catch(() => {});
         const omniAdd = await entry.session
@@ -2716,7 +4659,7 @@ export class PrismDaemon {
           .catch(() => {});
         entry.sidebarScriptId = null;
       }
-      const sidebarEnabledNow = this._isSidebarStudioEnabled();
+      const sidebarEnabledNow = this._isSidebarStudioEnabled(cfgNow);
       if (sidebarEnabledNow) {
         if (!this.sidebarService) {
           await this.ensureSidebarService().catch(() => null);
@@ -2748,10 +4691,14 @@ export class PrismDaemon {
           .catch(() => {});
         entry.hostI18nScriptId = null;
       }
-      const hostI18nEnabledNow = this._isHostI18nEnabled();
+      const hostI18nEnabledNow = this._isHostI18nEnabled(cfgNow);
       if (hostI18nEnabledNow) {
         if (!this.hostI18nExpr && typeof this.cdp.buildHostI18nExpression === 'function') {
-          this.hostI18nExpr = this.cdp.buildHostI18nExpression();
+          const chOpts = this._getChannelCacheOpts(true);
+          this.hostI18nExpr = chOpts
+            ? this.cdp.buildHostI18nExpression(cfgNow, null, chOpts)
+            : this.cdp.buildHostI18nExpression(cfgNow);
+          if (chOpts && this.running) this._scheduleBundleCacheFlush();
         }
         if (this.hostI18nExpr) {
           const hiAdd = await entry.session
@@ -2761,7 +4708,7 @@ export class PrismDaemon {
             entry.hostI18nScriptId = hiAdd.identifier;
           }
           const evalRes = await entry.session.evaluate(this.hostI18nExpr).catch(() => null);
-          const hiSig = this._getHostI18nCfgSig();
+          const hiSig = this._getHostI18nCfgSig(cfgNow);
           if (evalRes && evalRes.ok) {
             entry.hostI18nMounted = true;
             entry.lastHostI18nSig = hiSig;
@@ -2777,6 +4724,86 @@ export class PrismDaemon {
         entry.hostI18nMounted = false;
         entry.lastHostI18nSig = '';
         entry.lastHostI18nScriptSig = '';
+      }
+      const hadThoughtBefore = Boolean(entry.thoughtScriptId || entry.thoughtMounted);
+      if (entry.thoughtScriptId) {
+        await entry.session
+          .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId })
+          .catch(() => {});
+        entry.thoughtScriptId = null;
+      }
+      const thoughtCfgNow = getCurrentCfg();
+      const thoughtEnabledNow = this._isThoughtEnabled(thoughtCfgNow);
+      if (thoughtEnabledNow) {
+        if (!this.thoughtExpr && typeof this.cdp.buildThoughtExpression === 'function') {
+          this._buildThoughtExprForConfig(thoughtCfgNow);
+        }
+        if (this.thoughtExpr) {
+          await entry.session.send('Runtime.addBinding', { name: THOUGHT_BINDING }).catch(() => {});
+          const thoughtAdd = await entry.session
+            .send('Page.addScriptToEvaluateOnNewDocument', { source: this.thoughtExpr })
+            .catch(() => null);
+          if (thoughtAdd && thoughtAdd.identifier) {
+            entry.thoughtScriptId = thoughtAdd.identifier;
+          }
+          const evalRes = await entry.session.evaluate(this.thoughtExpr).catch(() => null);
+          const thoughtSig = this._getThoughtCfgSig(thoughtCfgNow);
+          if (evalRes && evalRes.ok) {
+            entry.thoughtMounted = true;
+            entry.lastThoughtSig = thoughtSig;
+          } else {
+            entry.thoughtMounted = false;
+            entry.lastThoughtSig = '';
+          }
+          if (thoughtAdd && thoughtAdd.identifier) {
+            entry.lastThoughtScriptSig = thoughtSig;
+          } else {
+            entry.lastThoughtScriptSig = '';
+          }
+        }
+      } else {
+        if (hadThoughtBefore) {
+          await entry.session.evaluate(this._getThoughtCleanupExpression()).catch(() => null);
+        }
+        entry.thoughtMounted = false;
+        entry.lastThoughtSig = '';
+        entry.lastThoughtScriptSig = '';
+      }
+      const hadInlineDiffBefore = Boolean(entry.inlineDiffScriptId || entry.inlineDiffMounted);
+      if (entry.inlineDiffScriptId) {
+        await entry.session
+          .send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId })
+          .catch(() => {});
+        entry.inlineDiffScriptId = null;
+      }
+      const inlineDiffCfgNow = getCurrentCfg();
+      if (!this.inlineDiffExpr && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
+        this._buildInlineDiffExprForConfig(inlineDiffCfgNow);
+      }
+      if (this.inlineDiffExpr) {
+        await this._ensureInlineDiffBinding(entry);
+        const inlineDiffAdd = await entry.session
+          .send('Page.addScriptToEvaluateOnNewDocument', { source: this.inlineDiffExpr })
+          .catch(() => null);
+        if (inlineDiffAdd && inlineDiffAdd.identifier) {
+          entry.inlineDiffScriptId = inlineDiffAdd.identifier;
+        }
+        const evalRes = await entry.session.evaluate(this.inlineDiffExpr).catch(() => null);
+        const inlineDiffHash = this._getInlineDiffExprHash(this.inlineDiffExpr);
+        await this._recordInlineDiffEvalOutcome(entry, evalRes, inlineDiffHash);
+        if (inlineDiffAdd && inlineDiffAdd.identifier) {
+          entry.lastInlineDiffScriptHash = inlineDiffHash;
+        } else {
+          entry.lastInlineDiffScriptHash = '';
+        }
+      } else {
+        if (hadInlineDiffBefore) {
+          await entry.session.evaluate(this._getInlineDiffCleanupExpression()).catch(() => null);
+        }
+        entry.inlineDiffMounted = false;
+        entry.inlineDiffSkipped = false;
+        entry.lastInlineDiffHash = '';
+        entry.lastInlineDiffScriptHash = '';
       }
       entry.lastVerifyAt = Date.now();
       entry.healthyStreak = 1;
@@ -2841,6 +4868,10 @@ export class PrismDaemon {
       if (inputPayload.purgeData === undefined && parsed?.purgeData !== undefined) inputPayload.purgeData = parsed.purgeData;
       if (inputPayload.force === undefined && parsed?.force !== undefined) inputPayload.force = parsed.force;
       if (inputPayload.manual === undefined && parsed?.manual !== undefined) inputPayload.manual = parsed.manual;
+      if (inputPayload.channel === undefined && parsed?.channel !== undefined) inputPayload.channel = parsed.channel;
+      if (inputPayload.updateChannel === undefined && parsed?.updateChannel !== undefined) inputPayload.updateChannel = parsed.updateChannel;
+      if (inputPayload.version === undefined && parsed?.version !== undefined) inputPayload.version = parsed.version;
+      if (inputPayload.version === undefined && typeof parsed?.input === 'string') inputPayload.version = parsed.input;
 
       const result = await this.executeRepoAction({ ...inputPayload, action });
       if (reqId !== null) {
@@ -2929,11 +4960,17 @@ export class PrismDaemon {
         } else if (action === 'save-config') {
           result = svc.saveConfig(input);
         } else if (action === 'get-cache') {
+          if (typeof svc._ensureCacheLoadedAsync === 'function') {
+            await svc._ensureCacheLoadedAsync();
+          }
           result = svc.getWarmCacheSnapshot(
             Number(input.limit) > 0 ? Number(input.limit) : 40,
             Number(input.maxChars) > 0 ? Number(input.maxChars) : 80000
           );
         } else if (action === 'cache-stats') {
+          if (typeof svc._ensureCacheLoadedAsync === 'function') {
+            await svc._ensureCacheLoadedAsync();
+          }
           result = svc.getCacheStats();
         } else if (action === 'clear-cache') {
           result = svc.clearCache();
@@ -3048,6 +5085,78 @@ export class PrismDaemon {
         await entry.session.send('Runtime.evaluate', evalParams).catch(() => {});
       }
       return;
+    }
+
+    if (name === INLINE_DIFF_BINDING) {
+      const context = typeof executionContextId === 'number' ? entry.contextFrames?.get(executionContextId) : undefined;
+      const expectedDocGen = typeof entry.sidebarDocument === 'number' ? entry.sidebarDocument : null;
+      const isCurrentContext = () => {
+        if (!entry || entry.session?.closed) return false;
+        if (entry.sidebarHostVerified !== true) return false;
+        if (!this._isTrustedMainFrameBindingCall(entry, executionContextId)) return false;
+        if (typeof executionContextId !== 'number' || !context) return false;
+        if (context.isDefault !== true || (context.type && context.type !== 'default')) return false;
+        if (!entry.mainFrameId || context.frameId !== entry.mainFrameId) return false;
+        if (!(entry.contextFrames instanceof Map) || entry.contextFrames.get(executionContextId) !== context) {
+          return false;
+        }
+        if (typeof entry.sidebarDocument === 'number') {
+          if (typeof entry.sidebarVerifiedDocument === 'number' && entry.sidebarVerifiedDocument !== entry.sidebarDocument) {
+            return false;
+          }
+          if (expectedDocGen !== null && entry.sidebarDocument !== expectedDocGen) {
+            return false;
+          }
+          if (typeof context.docGen === 'number' && context.docGen !== entry.sidebarDocument) {
+            return false;
+          }
+        }
+        if (typeof entry.sidebarHostContextId === 'number' && entry.sidebarHostContextId !== executionContextId) {
+          return false;
+        }
+        return true;
+      };
+      if (!isCurrentContext()) return;
+      if (typeof payload !== 'string') return;
+      if (payload.length > INLINE_DIFF_MAX_PAYLOAD_BYTES) return;
+      if (Buffer.byteLength(payload, 'utf8') > INLINE_DIFF_MAX_PAYLOAD_BYTES) return;
+      let parsed;
+      try {
+        parsed = JSON.parse(payload);
+      } catch {
+        return;
+      }
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+      if (!Number.isSafeInteger(parsed.id) || parsed.id < 0) return;
+      if (parsed.action !== 'readInlineDiff') return;
+      if (typeof parsed.uri !== 'string' || parsed.uri.length > INLINE_DIFF_MAX_URI_LENGTH) return;
+
+      const reqId = serializeJsonForEval(Math.trunc(Number(parsed.id)));
+      const hints =
+        parsed.hints && typeof parsed.hints === 'object' && !Array.isArray(parsed.hints)
+          ? {
+              additions: Number.isSafeInteger(parsed.hints.additions) && parsed.hints.additions >= 0 ? parsed.hints.additions : 0,
+              deletions: Number.isSafeInteger(parsed.hints.deletions) && parsed.hints.deletions >= 0 ? parsed.hints.deletions : 0,
+            }
+          : undefined;
+      let resp;
+      try {
+        resp = await readSafeInlineDiff(parsed.uri, hints ? { hints } : {});
+      } catch {
+        resp = { ok: false, error: 'internal_error' };
+      }
+      // 异步返回前再次复检文档代际 docGen 与执行上下文仍有效，严防跨导航回注
+      if (isCurrentContext()) {
+        const resolveExpr = `window.__agPrismInlineDiffResolve?.(${reqId}, ${serializeJsonForEval(resp)})`;
+        await entry.session
+          .send('Runtime.evaluate', {
+            expression: resolveExpr,
+            contextId: executionContextId,
+            returnByValue: true,
+          })
+          .catch(() => {});
+      }
+      return resp;
     }
 
     if (name === OMNI_BINDING) {
@@ -3172,6 +5281,16 @@ export class PrismDaemon {
       hostI18nMounted: false,
       lastHostI18nSig: '',
       lastHostI18nScriptSig: '',
+      thoughtScriptId: null,
+      thoughtMounted: false,
+      lastThoughtSig: '',
+      lastThoughtScriptSig: '',
+      inlineDiffScriptId: null,
+      inlineDiffBindingAdded: false,
+      inlineDiffMounted: false,
+      inlineDiffSkipped: false,
+      lastInlineDiffHash: '',
+      lastInlineDiffScriptHash: '',
       sidebarHostVerified: false,
       sidebarVerifiedDocument: -1,
       sidebarHostContextId: null,
@@ -3207,6 +5326,7 @@ export class PrismDaemon {
         entry.sidebarVerifiedDocument = -1;
         entry.sidebarHostContextId = null;
         entry.sidebarDocument += 1;
+        entry.inlineDiffSkipped = false;
       };
       session.on('Runtime.executionContextCreated', (params) => {
         const ctx = params?.context;
@@ -3284,6 +5404,8 @@ export class PrismDaemon {
       await session.send('Runtime.addBinding', { name: REPO_BINDING });
       await session.send('Runtime.addBinding', { name: THOUGHT_BINDING });
       await session.send('Runtime.addBinding', { name: USAGE_BINDING });
+      await session.send('Runtime.addBinding', { name: INLINE_DIFF_BINDING });
+      entry.inlineDiffBindingAdded = true;
       if (this._isOmniEnabled()) {
         await session.send('Runtime.addBinding', { name: OMNI_BINDING });
       }
@@ -3338,6 +5460,20 @@ export class PrismDaemon {
         if (entry.hostI18nScriptId) {
           await session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.hostI18nScriptId });
         }
+        if (entry.thoughtScriptId) {
+          await session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId });
+          entry.thoughtScriptId = null;
+        }
+        entry.thoughtMounted = false;
+        entry.lastThoughtSig = '';
+        entry.lastThoughtScriptSig = '';
+        if (entry.inlineDiffScriptId) {
+          await session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId });
+          entry.inlineDiffScriptId = null;
+        }
+        entry.inlineDiffMounted = false;
+        entry.lastInlineDiffHash = '';
+        entry.lastInlineDiffScriptHash = '';
       } catch {}
       session.close();
       this.sessions.delete(wsUrl);
@@ -3352,13 +5488,24 @@ export class PrismDaemon {
 
   async _verifyAndHealEntryUnlocked(entry, force = false) {
     if (!entry || entry.session.closed) return { alive: false, ready: false, isHostDom: false };
+    const cfg = typeof this.cdp?.readConfig === 'function' ? this.cdp.readConfig() : null;
+    const thoughtEnabled = this._isThoughtEnabled(cfg);
     const hasCtxMap = entry.contextFrames instanceof Map;
     const needsBindingHeal = hasCtxMap && (!entry.mainFrameId || !this._hasMainDefaultContext(entry));
+    const thoughtNeedsSync = thoughtEnabled
+      ? !entry.thoughtScriptId || !entry.thoughtMounted
+      : Boolean(entry.thoughtScriptId || entry.thoughtMounted);
+    const inlineDiffAvailable = Boolean(this.inlineDiffExpr || this._hasInlineDiffClientFile());
+    const inlineDiffNeedsSync = inlineDiffAvailable
+      ? !entry.inlineDiffSkipped && (!entry.inlineDiffScriptId || !entry.inlineDiffMounted)
+      : Boolean(entry.inlineDiffScriptId || entry.inlineDiffMounted);
     const now = Date.now();
     const hashMatches = !this.codeHash || entry.lastVerifiedCodeHash === this.codeHash;
     if (
       !force &&
       !needsBindingHeal &&
+      !thoughtNeedsSync &&
+      !inlineDiffNeedsSync &&
       !entry.verifyDirty &&
       hashMatches &&
       entry.lastVerifyAt > 0 &&
@@ -3430,6 +5577,9 @@ export class PrismDaemon {
           hasSidebar: Boolean(window.__agPrismSidebar),
           sidebarMode,
           hasHostI18n: Boolean(window.__agPrismHostI18n),
+          hasThought: Boolean(window.__agPrismThought),
+          hasThoughtSettingsUi: Boolean(window.__agPrismThoughtSettingsUi),
+          hasInlineDiff: Boolean(window.__agPrismInlineDiff && !window.__agPrismInlineDiff.getDebugState?.()?.destroyed),
           codeHash: (api && api.codeHash) || '',
           hasLegacyCss: Boolean(document.getElementById('ag-claude-style-css')),
           needsDashboardSync: Boolean(api && telMode !== 'off' && !isHome && hasModelBtn && !hasPulseBar),
@@ -3440,7 +5590,7 @@ export class PrismDaemon {
       );
       if (!probe || !probe.ready) return { alive: true, ready: false, isHostDom: true };
       if (probe.href) entry.url = probe.href;
-      const omniEnabled = this._isOmniEnabled() && probe.omniMode !== 'off';
+      const omniEnabled = this._isOmniEnabled(cfg) && probe.omniMode !== 'off';
       const hasClientOnDisk = omniEnabled && this._hasOmniClientFile();
       const needsOmniHeal =
         omniEnabled &&
@@ -3449,16 +5599,28 @@ export class PrismDaemon {
           (hasClientOnDisk && !probe.hasOmni));
       const needsOmniCleanup =
         !omniEnabled && Boolean(probe.hasOmni || entry.omniScriptId || entry.lastOmniExpr);
-      const sidebarEnabled = this._isSidebarStudioEnabled();
-      const hasSafeSidebarOnDisk = this._hasSafeV2SidebarClientFile();
+      const sidebarEnabled = this._isSidebarStudioEnabled(cfg);
+      const hasSafeSidebarOnDisk = sidebarEnabled && this._hasSafeV2SidebarClientFile();
       const needsSidebarHeal =
         sidebarEnabled && (!probe.hasSidebarBridge || (hasSafeSidebarOnDisk && !probe.hasSidebar));
       const needsSidebarCleanup =
         !sidebarEnabled && Boolean(probe.hasSidebar || entry.sidebarScriptId || entry.sidebarMounted || entry.sidebarBindingAdded);
-      const hostI18nEnabled = this._isHostI18nEnabled();
+      const hostI18nEnabled = this._isHostI18nEnabled(cfg);
       const needsHostI18nHeal = hostI18nEnabled && (!probe.hasHostI18n || !entry.hostI18nScriptId);
       const needsHostI18nCleanup =
         !hostI18nEnabled && Boolean(probe.hasHostI18n || entry.hostI18nScriptId || entry.hostI18nMounted);
+      const needsThoughtHeal =
+        thoughtEnabled &&
+        (!probe.hasThought || !probe.hasThoughtSettingsUi || !entry.thoughtScriptId || !entry.thoughtMounted);
+      const needsThoughtCleanup =
+        !thoughtEnabled &&
+        Boolean(probe.hasThought || probe.hasThoughtSettingsUi || entry.thoughtScriptId || entry.thoughtMounted);
+      const needsInlineDiffHeal =
+        inlineDiffAvailable &&
+        !entry.inlineDiffSkipped &&
+        (!probe.hasInlineDiff || !entry.inlineDiffScriptId || !entry.inlineDiffMounted);
+      const needsInlineDiffCleanup =
+        !inlineDiffAvailable && Boolean(probe.hasInlineDiff || entry.inlineDiffScriptId || entry.inlineDiffMounted);
       let healed = false;
       if (
         (entry.sidebarHostVerified === false && probe.isHostDom) ||
@@ -3482,6 +5644,7 @@ export class PrismDaemon {
         await entry.session.send('Runtime.addBinding', { name: REPO_BINDING }, 2600).catch(() => {});
         await entry.session.send('Runtime.addBinding', { name: THOUGHT_BINDING }, 2600).catch(() => {});
         await entry.session.send('Runtime.addBinding', { name: USAGE_BINDING }, 2600).catch(() => {});
+        await this._ensureInlineDiffBinding(entry, 2600, true);
         if (omniEnabled) {
           await entry.session.send('Runtime.addBinding', { name: OMNI_BINDING }, 2600).catch(() => {});
         }
@@ -3508,9 +5671,27 @@ export class PrismDaemon {
             await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.hostI18nScriptId }).catch(() => {});
             entry.hostI18nScriptId = null;
           }
+          if (entry.thoughtScriptId) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId }).catch(() => {});
+            entry.thoughtScriptId = null;
+          }
+          if (entry.inlineDiffScriptId) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId }).catch(() => {});
+            entry.inlineDiffScriptId = null;
+          }
           await this._removeSidebarBinding(entry);
+          await this._removeInlineDiffBinding(entry);
           entry.sidebarMounted = false;
           entry.hostI18nMounted = false;
+          entry.lastHostI18nSig = '';
+          entry.lastHostI18nScriptSig = '';
+          entry.thoughtMounted = false;
+          entry.lastThoughtSig = '';
+          entry.lastThoughtScriptSig = '';
+          entry.inlineDiffMounted = false;
+          entry.inlineDiffSkipped = true;
+          entry.lastInlineDiffHash = '';
+          entry.lastInlineDiffScriptHash = '';
           this._markTargetIgnored({ id: entry.pageId, webSocketDebuggerUrl: entry.wsUrl }, probe.href || entry.url);
           entry.session.close();
           this.sessions.delete(entry.wsUrl);
@@ -3519,7 +5700,11 @@ export class PrismDaemon {
         }
         if (omniEnabled) {
           if (!this.omniExpr && this.omniServer && typeof this.cdp.buildOmniClientExpression === 'function') {
-            this.omniExpr = this.cdp.buildOmniClientExpression(this.omniServer.getServerInfo());
+            const chOpts = this._getChannelCacheOpts(true);
+            this.omniExpr = chOpts
+              ? this.cdp.buildOmniClientExpression(this.omniServer.getServerInfo(), null, chOpts)
+              : this.cdp.buildOmniClientExpression(this.omniServer.getServerInfo());
+            if (chOpts && this.running) this._scheduleBundleCacheFlush();
           }
           if (this.omniExpr) {
             if (!entry.omniScriptId) {
@@ -3561,10 +5746,14 @@ export class PrismDaemon {
         if (hostI18nEnabled) {
           if (!probe.hasHostI18n || !entry.hostI18nScriptId) {
             if (!this.hostI18nExpr && typeof this.cdp.buildHostI18nExpression === 'function') {
-              this.hostI18nExpr = this.cdp.buildHostI18nExpression();
+              const chOpts = this._getChannelCacheOpts(true);
+              this.hostI18nExpr = chOpts
+                ? this.cdp.buildHostI18nExpression(cfg, null, chOpts)
+                : this.cdp.buildHostI18nExpression(cfg);
+              if (chOpts && this.running) this._scheduleBundleCacheFlush();
             }
             if (this.hostI18nExpr) {
-              const hiSig = this._getHostI18nCfgSig();
+              const hiSig = this._getHostI18nCfgSig(cfg);
               if (!entry.hostI18nScriptId) {
                 const hiAdd = await entry.session
                   .send('Page.addScriptToEvaluateOnNewDocument', { source: this.hostI18nExpr })
@@ -3593,6 +5782,69 @@ export class PrismDaemon {
           entry.lastHostI18nSig = '';
           entry.lastHostI18nScriptSig = '';
         }
+        if (thoughtEnabled) {
+          if (!this.thoughtExpr && typeof this.cdp.buildThoughtExpression === 'function') {
+            this._buildThoughtExprForConfig(cfg);
+          }
+          if (this.thoughtExpr) {
+            const thoughtSig = this._getThoughtCfgSig(cfg);
+            if (!entry.thoughtScriptId) {
+              const thoughtAdd = await entry.session
+                .send('Page.addScriptToEvaluateOnNewDocument', { source: this.thoughtExpr })
+                .catch(() => null);
+              if (thoughtAdd && thoughtAdd.identifier) {
+                entry.thoughtScriptId = thoughtAdd.identifier;
+                entry.lastThoughtScriptSig = thoughtSig;
+              }
+            }
+            const evalRes = await entry.session.evaluate(this.thoughtExpr, false, 4500).catch(() => null);
+            if (evalRes && evalRes.ok) {
+              entry.thoughtMounted = true;
+              entry.lastThoughtSig = thoughtSig;
+            } else {
+              entry.thoughtMounted = false;
+              entry.lastThoughtSig = '';
+            }
+          }
+        } else if (needsThoughtCleanup) {
+          if (entry.thoughtScriptId) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId }).catch(() => {});
+            entry.thoughtScriptId = null;
+          }
+          await entry.session.evaluate(this._getThoughtCleanupExpression(), false, 3500).catch(() => {});
+          entry.thoughtMounted = false;
+          entry.lastThoughtSig = '';
+          entry.lastThoughtScriptSig = '';
+        }
+        if (inlineDiffAvailable) {
+          if (!this.inlineDiffExpr && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
+            this._buildInlineDiffExprForConfig(cfg);
+          }
+          if (this.inlineDiffExpr) {
+            const inlineDiffHash = this._getInlineDiffExprHash(this.inlineDiffExpr);
+            if (!entry.inlineDiffScriptId) {
+              const inlineDiffAdd = await entry.session
+                .send('Page.addScriptToEvaluateOnNewDocument', { source: this.inlineDiffExpr })
+                .catch(() => null);
+              if (inlineDiffAdd && inlineDiffAdd.identifier) {
+                entry.inlineDiffScriptId = inlineDiffAdd.identifier;
+                entry.lastInlineDiffScriptHash = inlineDiffHash;
+              }
+            }
+            const evalRes = await entry.session.evaluate(this.inlineDiffExpr, false, 4500).catch(() => null);
+            await this._recordInlineDiffEvalOutcome(entry, evalRes, inlineDiffHash);
+          }
+        } else if (needsInlineDiffCleanup) {
+          if (entry.inlineDiffScriptId) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId }).catch(() => {});
+            entry.inlineDiffScriptId = null;
+          }
+          await entry.session.evaluate(this._getInlineDiffCleanupExpression(), false, 3500).catch(() => {});
+          entry.inlineDiffMounted = false;
+          entry.inlineDiffSkipped = false;
+          entry.lastInlineDiffHash = '';
+          entry.lastInlineDiffScriptHash = '';
+        }
         this.log(`[↻] Hot-healed window to Obsidian Prism v${this.cdp.PLUGIN_VERSION}: ${entry.title}`);
       } else {
         if (needsOmniHeal) {
@@ -3600,7 +5852,11 @@ export class PrismDaemon {
           await this.ensureOmniServer().catch(() => null);
           await entry.session.send('Runtime.addBinding', { name: OMNI_BINDING }, 2600).catch(() => {});
           if (!this.omniExpr && this.omniServer && typeof this.cdp.buildOmniClientExpression === 'function') {
-            this.omniExpr = this.cdp.buildOmniClientExpression(this.omniServer.getServerInfo());
+            const chOpts = this._getChannelCacheOpts(true);
+            this.omniExpr = chOpts
+              ? this.cdp.buildOmniClientExpression(this.omniServer.getServerInfo(), null, chOpts)
+              : this.cdp.buildOmniClientExpression(this.omniServer.getServerInfo());
+            if (chOpts && this.running) this._scheduleBundleCacheFlush();
           }
           if (this.omniExpr) {
             if (!entry.omniScriptId) {
@@ -3647,10 +5903,14 @@ export class PrismDaemon {
         if (needsHostI18nHeal) {
           healed = true;
           if (!this.hostI18nExpr && typeof this.cdp.buildHostI18nExpression === 'function') {
-            this.hostI18nExpr = this.cdp.buildHostI18nExpression();
+            const chOpts = this._getChannelCacheOpts(true);
+            this.hostI18nExpr = chOpts
+              ? this.cdp.buildHostI18nExpression(cfg, null, chOpts)
+              : this.cdp.buildHostI18nExpression(cfg);
+            if (chOpts && this.running) this._scheduleBundleCacheFlush();
           }
           if (this.hostI18nExpr) {
-            const hiSig = this._getHostI18nCfgSig();
+            const hiSig = this._getHostI18nCfgSig(cfg);
             if (!entry.hostI18nScriptId) {
               const hiAdd = await entry.session
                 .send('Page.addScriptToEvaluateOnNewDocument', { source: this.hostI18nExpr })
@@ -3678,6 +5938,76 @@ export class PrismDaemon {
           entry.hostI18nMounted = false;
           entry.lastHostI18nSig = '';
           entry.lastHostI18nScriptSig = '';
+        }
+        if (needsThoughtHeal) {
+          healed = true;
+          await entry.session.send('Runtime.addBinding', { name: THOUGHT_BINDING }, 2600).catch(() => {});
+          if (!this.thoughtExpr && typeof this.cdp.buildThoughtExpression === 'function') {
+            this._buildThoughtExprForConfig(cfg);
+          }
+          if (this.thoughtExpr) {
+            const thoughtSig = this._getThoughtCfgSig(cfg);
+            if (!entry.thoughtScriptId) {
+              const thoughtAdd = await entry.session
+                .send('Page.addScriptToEvaluateOnNewDocument', { source: this.thoughtExpr })
+                .catch(() => null);
+              if (thoughtAdd && thoughtAdd.identifier) {
+                entry.thoughtScriptId = thoughtAdd.identifier;
+                entry.lastThoughtScriptSig = thoughtSig;
+              }
+            }
+            if (!probe.hasThought || !probe.hasThoughtSettingsUi || !entry.thoughtMounted) {
+              const evalRes = await entry.session.evaluate(this.thoughtExpr, false, 4500).catch(() => null);
+              if (evalRes && evalRes.ok) {
+                entry.thoughtMounted = true;
+                entry.lastThoughtSig = thoughtSig;
+              }
+            }
+          }
+        } else if (needsThoughtCleanup) {
+          healed = true;
+          if (entry.thoughtScriptId) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId }).catch(() => {});
+            entry.thoughtScriptId = null;
+          }
+          await entry.session.evaluate(this._getThoughtCleanupExpression(), false, 3500).catch(() => {});
+          entry.thoughtMounted = false;
+          entry.lastThoughtSig = '';
+          entry.lastThoughtScriptSig = '';
+        }
+        if (needsInlineDiffHeal) {
+          healed = true;
+          await this._ensureInlineDiffBinding(entry, 2600, true);
+          if (!this.inlineDiffExpr && typeof this.cdp.buildInlineDiffInjectExpression === 'function') {
+            this._buildInlineDiffExprForConfig(cfg);
+          }
+          if (this.inlineDiffExpr) {
+            const inlineDiffHash = this._getInlineDiffExprHash(this.inlineDiffExpr);
+            if (!entry.inlineDiffScriptId) {
+              const inlineDiffAdd = await entry.session
+                .send('Page.addScriptToEvaluateOnNewDocument', { source: this.inlineDiffExpr })
+                .catch(() => null);
+              if (inlineDiffAdd && inlineDiffAdd.identifier) {
+                entry.inlineDiffScriptId = inlineDiffAdd.identifier;
+                entry.lastInlineDiffScriptHash = inlineDiffHash;
+              }
+            }
+            if (!probe.hasInlineDiff || !entry.inlineDiffMounted) {
+              const evalRes = await entry.session.evaluate(this.inlineDiffExpr, false, 4500).catch(() => null);
+              await this._recordInlineDiffEvalOutcome(entry, evalRes, inlineDiffHash);
+            }
+          }
+        } else if (needsInlineDiffCleanup) {
+          healed = true;
+          if (entry.inlineDiffScriptId) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId }).catch(() => {});
+            entry.inlineDiffScriptId = null;
+          }
+          await entry.session.evaluate(this._getInlineDiffCleanupExpression(), false, 3500).catch(() => {});
+          entry.inlineDiffMounted = false;
+          entry.inlineDiffSkipped = false;
+          entry.lastInlineDiffHash = '';
+          entry.lastInlineDiffScriptHash = '';
         }
         if (probe.needsDashboardSync) {
           healed = true;
@@ -3708,6 +6038,8 @@ export class PrismDaemon {
   }
 
   closeBrowserDiscovery() {
+    this._browserDiscoverySubscribed = false;
+    this._lastListPagesAt = 0;
     if (this._discoverTimer) {
       clearTimeout(this._discoverTimer);
       this._discoverTimer = null;
@@ -3752,10 +6084,13 @@ export class PrismDaemon {
       }
       this.browserSession = bSession;
       this.browserPort = port;
+      this._browserDiscoverySubscribed = false;
       bSession.onClose = () => {
         if (this.browserSession === bSession) {
           this.browserSession = null;
           this.browserPort = null;
+          this._browserDiscoverySubscribed = false;
+          this._lastListPagesAt = 0;
         }
       };
       const onTargetEvent = (params) => {
@@ -3774,11 +6109,18 @@ export class PrismDaemon {
           }
         }
         if (!this._isEligibleDaemonTarget({ ...info, id: tid, webSocketDebuggerUrl: 'ws://check' })) return;
+        this._forceListPagesNextTick = true;
         this.scheduleImmediateTick(45);
       };
       bSession.on('Target.targetCreated', onTargetEvent);
       bSession.on('Target.targetInfoChanged', onTargetEvent);
-      await bSession.send('Target.setDiscoverTargets', { discover: true }, 1500).catch(() => {});
+      const subOk = await bSession
+        .send('Target.setDiscoverTargets', { discover: true }, 1500)
+        .then(() => true)
+        .catch(() => false);
+      if (this.browserSession === bSession && !bSession.closed && subOk) {
+        this._browserDiscoverySubscribed = true;
+      }
     } catch {}
   }
 
@@ -3800,6 +6142,20 @@ export class PrismDaemon {
           if (entry.hostI18nScriptId && !entry.session.closed) {
             await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.hostI18nScriptId }).catch(() => {});
           }
+          if (entry.thoughtScriptId && !entry.session.closed) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId }).catch(() => {});
+          }
+          entry.thoughtScriptId = null;
+          entry.thoughtMounted = false;
+          entry.lastThoughtSig = '';
+          entry.lastThoughtScriptSig = '';
+          if (entry.inlineDiffScriptId && !entry.session.closed) {
+            await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId }).catch(() => {});
+          }
+          entry.inlineDiffScriptId = null;
+          entry.inlineDiffMounted = false;
+          entry.lastInlineDiffHash = '';
+          entry.lastInlineDiffScriptHash = '';
           if (cleanPageDom && !entry.session.closed) {
             await entry.session.evaluate(this.cdp.REMOVE_EXPRESSION).catch(() => {});
           }
@@ -3828,7 +6184,7 @@ export class PrismDaemon {
     }
   }
 
-  _maybeSyncShortcuts(force = false) {
+  _maybeSyncShortcuts(force = false, opts = null) {
     if (!this._isRelaunchGuardAllowed()) return null;
     if (process.env.PRISM_DISABLE_SHORTCUT_SYNC === '1' && !this._relaunchHooks?.syncShortcuts) return null;
     if (this._shortcutSyncInFlight) {
@@ -3836,11 +6192,28 @@ export class PrismDaemon {
       return null;
     }
     const now = Date.now();
-    if (!force && this._lastShortcutCheckAt > 0 && now - this._lastShortcutCheckAt < this.shortcutCheckIntervalMs) {
+    const hasActivePort =
+      opts && typeof opts.hasActivePort === 'boolean' ? opts.hasActivePort : Boolean(this._hasActiveCdpPort);
+    const effectiveIntervalMs =
+      this._shortcutAllClean && hasActivePort
+        ? this._shortcutBackoffIntervalMs
+        : this.shortcutCheckIntervalMs;
+    if (!force && this._lastShortcutCheckAt > 0 && now - this._lastShortcutCheckAt < effectiveIntervalMs) {
       return null;
     }
     const onDone = (res) => {
-      if (res && !res.error) this._lastShortcutCheckAt = Date.now();
+      if (res && !res.error) {
+        this._lastShortcutCheckAt = Date.now();
+        const patchedLen = Array.isArray(res.patched) ? res.patched.length : 0;
+        const skippedLen = Array.isArray(res.skipped) ? res.skipped.length : 0;
+        const alreadyLen = Array.isArray(res.alreadySet) ? res.alreadySet.length : 0;
+        const matched = Number(res.matched || 0);
+        // 全部快捷方式已确认 alreadySet 且无跳过/新修补时，开启智能退避（30~60 分钟）
+        this._shortcutAllClean =
+          patchedLen === 0 && skippedLen === 0 && (alreadyLen > 0 || matched === 0);
+      } else {
+        this._shortcutAllClean = false;
+      }
       if (res && Array.isArray(res.patched) && res.patched.length > 0) {
         this.log(`[shortcut-guard] Ensured --remote-debugging-port=0 on ${res.patched.length} shortcut(s)`);
       }
@@ -3881,6 +6254,8 @@ export class PrismDaemon {
   }
 
   async _handleMissingCdpPort() {
+    this._hasActiveCdpPort = false;
+    this._shortcutAllClean = false;
     if (!this.running || !this.timer || this._promptInFlight) return;
     if (!this._isRelaunchGuardAllowed()) return;
 
@@ -3888,7 +6263,7 @@ export class PrismDaemon {
     if (this._noPortSinceMs <= 0) {
       this._noPortSinceMs = now;
     }
-    this._maybeSyncShortcuts(false);
+    this._maybeSyncShortcuts(false, { hasActivePort: false });
 
     if (now - this._noPortSinceMs < this.noPortRelaunchThresholdMs) {
       return;
@@ -3916,6 +6291,7 @@ export class PrismDaemon {
 
     if (host.pid !== this._lastObservedHostPid) {
       this._lastObservedHostPid = host.pid;
+      this._shortcutAllClean = false;
       this._maybeSyncShortcuts(true);
     }
 
@@ -4003,6 +6379,7 @@ export class PrismDaemon {
 
       if (!this.enabledCheck()) {
         this._noPortSinceMs = 0;
+        this._hasActiveCdpPort = false;
         if (this.sessions.size > 0 || this.browserSession) {
           await this.detachAll(true);
         }
@@ -4011,14 +6388,58 @@ export class PrismDaemon {
 
       const port = discoverActivePort(this.overridePort, this.portFile);
       if (!port) {
+        this._hasActiveCdpPort = false;
         await this._handleMissingCdpPort();
         return { attached: 0, port: null };
+      }
+
+      const now = Date.now();
+      const canSkipListPoll =
+        this.timer != null &&
+        Boolean(this.browserSession && !this.browserSession.closed && this._browserDiscoverySubscribed) &&
+        this.browserPort === port &&
+        this.sessions.size > 0 &&
+        !this._forceListPagesNextTick &&
+        this._lastListPagesAt > 0 &&
+        now - this._lastListPagesAt < this._listPagesFallbackIntervalMs;
+
+      if (canSkipListPoll) {
+        this._noPortSinceMs = 0;
+        this._hasActiveCdpPort = true;
+        this._maybeSyncShortcuts(false, { hasActivePort: true });
+
+        const liveEntries = [];
+        for (const [wsUrl, entry] of this.sessions.entries()) {
+          if (entry.session.closed) {
+            this.sessions.delete(wsUrl);
+            continue;
+          }
+          liveEntries.push(entry);
+        }
+
+        if (liveEntries.length > 0) {
+          await Promise.allSettled(liveEntries.map((entry) => this.verifyAndHealEntry(entry)));
+          if (this._isTelemetryDisabled()) {
+            this._releaseIdleTelemetry(true);
+          } else {
+            this._releaseIdleTelemetry(false);
+          }
+          return {
+            attached: this.sessions.size,
+            port,
+            pages: [...this.sessions.values()].map((e) => e.title || e.url),
+            skippedListPoll: true,
+          };
+        }
       }
 
       let rawPages = [];
       try {
         rawPages = await this.cdp.listPages(port);
+        this._lastListPagesAt = Date.now();
+        this._forceListPagesNextTick = false;
       } catch {
+        this._hasActiveCdpPort = false;
         this.closeBrowserDiscovery();
         if (this.sessions.size === 0) {
           await this._handleMissingCdpPort();
@@ -4027,8 +6448,9 @@ export class PrismDaemon {
       }
 
       this._noPortSinceMs = 0;
+      this._hasActiveCdpPort = true;
       if (this.timer) {
-        this._maybeSyncShortcuts(false);
+        this._maybeSyncShortcuts(false, { hasActivePort: true });
       }
 
       // Subscribe to Browser-level Target.setDiscoverTargets when persistent daemon is running
@@ -4064,6 +6486,20 @@ export class PrismDaemon {
             if (entry.hostI18nScriptId) {
               await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.hostI18nScriptId }).catch(() => {});
             }
+            if (entry.thoughtScriptId) {
+              await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.thoughtScriptId }).catch(() => {});
+              entry.thoughtScriptId = null;
+            }
+            entry.thoughtMounted = false;
+            entry.lastThoughtSig = '';
+            entry.lastThoughtScriptSig = '';
+            if (entry.inlineDiffScriptId) {
+              await entry.session.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: entry.inlineDiffScriptId }).catch(() => {});
+              entry.inlineDiffScriptId = null;
+            }
+            entry.inlineDiffMounted = false;
+            entry.lastInlineDiffHash = '';
+            entry.lastInlineDiffScriptHash = '';
             await entry.session.evaluate(this.cdp.REMOVE_EXPRESSION).catch(() => {});
           }
           entry.session.close();
@@ -4098,7 +6534,7 @@ export class PrismDaemon {
     }
   }
 
-  stopExistingDaemon({ verifyPid = null, inspectCommandLine = null, killProcess = null } = {}) {
+  stopExistingDaemon({ verifyPid = null, inspectCommandLine = null, inspectProcess = null, killProcess = null } = {}) {
     try {
       if (!this.pidFile) return false;
       let pidStat;
@@ -4135,19 +6571,34 @@ export class PrismDaemon {
         const isDefaultVerifier =
           this.cdp.isExpectedDaemonProcess === this._loadedCdpVerifier ||
           this.cdp.isExpectedDaemonProcess === defaultCdp.isExpectedDaemonProcess;
-        const cdpVerified = Boolean(this.cdp.isExpectedDaemonProcess(prevPid, this.pidFile));
-        if (!cdpVerified) {
-          safeToKill = false;
-        } else if (!isDefaultVerifier) {
+        if (!isDefaultVerifier) {
           // 兼容单测显式覆写 this.cdp.isExpectedDaemonProcess 注入校验钩子
-          safeToKill = true;
+          safeToKill = Boolean(this.cdp.isExpectedDaemonProcess(prevPid, this.pidFile));
         } else {
-          // 标准 cdp.isExpectedDaemonProcess 对 node.exe 仅核对映像名，补充命令行身份复核防误杀无关 node 进程
-          const cmd =
-            typeof inspectCommandLine === 'function'
-              ? inspectCommandLine(prevPid)
-              : queryProcessCommandLineSync(prevPid);
-          safeToKill = isObsidianPrismDaemonCommandLine(cmd);
+          // P2-5: 复用 cdp.js 单次进程探针，避免 Windows 启动抢锁连续拉起两次 powershell.exe
+          const hasUnifiedProbe =
+            typeof inspectProcess === 'function' || typeof this.cdp.inspectProcessSync === 'function';
+          const procInfo =
+            typeof inspectProcess === 'function'
+              ? inspectProcess(prevPid)
+              : typeof this.cdp.inspectProcessSync === 'function'
+              ? this.cdp.inspectProcessSync(prevPid)
+              : null;
+          const cdpVerified = hasUnifiedProbe
+            ? Boolean(this.cdp.isExpectedDaemonProcess(prevPid, { procInfo, lockFile: this.pidFile }))
+            : Boolean(this.cdp.isExpectedDaemonProcess(prevPid, this.pidFile));
+          if (!cdpVerified) {
+            safeToKill = false;
+          } else {
+            // 标准 cdp.isExpectedDaemonProcess 对 node.exe 仅核对映像名，补充命令行身份复核防误杀无关 node 进程
+            const cmd =
+              typeof inspectCommandLine === 'function'
+                ? inspectCommandLine(prevPid)
+                : hasUnifiedProbe
+                ? procInfo?.commandLine || ''
+                : queryProcessCommandLineSync(prevPid);
+            safeToKill = isObsidianPrismDaemonCommandLine(cmd);
+          }
         }
       } else {
         // 无有效身份校验钩子时严格 fail-closed，绝不盲杀无关 PID
@@ -4169,6 +6620,7 @@ export class PrismDaemon {
 
   claimOwnership() {
     this.stopExistingDaemon();
+    this._ownerFileCache = null;
     try {
       try {
         const st = fs.lstatSync(this.pidFile);
@@ -4181,20 +6633,39 @@ export class PrismDaemon {
         JSON.stringify({ pid: process.pid, token: this.ownerToken, startedAt: Date.now() }),
         { mode: 0o600 }
       );
+      this._ownerFileCache = null;
     } catch {}
   }
 
   isCurrentOwner() {
     try {
-      if (!fs.existsSync(this.pidFile)) return true;
+      let st;
+      try {
+        st = fs.statSync(this.pidFile);
+      } catch {
+        this._ownerFileCache = null;
+        return true;
+      }
+      if (!st.isFile()) {
+        this._ownerFileCache = null;
+        return true;
+      }
+      const sig = `${st.mtimeMs}:${st.size}:${st.ctimeMs}`;
+      if (this._ownerFileCache && this._ownerFileCache.path === this.pidFile && this._ownerFileCache.sig === sig) {
+        return this._ownerFileCache.owned;
+      }
       const cur = JSON.parse(fs.readFileSync(this.pidFile, 'utf8'));
-      return !cur || !cur.token || cur.token === this.ownerToken;
+      const owned = !cur || !cur.token || cur.token === this.ownerToken;
+      this._ownerFileCache = { path: this.pidFile, sig, owned };
+      return owned;
     } catch {
+      this._ownerFileCache = null;
       return true;
     }
   }
 
   releaseOwnership() {
+    this._ownerFileCache = null;
     try {
       let st;
       try {
@@ -4329,6 +6800,10 @@ export class PrismDaemon {
     if (this._reloadTimer) {
       clearTimeout(this._reloadTimer);
       this._reloadTimer = null;
+    }
+    if (this._bundleCacheFlushTimer) {
+      clearTimeout(this._bundleCacheFlushTimer);
+      this._bundleCacheFlushTimer = null;
     }
     if (this._discoverTimer) {
       clearTimeout(this._discoverTimer);

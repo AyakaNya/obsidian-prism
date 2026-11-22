@@ -106,6 +106,7 @@
     canMountRealCanvas,
     getLastPointerPos,
     setAttrIfChanged,
+    getCfg,
   }) => {
     let mPanel = null,
       mOv = null,
@@ -120,7 +121,10 @@
       mHideLock = false,
       mWakeTrk = null,
       mWakeFn = null,
-      mMountedAt = 0;
+      mMountedAt = 0,
+      mKnob = null,
+      mTrkWidth = 0,
+      mStepFillRatio = null;
 
     const svgElementProtoCache = new Map();
     const K_IC = 'isConnected', K_PE = 'parentElement', K_CL = 'classList';
@@ -173,9 +177,12 @@
       if (tone === 'mono' || tone === 'cobalt' || tone === 'iris' || tone === 'amber') return tone;
       const pal = ga(html, 'data-ag-cs-palette') || 'obsidian';
       if (pal === 'warm' || pal === 'claude') return 'warm';
-      if (!dark && ga(html, 'data-ag-cs-light-preset') === 'alabaster') return 'warm';
+      if (!dark && pal === 'obsidian' && ga(html, 'data-ag-cs-light-preset') === 'alabaster') return 'warm';
       return 'default';
     };
+
+    const isEffortSliderOff = () =>
+      ga(getRootHtml(), 'data-ag-cs-effort-slider') === 'off' || getCfg?.()?.effortSliderModule === 'off';
 
     const readRootAmbientFloat = () => {
       const raw = ga(getRootHtml(), 'data-ag-cs-ambient');
@@ -271,6 +278,7 @@
         sa(glyph, 'data-icon', '1');
         sa(glyph, 'aria-hidden', 'true');
         sa(glyph, 'data-ag-no-i18n');
+        sa(glyph, 'data-ag-owned', '1');
         created = true;
       }
       if (modelBtn.firstChild !== glyph) modelBtn.insertBefore(glyph, modelBtn.firstChild);
@@ -344,6 +352,7 @@
           glyph = mk('span', 'ag-cs-model-glyph ag-cs-panel-row-glyph');
           sa(glyph, 'data-ag-no-i18n');
           sa(glyph, 'aria-hidden', 'true');
+          sa(glyph, 'data-ag-owned', '1');
           created = true;
         }
         if (glyph[K_PE] !== targetParent || targetParent.firstChild !== glyph) {
@@ -404,9 +413,20 @@
       });
     };
 
+    const getCachedKnob = (trk) => {
+      if (!trk || trk[K_IC] === false) return null;
+      if (mKnob && mKnob[K_IC] !== false && (mKnob[K_PE] === trk || trk.contains?.(mKnob))) return mKnob;
+      mKnob = qs(trk, '.ces-knob');
+      return mKnob;
+    };
+
     const readTrackFillRatio = (trk) => {
       if (!trk) return 1;
-      const w = trk.clientWidth || rc(trk)?.width || 220;
+      let w = trk === mTrk && mTrkWidth > 4 ? mTrkWidth : 0;
+      if (!(w > 4)) {
+        w = trk.clientWidth || rc(trk)?.width || 220;
+        if (trk === mTrk && w > 4) mTrkWidth = w;
+      }
       const raw = trk.style && typeof trk.style.getPropertyValue === 'function' ? trk.style.getPropertyValue('--ces-fill').trim() : '';
       if (raw && w > 4) {
         const mCalc = raw.match(/calc\(\s*([0-9.]+)px\s*\+\s*\(100%\s*-\s*([0-9.]+)px\)\s*\*\s*([0-9.eE+-]+)\s*\)/);
@@ -419,7 +439,7 @@
         const px = parseFloat(raw);
         if (Number.isFinite(px)) return Math.max(0, Math.min(1, px / w));
       }
-      const knob = qs(trk, '.ces-knob');
+      const knob = trk === mTrk ? getCachedKnob(trk) : qs(trk, '.ces-knob');
       if (knob && typeof knob.offsetLeft === 'number' && knob.offsetLeft > 0 && w > 4) {
         return Math.max(0, Math.min(1, knob.offsetLeft / w));
       }
@@ -435,7 +455,7 @@
     let knobPrismHot = false;
     const syncKnobPrismPointer = (clientX, clientY) => {
       const trk = mHideLock ? mTrk : null;
-      const knob = trk && trk[K_IC] !== false ? qs(trk, '.ces-knob') : null;
+      const knob = getCachedKnob(trk);
       if (!knob) {
         knobPrismHot = false;
         return;
@@ -492,12 +512,22 @@
       clearPanelRowGlyphs();
       syncModelMenuAttrs(null);
       if (mBar?.[K_PE]) mBar.remove();
-      mPanel = mOv = mBar = mTrk = mCv = mInst = null;
-      mRaf = mMountRaf = mLastMs = mMountedAt = 0;
+      mPanel = mOv = mBar = mTrk = mCv = mInst = mKnob = null;
+      mRaf = mMountRaf = mLastMs = mMountedAt = mTrkWidth = 0;
+      mStepFillRatio = null;
       mWasOrch = mHideLock = false;
     };
 
     const detectPanelIsOrchestrator = (panel, fallbackModelInfo) => {
+      if (panel) {
+        const cesSel = qs(panel, '[data-ces-model-selected="true"]');
+        if (cesSel) {
+          if (ga(cesSel, 'data-testid') === 'model-selector-orchestrator' || Boolean(qs(cesSel, '[data-testid="model-selector-orchestrator"]'))) {
+            return true;
+          }
+          return /\borchestrator\b|编排|调度器/i.test(stripTranslatedEffortSuffix(readButtonLabelWithoutGlyph(cesSel)));
+        }
+      }
       if (fallbackModelInfo && typeof fallbackModelInfo.isOrchestrator === 'boolean') return fallbackModelInfo.isOrchestrator;
       if (panel) {
         let sel = qs(panel, '[data-selected="true"], [aria-checked="true"], [data-state="checked"], [data-ces-model-selected="true"]');
@@ -521,9 +551,11 @@
       }
       const dt = mLastMs > 0 ? Math.min(0.05, Math.max(0.002, (now - mLastMs) / 1000)) : 0.016;
       mLastMs = now;
+      // 先读布局（fillRatio 与缓存宽度/滑块引用），再写 CSS 变量，消除同帧写后读回流
+      mStepFillRatio = mHideLock ? readTrackFillRatio(mTrk) : -1;
       const ptrNow = getLastPointerPos ? getLastPointerPos() : null;
       if (ptrNow) syncKnobPrismPointer(ptrNow.x, ptrNow.y);
-      try { mInst.step(dt); } catch {}
+      try { mInst.step(dt); } catch {} finally { mStepFillRatio = null; }
       if (!mInst.isIdle?.() && !docOf()?.hidden) mRaf = rAF(stepCrystalLoop);
     };
 
@@ -543,9 +575,28 @@
         syncModelMenuAttrs(panel);
       }
 
+      syncPanelRowGlyphs(panel);
+      if (isEffortSliderOff()) {
+        detachSliderWake();
+        cancelMountRaf();
+        cancelStepRaf();
+        try { mInst?.dispose?.(); } catch {}
+        clearSliderPrismOverlay(panel);
+        ra(panel, 'data-ag-cs-orch-active');
+        qa(panel, EFF_ROW_SEL).forEach((row) => {
+          ra(row, 'data-row-hidden');
+          ra(row, 'aria-hidden');
+        });
+        qa(panel, '[data-testid="orchestrator-effort-bar"]').forEach((b) => b.remove?.());
+        if (mBar?.[K_PE]) mBar.remove();
+        mPanel = mBar = mTrk = mCv = mInst = mKnob = null;
+        mRaf = mMountRaf = mLastMs = mMountedAt = mTrkWidth = 0;
+        mStepFillRatio = null;
+        mWasOrch = mHideLock = false;
+        return;
+      }
       const isOrch = detectPanelIsOrchestrator(panel, primaryModelInfo);
       const isOrchTunable = isOrch && ga(panel, 'data-ces-orch-tunable') === 'true';
-      syncPanelRowGlyphs(panel);
       const cesSec = qs(panel, '.ces-ag-section');
       if (cesSec) {
         if (ga(cesSec, 'data-effort-slot') !== 'true') sa(cesSec, 'data-effort-slot', 'true');
@@ -559,6 +610,7 @@
         bar = mk('div', 'ces-ag-effort-row ag-cs-orch-row');
         sa(bar, 'data-testid', 'orchestrator-effort-bar');
         sa(bar, 'data-ag-no-i18n');
+        sa(bar, 'data-ag-owned', '1');
 
         const head = mk('div', 'ces-ag-effort-head ag-cs-orch-head');
         head.appendChild(mk('span', 'ces-ag-effort-title', isZh() ? '推理等级' : 'Reasoning Effort'));
@@ -596,6 +648,7 @@
           c = mk('canvas', 'ag-cs-orch-canvas');
           sa(c, 'data-orch-crystal-canvas', 'true');
           sa(c, 'aria-hidden', 'true');
+          sa(c, 'data-ag-owned', '1');
           sTrk.insertBefore(c, sTrk.firstChild);
         }
         tTrk = sTrk;
@@ -624,6 +677,11 @@
         mInst = null;
       }
 
+      if (mTrk !== tTrk) {
+        mKnob = null;
+        mTrkWidth = 0;
+        mStepFillRatio = null;
+      }
       mPanel = panel;
       mBar = bar;
       mTrk = tTrk;
@@ -645,7 +703,7 @@
 
       if (isOrch) {
         const kickCrystal = () => {
-          if (isDestroyed() || !mWasOrch || mPanel !== panel || !panel[K_IC] || !mCv) return;
+          if (isDestroyed() || isEffortSliderOff() || !mWasOrch || mPanel !== panel || !panel[K_IC] || !mCv) return;
           const reducedNow = motionReduced();
           const ambientNow = readRootAmbientFloat();
           if (!mInst && crystalPrismCore?.mountCrystalPrismBar && canMountRealCanvas(mCv)) {
@@ -661,7 +719,7 @@
                     accentTone: resolveCrystalAccentMode(dark),
                     reduceMotion: motionReduced(),
                     hideLock: !!(mHideLock),
-                    fillRatio: mHideLock ? readTrackFillRatio(mTrk) : -1,
+                    fillRatio: mStepFillRatio !== null ? mStepFillRatio : mHideLock ? readTrackFillRatio(mTrk) : -1,
                   };
                 },
               });
@@ -671,6 +729,7 @@
           }
           if (!mInst) return;
           mInst.setReduceMotion?.(reducedNow);
+          mStepFillRatio = mHideLock ? readTrackFillRatio(mTrk) : -1;
           const ptr = getLastPointerPos ? getLastPointerPos() : null;
           if (ptr && ptr.x > -1000) {
             mInst.setPointerClient(ptr.x, ptr.y);
@@ -682,7 +741,7 @@
             mMountedAt = performance.now();
             if (!reducedNow && ambientNow > 0.001) mInst.wake?.();
           }
-          try { mInst.step(0.016); } catch {}
+          try { mInst.step(0.016); } catch {} finally { mStepFillRatio = null; }
           if (mInst.isIdle?.() || docOf()?.hidden) {
             cancelStepRaf();
           } else if (!mRaf) {

@@ -162,6 +162,62 @@ function normalizePathForCompare(p) {
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
+/**
+ * 拦截远程 Windows UNC / SMB / NT 设备路径（独立纯函数，消除对 omni-viewer 的跨频道耦合）
+ */
+export function isBlockedUncPath(rawInput) {
+  if (!rawInput || typeof rawInput !== 'string') return false;
+  let s = rawInput.trim();
+  if (!s) return false;
+  if (s.startsWith('@') && s.length > 1 && !s.startsWith('@/')) s = s.slice(1).trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  if (/^file:\/\//i.test(s)) {
+    const afterScheme = s.slice(7);
+    if (!afterScheme.startsWith('/')) {
+      const host = afterScheme.split(/[/?#\\]/)[0].toLowerCase();
+      if (
+        host &&
+        host !== 'localhost' &&
+        host !== '127.0.0.1' &&
+        host !== '[::1]' &&
+        host !== 'wsl.localhost' &&
+        host !== 'wsl$' &&
+        !/^[a-z]:$/i.test(host)
+      ) {
+        return true;
+      }
+    }
+    try {
+      s = decodeURIComponent(afterScheme);
+    } catch {
+      s = afterScheme;
+    }
+  }
+  if (/^[\\/]{2}/.test(s)) {
+    const rest = s.replace(/^[\\/]+/, '');
+    if (/^[?.][\\/]/.test(rest)) {
+      const inner = rest.slice(2).replace(/^[\\/]+/, '');
+      if (/^[A-Za-z]:(?:[\\/]|$)/.test(inner)) {
+        return false;
+      }
+      const uncMatch = inner.match(/^(?:global[\\/]+)*unc[\\/]+(.+)$/i);
+      if (uncMatch) {
+        const uncHost = uncMatch[1].split(/[\\/]/)[0].toLowerCase();
+        return uncHost !== 'localhost' && uncHost !== '127.0.0.1' && uncHost !== 'wsl.localhost' && uncHost !== 'wsl$';
+      }
+      return true;
+    }
+    const host = rest.split(/[\\/]/)[0].toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === 'wsl.localhost' || host === 'wsl$') {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 function makeScopeRefFromPath(realDirPath) {
   const norm = normalizePathForCompare(realDirPath);
   return `scope-spk-${sha256Hex(norm).slice(0, 16)}`;
@@ -1159,7 +1215,10 @@ export class SidebarStudioService {
           fs.renameSync(tmpPath, this.statePath);
           break;
         } catch (err) {
-          if (process.platform !== 'win32' || attempt >= 2 || !['EBUSY', 'EPERM', 'EACCES'].includes(err?.code)) throw err;
+          if (process.platform !== 'win32' || attempt >= 3 || !['EBUSY', 'EPERM', 'EACCES'].includes(err?.code)) throw err;
+          try {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15 * (attempt + 1));
+          } catch {}
         }
       }
     } catch (err) {
@@ -4042,6 +4101,17 @@ export class SidebarStudioService {
         snapshot: this._buildSnapshot(),
       };
     }
+    if (normalized.action === 'pick-folder') {
+      if (this.sandboxMode) {
+        return {
+          ok: false,
+          rev: this._state.rev,
+          error: makeRpcError(ERROR_CODES.CAPABILITY_UNAVAILABLE, 'System folder picker is disabled in sandboxMode'),
+          snapshot: this._buildSnapshot(),
+        };
+      }
+      return this.pickFolder(normalized.payload);
+    }
     return this._enqueue(() => this._dispatchSerialized(normalized.action, normalized));
   }
 
@@ -4059,12 +4129,15 @@ export class SidebarStudioService {
     const rawTitle = typeof params?.title === 'string' ? params.title.trim() : '';
     const safeTitle = (rawTitle || '选择工作区文件夹').replace(/[\u0000-\u001f]/g, '').slice(0, 120);
     let safeInitDir = '';
-    if (typeof params?.initialDir === 'string' && params.initialDir.trim() && !params.initialDir.includes('\0')) {
-      try {
-        const resolved = fs.realpathSync(params.initialDir.trim());
-        if (fs.statSync(resolved).isDirectory()) safeInitDir = resolved;
-      } catch {
-        safeInitDir = '';
+    if (typeof params?.initialDir === 'string' && params.initialDir.trim() && !params.initialDir.includes('\0') && !isBlockedUncPath(params.initialDir)) {
+      const candidateInitDir = path.resolve(params.initialDir.trim());
+      if (!isBlockedUncPath(candidateInitDir)) {
+        try {
+          const resolved = fs.realpathSync(candidateInitDir);
+          if (!isBlockedUncPath(resolved) && fs.statSync(resolved).isDirectory()) safeInitDir = resolved;
+        } catch {
+          safeInitDir = '';
+        }
       }
     }
 
@@ -4132,14 +4205,19 @@ export class SidebarStudioService {
       };
     }
     const rawPath = params?.path;
-    if (typeof rawPath !== 'string' || !rawPath.trim() || rawPath.length > MAX_PATH_LEN || rawPath.includes('\0')) {
+    if (typeof rawPath !== 'string' || !rawPath.trim() || rawPath.length > MAX_PATH_LEN || rawPath.includes('\0') || isBlockedUncPath(rawPath)) {
+      return { ok: false, error: '无效的目录路径' };
+    }
+
+    const candidatePath = path.resolve(rawPath.trim());
+    if (isBlockedUncPath(candidatePath)) {
       return { ok: false, error: '无效的目录路径' };
     }
 
     let realPath;
     try {
-      realPath = fs.realpathSync(rawPath.trim());
-      if (!fs.statSync(realPath).isDirectory()) {
+      realPath = fs.realpathSync(candidatePath);
+      if (isBlockedUncPath(realPath) || !fs.statSync(realPath).isDirectory()) {
         return { ok: false, error: '目标路径不是有效目录' };
       }
     } catch {

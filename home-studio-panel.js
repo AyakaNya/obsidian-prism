@@ -7,10 +7,15 @@
   const MAX_FRONTEND_TRAJECTORY_STEPS = 240;
   const MAX_CACHED_USAGE_RECORDS = 1200;
   const STUDIO_STYLE_ID = 'ag-prism-studio-v101-css';
+  function markNoTr(e) {
+    if (e && e.setAttribute) for (const s of 'translate=no,data-no-translate=true,data-ag-localization-skip=true,data-agy-no-translate=true,data-antigravity-zh-skip=1'.split(',')) { const p = s.split('='); e.setAttribute(p[0], p[1]); }
+    return e;
+  }
 
   const STUDIO_EXTRA_CSS =
     '.ag-cs-home-head-right{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}' +
-    '.ag-cs-home-ws-select{height:24px;max-width:156px;padding:0 20px 0 8px;border-radius:var(--ag-cs-r-sm,6px);border:1px solid var(--ag-cs-border-1,rgba(148,163,184,.2));background:var(--ag-cs-pill-bg,rgba(128,138,158,.1));color:var(--foreground);font-size:11px;font-weight:500;outline:none;cursor:pointer;text-overflow:ellipsis}' +
+    '.ag-cs-home-ws-select{height:24px;max-width:156px;padding:0 20px 0 8px;border-radius:var(--ag-cs-r-sm,6px);border:1px solid var(--ag-cs-border-1,rgba(148,163,184,.2));background:var(--ag-cs-pill-bg,rgba(128,138,158,.1));color:var(--foreground);color-scheme:inherit;font-size:11px;font-weight:500;outline:none;cursor:pointer;text-overflow:ellipsis}' +
+    '.ag-cs-home-ws-select option{background:var(--card,#141418);color:var(--foreground,#F2F2F5);}' +
     '.ag-cs-home-stat-sub{display:block;margin-top:2px;font-size:10px;line-height:1.25;color:var(--muted-foreground);opacity:.82;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.ag-cs-quota-wrap{display:flex;flex-direction:column;gap:10px;margin-top:4px;position:relative;z-index:1}' +
     '.ag-cs-quota-toolbar,.ag-cs-quota-card-head,.ag-cs-quota-win-row{display:flex;align-items:center;justify-content:space-between;gap:6px}' +
@@ -60,9 +65,14 @@
     setAttrIfChanged,
     runGuardedMut,
   }) {
+    const QUOTA_SUCCESS_COOLDOWN_MS = 45000;
+    const QUOTA_FAIL_COOLDOWN_MS = 15000;
+    const QUOTA_TAB_COOLDOWN_MS = 20000;
+    const MANUAL_REFRESH_COOLDOWN_MS = 5000;
     const usageRecords = new Map();
     let usageLoading = false, quotaLoading = false, usageHasData = false;
-    let lastUsageFetchAt = 0, lastQuotaFetchAt = 0, liveQuotaSnap = null, quotaEpoch = 0;
+    let lastUsageFetchAt = 0, lastQuotaFetchAt = 0, lastQuotaFailAt = 0, lastQuotaTabTriggerAt = 0, lastManualRefreshAt = 0;
+    let liveQuotaSnap = null, quotaEpoch = 0, quotaPending = null, quotaBindingSeq = 0;
     let bookPick = 0.07, activeTab = 'overview', activeRange = 'all', activeWorkspace = 'all', detectedCurrentWorkspace = '';
     let modelsExpanded = false, lastPanelRenderKey = '', usageDataEpoch = 0, cachedAggKey = '', cachedAggData = null;
     let deferredUsageTimer = 0, saveUsageTimer = 0, saveUsageIdle = 0, wasHero = false;
@@ -173,28 +183,133 @@
       return latestWs;
     }
 
-    async function refreshLiveTelemetrySnapshot(force = false) {
-      if (isDestroyed() || quotaLoading) return liveQuotaSnap;
+    const inCooldown = (at, ms, now) => at > 0 && now >= at && now - at < ms;
+
+    function hasUsableQuotas(snap) {
+      return (
+        Array.isArray(snap?.groups) &&
+        snap.groups.length > 0 &&
+        snap.groups.some((g) => g && (!usageCore?.quotaWindows || usageCore.quotaWindows(g).length > 0))
+      );
+    }
+
+    function withTimeout(fn, ms, onTimeout) {
+      return new Promise((resolve) => {
+        let settled = false;
+        const done = (val) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(val);
+        };
+        const timer = setTimeout(() => {
+          try { onTimeout?.(); } catch {}
+          done(null);
+        }, ms);
+        timer?.unref?.();
+        Promise.resolve().then(fn).then((v) => done(v || null), () => done(null));
+      });
+    }
+
+    function callPrismMetricsBinding(win, input) {
+      const callName = '__agPrismMetricsCall', resName = '__agPrismMetricsResolve';
+      const reqId = 800000000 + (++quotaBindingSeq);
+      const prev = win[resName];
+      let cb = null, restored = false;
+      const restore = () => {
+        if (restored) return;
+        restored = true;
+        if (win[resName] === cb) {
+          if (prev !== undefined) win[resName] = prev;
+          else delete win[resName];
+        }
+      };
+      return withTimeout(() => new Promise((resolve) => {
+        cb = (id, payload) => {
+          if (id === reqId) {
+            restore();
+            resolve(payload && typeof payload === 'object' ? payload : null);
+          } else if (typeof prev === 'function') {
+            prev(id, payload);
+          }
+        };
+        win[resName] = cb;
+        try {
+          win[callName](JSON.stringify({ id: reqId, input }));
+        } catch {
+          restore();
+          resolve(null);
+        }
+      }), 10500, restore);
+    }
+
+    async function refreshLiveTelemetrySnapshot(force = false, opts = null) {
+      if (isDestroyed()) return liveQuotaSnap;
+      if (quotaLoading && quotaPending) return quotaPending;
       const now = Date.now();
-      if (!force && liveQuotaSnap && now - lastQuotaFetchAt < 45000) return liveQuotaSnap;
+      if (!force) {
+        if (hasUsableQuotas(liveQuotaSnap) && inCooldown(lastQuotaFetchAt, QUOTA_SUCCESS_COOLDOWN_MS, now)) return liveQuotaSnap;
+        if (!opts?.ignoreFailCooldown && inCooldown(lastQuotaFailAt, QUOTA_FAIL_COOLDOWN_MS, now)) return liveQuotaSnap;
+      }
       const win = typeof window !== 'undefined' ? window : G;
       if (!win) return null;
+      const doc = typeof document !== 'undefined' ? document : win.document || null;
+      const telemetryOff = doc?.documentElement?.getAttribute?.('data-ag-cs-telemetry') === 'off';
       quotaLoading = true;
       if (activeTab === 'quotas') renderHomePanel();
-      try {
-        const snap = win.agPulseHost?.getMetrics
-          ? await win.agPulseHost.getMetrics({ conversationId: null, force: Boolean(force) })
-          : win.__agPrismTelemetry?.refresh
-          ? await win.__agPrismTelemetry.refresh()
-          : win.__agPrismTelemetry?.getLatestSnapshot?.() || null;
-        if (snap && typeof snap === 'object') { liveQuotaSnap = snap; lastQuotaFetchAt = Date.now(); quotaEpoch += 1; }
-        return liveQuotaSnap;
-      } catch {
-        return liveQuotaSnap;
-      } finally {
-        quotaLoading = false;
-        if (!isDestroyed()) renderHomePanel();
-      }
+      const pending = (async () => {
+        try {
+          const forceFlag = Boolean(force);
+          const req = {
+            conversationId: null,
+            force: forceFlag,
+            quotaRefresh: Boolean(opts?.quotaRefresh ?? forceFlag),
+            selectLatest: false,
+          };
+          const host = win.agPulseHost;
+          const isPrismHost = Boolean(host?.__prismFallback);
+          const hasExternalHost = typeof host?.getMetrics === 'function' && !isPrismHost;
+          const bridge = win.__agPrismMetricsBridge;
+          const tel = win.__agPrismTelemetry;
+          let snap = null;
+          const pick = (v) => { if (hasUsableQuotas(v)) snap = v; };
+
+          if (hasExternalHost) {
+            pick(await withTimeout(() => host.getMetrics(req), 3000));
+          }
+          if (!hasUsableQuotas(snap) && !telemetryOff) {
+            if (isPrismHost && typeof host?.getMetrics === 'function') {
+              pick(await withTimeout(() => host.getMetrics(req), 10500));
+            } else if (typeof bridge?.getMetrics === 'function') {
+              pick(await withTimeout(() => bridge.getMetrics(req), 10500));
+            } else if (typeof win.__agPrismMetricsCall === 'function') {
+              pick(await callPrismMetricsBinding(win, req));
+            } else if (!host?.getMetrics && typeof tel?.refresh === 'function') {
+              pick(await withTimeout(() => tel.refresh(), 4500));
+            }
+            if (!hasUsableQuotas(snap)) pick(tel?.getLatestSnapshot?.());
+          }
+
+          if (hasUsableQuotas(snap)) {
+            liveQuotaSnap = snap;
+            lastQuotaFetchAt = Date.now();
+            lastQuotaFailAt = 0;
+            quotaEpoch += 1;
+          } else {
+            lastQuotaFailAt = Date.now();
+          }
+          return liveQuotaSnap;
+        } catch {
+          lastQuotaFailAt = Date.now();
+          return liveQuotaSnap;
+        } finally {
+          quotaLoading = false;
+          quotaPending = null;
+          if (!isDestroyed() && activeTab === 'quotas') renderHomePanel();
+        }
+      })();
+      quotaPending = pending;
+      return pending;
     }
 
     function scheduleUsageRollupRefresh(delayMs = 1800) {
@@ -427,6 +542,7 @@
           if (!document.getElementById(STUDIO_STYLE_ID)) {
             const st = mk('style', '', STUDIO_EXTRA_CSS);
             st.id = STUDIO_STYLE_ID;
+            st.setAttribute('data-ag-owned', '1');
             document.head.appendChild(st);
           }
         });
@@ -436,8 +552,9 @@
       const greeting = home.querySelector('[data-testid="home-greeting"]');
       if (!greeting?.parentElement) return null;
       if (!panelSeat || !panelEl) {
-        panelSeat = mk('div', 'ag-cs-home-panel-seat');
+        panelSeat = markNoTr(mk('div', 'ag-cs-home-panel-seat'));
         panelSeat.setAttribute('data-ag-no-i18n', '');
+        panelSeat.setAttribute('data-ag-owned', '1');
         panelEl = mk('section', 'ag-cs-home-panel');
         panelSeat.appendChild(panelEl);
       }
@@ -454,7 +571,13 @@
       const refreshBtn = mk('button', 'ag-cs-quota-refresh', quotaLoading ? ui.thinkingEllipsis || 'Loading…' : ui.refreshBtnTitle || 'Refresh');
       refreshBtn.type = 'button';
       refreshBtn.disabled = quotaLoading;
-      refreshBtn.addEventListener('click', () => void refreshLiveTelemetrySnapshot(true));
+      refreshBtn.addEventListener('click', () => {
+        const now = Date.now();
+        if (quotaLoading || inCooldown(lastManualRefreshAt, MANUAL_REFRESH_COOLDOWN_MS, now)) return;
+        lastManualRefreshAt = now;
+        lastQuotaTabTriggerAt = now;
+        void refreshLiveTelemetrySnapshot(true);
+      });
       toolbar.appendChild(refreshBtn);
       wrap.appendChild(toolbar);
 
@@ -545,7 +668,8 @@
         activeWorkspace = 'all';
         return renderHomePanel(true);
       }
-      const renderKey = [lang, activeTab, activeRange, activeWorkspace, modelsExpanded ? 1 : 0, skeleton ? 1 : 0, quotaLoading ? 1 : 0, quotaEpoch, usageRecords.size, data.sessions, data.calls, data.tokens, data.subagentTokens || 0, data.cacheHitRate != null ? data.cacheHitRate.toFixed(3) : '-', data.activeDays, data.model || ''].join('|');
+      const isQuotasTab = activeTab === 'quotas';
+      const renderKey = [lang, activeTab, activeRange, activeWorkspace, modelsExpanded ? 1 : 0, skeleton ? 1 : 0, isQuotasTab ? (quotaLoading ? 1 : 0) : 0, isQuotasTab ? quotaEpoch : 0, usageRecords.size, data.sessions, data.calls, data.tokens, data.subagentTokens || 0, data.cacheHitRate != null ? data.cacheHitRate.toFixed(3) : '-', data.activeDays, data.model || ''].join('|');
       if (!force && renderKey === lastPanelRenderKey && panel.childElementCount > 0) return;
       lastPanelRenderKey = renderKey;
 
@@ -565,7 +689,13 @@
           if (activeTab === id) btn.setAttribute('data-active', '');
           btn.addEventListener('click', () => {
             activeTab = id;
-            if (id === 'quotas' && !liveQuotaSnap) void refreshLiveTelemetrySnapshot(true);
+            if (id === 'quotas' && !hasUsableQuotas(liveQuotaSnap)) {
+              const now = Date.now();
+              if (!inCooldown(lastQuotaTabTriggerAt, QUOTA_TAB_COOLDOWN_MS, now)) {
+                lastQuotaTabTriggerAt = now;
+                void refreshLiveTelemetrySnapshot(false, { quotaRefresh: true, ignoreFailCooldown: true });
+              }
+            }
             renderHomePanel();
           });
           tabs.appendChild(btn);

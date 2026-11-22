@@ -336,7 +336,7 @@ const WORKBENCH_CSS = `
   --wb-fg: #F2F2F5; --wb-fg-sec: #C4C4CE; --wb-muted: #8A8A98;
   --wb-accent: #669DF6; --wb-accent-ink: #8AB4F8; --wb-accent-fg: #0B0D13; --wb-accent-soft: rgba(102,157,246,0.15);
   --wb-checker-a: #161820; --wb-checker-b: #1F222D;
-  --wb-font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --wb-font-sans: "Google Sans", "Google Sans Text", Inter, "Segoe UI Variable", "PingFang SC", "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
   --wb-font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 html[data-wb-palette="warm"]:not([data-wb-theme="light"]),
@@ -860,6 +860,7 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
 
   function hasOnlySafeCssUrls(valStr) {
     const lower = valStr.toLowerCase();
+    if (lower.includes('image-set(') || lower.includes('-webkit-image-set(')) return false;
     let pos = 0;
     while (pos < lower.length) {
       const idx = lower.indexOf('url(', pos);
@@ -1414,8 +1415,20 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
     const svgEl = mountSafeSvgDom(document, svgMarkup);
     if (!svgEl) return;
     const dims = readSvgDimensionsFromElement(svgEl);
-    const outW = Math.max(1, Math.round(dims.width * scaleMul));
-    const outH = Math.max(1, Math.round(dims.height * scaleMul));
+    const MAX_DIM = 8192;
+    const MAX_PIXELS = 33554432;
+    let outW = Math.max(1, Math.round(dims.width * scaleMul));
+    let outH = Math.max(1, Math.round(dims.height * scaleMul));
+    if (outW > MAX_DIM || outH > MAX_DIM) {
+      const k = MAX_DIM / Math.max(outW, outH);
+      outW = Math.max(1, Math.floor(outW * k));
+      outH = Math.max(1, Math.floor(outH * k));
+    }
+    if (outW * outH > MAX_PIXELS) {
+      const k = Math.sqrt(MAX_PIXELS / (outW * outH));
+      outW = Math.max(1, Math.floor(outW * k));
+      outH = Math.max(1, Math.floor(outH * k));
+    }
     const cleanXml = serializeSafeSvgNode(svgEl);
     if (!cleanXml) return;
     const blob = new Blob([cleanXml], { type: 'image/svg+xml;charset=utf-8' });
@@ -1999,16 +2012,19 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
       waveCanvas.addEventListener('pointerup', stopScrub);
       waveCanvas.addEventListener('pointercancel', stopScrub);
 
+      let waveAborted = false;
+      const waveAbortCtl = typeof AbortController === 'function' ? new AbortController() : null;
       const maxDecodeBytes = 8 * 1024 * 1024;
       if (state.meta && state.meta.size > 0 && state.meta.size <= maxDecodeBytes && typeof AudioContext !== 'undefined') {
-        fetch(streamUrl)
+        fetch(streamUrl, waveAbortCtl ? { signal: waveAbortCtl.signal } : undefined)
           .then((r) => (r.ok ? r.arrayBuffer() : null))
           .then(async (buf) => {
-            if (!buf) return;
+            if (!buf || waveAborted) return;
             const OfflineOrCtx = window.OfflineAudioContext || window.AudioContext;
             const decodeCtx = OfflineOrCtx === window.AudioContext ? new AudioContext() : new OfflineOrCtx(1, 2, 44100);
             const audioBuf = await decodeCtx.decodeAudioData(buf);
             if (typeof decodeCtx.close === 'function') decodeCtx.close().catch(() => {});
+            if (waveAborted) return;
             const ch0 = audioBuf.getChannelData(0);
             const ch1 = audioBuf.numberOfChannels > 1 ? audioBuf.getChannelData(1) : null;
             const buckets = 220;
@@ -2027,18 +2043,27 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
               if (pk > maxPeak) maxPeak = pk;
             }
             for (let b = 0; b < buckets; b++) peaks[b] /= maxPeak;
+            if (waveAborted) return;
             wavePeaks = peaks;
             drawWaveformOnce();
           })
           .catch(() => {});
       }
       requestAnimationFrame(drawWaveformOnce);
+      state._abortWaveDecode = () => {
+        waveAborted = true;
+        try { waveAbortCtl?.abort(); } catch {}
+      };
     }
 
     state.onThemeRefresh = isAudio ? drawWaveformOnce : null;
 
     return () => {
       state.onThemeRefresh = null;
+      if (typeof state._abortWaveDecode === 'function') {
+        state._abortWaveDecode();
+        state._abortWaveDecode = null;
+      }
       if (rafId) cancelAnimationFrame(rafId);
       try {
         mediaEl.pause();
@@ -2052,11 +2077,20 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
   }
 
   // ── Engine 3: HTML Responsive Sandbox & PDF Native Stream ─────────────────
+  // 严格核验目标资源确实为真实 PDF（文件后缀 .pdf 或后端确认 application/pdf），严禁显式 kind=pdf 绕过沙盒加载 HTML/SVG
+  function isVerifiedPdfResource() {
+    const cleanPath = String(state.path || '').split(/[?#]/)[0].trim().toLowerCase();
+    if (/\.(?:html?|xhtml|svg)$/i.test(cleanPath)) return false;
+    const mime = String(state.meta?.mime || '').split(';')[0].trim().toLowerCase();
+    if (mime) return mime === 'application/pdf';
+    return Boolean(cleanPath) && cleanPath.endsWith('.pdf');
+  }
+
   function mountHtmlOrPdfStage(isPdf) {
     toolsEl.replaceChildren();
     stageEl.replaceChildren();
 
-    if (isPdf) {
+    if (isPdf && isVerifiedPdfResource()) {
       const frame = el('iframe', 'wb-pdf-frame');
       frame.src = buildApiUrl('/stream');
       const btnReload = el('button', 'wb-btn', tr('reloadBtn'));
@@ -2146,20 +2180,23 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
         : `${state.baseUrl.replace(/\/$/, '')}${state.sandboxUrl}`;
       frame.src = sandboxUrl;
     } else {
+      const showSandboxFail = () => {
+        frame.removeAttribute('src');
+        const errBox = el('div', 'wb-empty', tr('loadError'));
+        frameWrap.replaceChildren(errBox);
+      };
       fetch(buildApiUrl('/sandbox-init'))
-        .then((r) => r.json())
+        .then((r) => (r.ok ? r.json() : null))
         .then((res) => {
           if (res && res.ok && res.url) {
             sandboxUrl = res.url.startsWith('http') ? res.url : `${state.baseUrl.replace(/\/$/, '')}${res.url}`;
             frame.src = sandboxUrl;
           } else {
-            sandboxUrl = buildApiUrl('/stream');
-            frame.src = sandboxUrl;
+            showSandboxFail();
           }
         })
         .catch(() => {
-          sandboxUrl = buildApiUrl('/stream');
-          frame.src = sandboxUrl;
+          showSandboxFail();
         });
     }
     return () => {};
@@ -2540,6 +2577,9 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
         }
         if (state.kind === 'auto' || !state.kind) {
           state.kind = detectWorkbenchKind(state.path, meta.mime || '');
+        } else if (state.kind === 'pdf' && !isVerifiedPdfResource()) {
+          state.kind = detectWorkbenchKind(state.path, meta.mime || '');
+          if (state.kind === 'pdf') state.kind = 'text';
         }
         state.textBuffer = typeof meta.textSlice === 'string' ? meta.textSlice : '';
         state.truncated = Boolean(meta.truncated);
@@ -2548,10 +2588,16 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
         if (seq !== loadSeq) return;
         if (state.kind === 'auto' || !state.kind) {
           state.kind = detectWorkbenchKind(state.path, '');
+        } else if (state.kind === 'pdf' && !isVerifiedPdfResource()) {
+          state.kind = detectWorkbenchKind(state.path, '');
+          if (state.kind === 'pdf') state.kind = 'text';
         }
       }
     } else if (state.kind === 'auto' || !state.kind) {
       state.kind = state.rawContent.includes('<svg') ? 'mermaid' : detectWorkbenchKind(state.path, '');
+    } else if (state.kind === 'pdf' && !isVerifiedPdfResource()) {
+      state.kind = state.rawContent.includes('<svg') ? 'mermaid' : detectWorkbenchKind(state.path, state.meta?.mime || '');
+      if (state.kind === 'pdf') state.kind = 'text';
     }
 
     badgeEl.textContent = String(state.kind || 'FILE').toUpperCase();
@@ -2629,9 +2675,15 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
         state.theme = d.payload.themeType;
       }
       if (d.payload.cssVariables && typeof d.payload.cssVariables === 'object') {
-        for (const [k, v] of Object.entries(d.payload.cssVariables)) {
+        const cv = d.payload.cssVariables;
+        for (const [k, v] of Object.entries(cv)) {
           if (typeof k === 'string' && k.startsWith('--')) htmlEl.style.setProperty(k, String(v));
         }
+        if (cv['--ag-cs-tonal-0']) htmlEl.style.setProperty('--wb-bg', String(cv['--ag-cs-tonal-0']));
+        if (cv['--ag-cs-tonal-1']) htmlEl.style.setProperty('--wb-surface', String(cv['--ag-cs-tonal-1']));
+        if (cv['--ag-cs-tonal-2']) htmlEl.style.setProperty('--wb-panel', String(cv['--ag-cs-tonal-2']));
+        if (cv['--ag-cs-tonal-3']) htmlEl.style.setProperty('--wb-elevated', String(cv['--ag-cs-tonal-3']));
+        if (cv['--font-sans']) htmlEl.style.setProperty('--wb-font-sans', String(cv['--font-sans']));
       }
       applyThemeAttrs();
       if (typeof state.onThemeRefresh === 'function') state.onThemeRefresh();
@@ -2655,6 +2707,7 @@ function bootPrismWorkbench(INIT_STATE, I18N_TABLE) {
       }
       if (typeof d.path === 'string' && d.path !== state.path) {
         state.path = d.path;
+        state.meta = null;
         state.name = d.title || '';
         state.rawContent = '';
         state.sandboxUrl = '';

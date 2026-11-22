@@ -59,11 +59,14 @@
     composerRestyle: S_T,
     placeholderStyle: { allowed: ['studio', 'host'], default: 'studio' },
     smoothCaret: S_T,
+    scrollBottomMotion: { allowed: ['smooth', 'instant'], default: 'smooth' },
+    contextMenu: S_T,
     codeFont: { allowed: ['default', 'jetbrains', 'cascadia', 'sfmono'], default: 'default' },
     codeLigatures: S_F,
     mascot: { allowed: ['crab', 'minis', 'off'], default: 'crab', aliases: { dual: 'crab' } },
     sidebarRestyle: S_T,
     sidebarCompact: S_F,
+    sidebarNavFold: { allowed: ['off', 'on'], default: 'off' },
     thoughtTranslate: { allowed: ['off', 'machine', 'ai'], default: 'off' },
     thoughtTrigger: { allowed: ['preload', 'expand'], default: 'preload' },
     thoughtView: { allowed: ['immersive', 'bilingual'], default: 'immersive' },
@@ -104,18 +107,18 @@
       const normFn = G.__agCsI18n?.normalizeLanguage;
       val = typeof normFn === 'function' && nav ? normFn(nav) : /^ja\b/i.test(nav) ? 'ja' : /^en\b/i.test(nav) ? 'en' : /^zh[-_](?:HK|MO)/i.test(nav) ? 'yue' : /^zh[-_](?:TW|Hant)/i.test(nav) ? 'zh-TW' : 'zh-CN';
     }
-    if ((key === 'omniModule' || key === 'sidebarStudio' || key === 'autoUpdate') && typeof val === 'boolean') val = val ? 'on' : 'off';
+    if ((key === 'omniModule' || key === 'sidebarStudio' || key === 'autoUpdate' || key === 'sidebarNavFold') && typeof val === 'boolean') val = val ? 'on' : 'off';
     if (typeof spec.default === 'string' && typeof val === 'number' && Number.isFinite(val)) val = String(val);
     return spec.allowed.includes(val) ? { valid: true, value: val } : { valid: false };
   };
 
-  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.6') => {
+  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.7-beta.1') => {
     const settings = {};
     for (const [k, spec] of O.entries(PRISM_SETTINGS_SCHEMA)) {
       const c = sanitizeKeyVal(k, currentSettings[k]);
       settings[k] = c.valid ? c.value : spec.default;
     }
-    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.6'), exportedAt: new Date().toISOString(), settings };
+    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.7-beta.1'), exportedAt: new Date().toISOString(), settings };
     const tSrc =
       rawThoughtCfg && typeof rawThoughtCfg === 'object' && rawThoughtCfg.config && typeof rawThoughtCfg.config === 'object'
         ? rawThoughtCfg.config
@@ -223,20 +226,20 @@
 
   let pendingCfgToast = null;
 
-  const invokePrismRepoAction = (action, versionStr, extra) => {
-    const allowed = ['pull', 'storage-health', 'prepare-archive', 'uninstall', 'update-status', 'check-update', 'apply-update'];
-    const act = allowed.includes(action) ? action : 'status';
+  const invokePrismRepoAction = (action, ver, extra) => {
+    const act = ['pull', 'storage-health', 'prepare-archive', 'uninstall', 'update-status', 'check-update', 'apply-update'].includes(action) ? action : 'status';
+    const isObj = ver && typeof ver === 'object';
+    const ext = isObj ? { ...ver, ...(extra && typeof extra === 'object' ? extra : null) } : extra && typeof extra === 'object' ? extra : null;
     const win = typeof window !== 'undefined' ? window : G;
     try {
-      const bridge = win?.__agPrismRepoBridge;
-      const arg = extra && typeof extra === 'object' ? { ...extra, action: act } : { action: act };
-      if (typeof bridge === 'function') return Promise.resolve(bridge(arg));
-      if (bridge && typeof bridge[act] === 'function') return Promise.resolve(bridge[act](extra));
-      if (bridge && typeof bridge.call === 'function') return Promise.resolve(bridge.call(arg));
+      const b = win?.__agPrismRepoBridge, arg = ext ? { ...ext, action: act } : { action: act };
+      if (typeof b === 'function') return Promise.resolve(b(arg));
+      if (typeof b?.[act] === 'function') return Promise.resolve(b[act](ext || extra));
+      if (typeof b?.call === 'function') return Promise.resolve(b.call(arg));
     } catch (err) {
       return Promise.resolve({ ok: false, action: act, error: String(err?.message || err) });
     }
-    return Promise.resolve({ ok: false, offline: true, action: act, noRemote: true, hasRemote: false, branch: 'local', shortHash: versionStr });
+    return Promise.resolve({ ok: false, offline: true, action: act, noRemote: true, hasRemote: false, branch: 'local', shortHash: isObj ? ver.version : ver });
   };
 
   const readStore = (k) => {
@@ -282,6 +285,8 @@
 
     const doc = typeof document !== 'undefined' ? document : null;
     if (!doc) return;
+    const syncChrome = G.__agPrismHostEnhancer?.syncSettingsDialogChrome;
+    if (typeof syncChrome === 'function') syncChrome(doc, runGuardedMut);
     const lang = getLang();
     const ui = uiText(lang);
     const targetTitles = ['Appearance', '外观', '外觀', '外観'];
@@ -293,6 +298,12 @@
       }
     }
     if (!panel) return;
+    if (typeof syncChrome !== 'function') {
+      const dlg = panel.closest?.('[role="dialog"]');
+      if (dlg && dlg.getAttribute?.('data-ag-cs-settings-dlg') !== '1') {
+        runGuardedMut(() => dlg.setAttribute?.('data-ag-cs-settings-dlg', '1'));
+      }
+    }
 
     const effVal = (k, l) => {
       const v = typeof resolveSettingRowActiveValue === 'function' ? resolveSettingRowActiveValue(k, l) : undefined;
@@ -326,11 +337,15 @@
     const onClk = (e, fn) => on(e, 'click', (ev) => { ev?.stopPropagation?.(); fn(ev); });
 
     const SCHEMA_KEYS = O.keys(PRISM_SETTINGS_SCHEMA);
+    const isSwitchValOn = (v) => v === true || v === 'on';
     const syncRootState = (rootEl, l, u) => {
       const sumEl = qs(rootEl, '[data-ag-cs-fold-summary]');
       const ns = formatSettingsSummary(l, u);
       if (sumEl && sumEl[K_TC] !== ns) sumEl[K_TC] = ns;
       if (ga(rootEl, 'data-body-built') !== '1') return;
+      if (typeof rootEl.__prismMountThoughtUi === 'function') {
+        try { rootEl.__prismMountThoughtUi(); } catch {}
+      }
 
       const de = doc.documentElement;
       const themeAttr = de?.getAttribute?.('data-ag-cs-theme') || '';
@@ -339,7 +354,9 @@
         (!themeAttr && (Boolean(de?.[K_CL]?.contains?.('light')) || Boolean(doc.body?.[K_CL]?.contains?.('light'))));
       const hiState = de?.getAttribute?.('data-ag-prism-host-i18n') || '';
       const tmMode = getThoughtTranslateMode();
-      const sigParts = [l, isLightTheme ? 1 : 0, hiState, tmMode, ns];
+      const thLive = rootEl.__prismThoughtUiHandle;
+      const hasThUi = Boolean(thLive && thLive.box?.[K_IC]);
+      const sigParts = [l, isLightTheme ? 1 : 0, hiState, tmMode, hasThUi ? 1 : 0, ns];
       for (const k of SCHEMA_KEYS) sigParts.push(effVal(k, l));
       const nextSig = sigParts.join('\x1f');
       if (rootEl.__lastSyncSig === nextSig) return;
@@ -348,8 +365,9 @@
       const dirtyBtns = [];
       qa(rootEl, 'button[data-ag-cs-key]').forEach((btn) => {
         const k = ga(btn, 'data-ag-cs-key');
-        const act = Boolean(matchBtn(k, ga(btn, 'data-ag-cs-val'), effVal(k, l)));
-        if (btn.__agOn !== act || ga(btn, 'aria-pressed') !== String(act)) dirtyBtns.push([btn, act]);
+        const cur = effVal(k, l);
+        const act = Boolean(matchBtn(k, ga(btn, 'data-ag-cs-val'), cur));
+        if (btn.__agOn !== act || ga(btn, 'aria-pressed') !== String(act)) dirtyBtns.push([btn, act, cur]);
       });
       const dirtyPresets = [];
       qa(rootEl, 'button[data-ag-cs-preset]').forEach((pBtn) => {
@@ -358,23 +376,50 @@
         const m = O.entries(spec).every(([k, ex]) => effVal(k, l) === ex);
         if (pBtn.__agAct !== m || ga(pBtn, 'data-active') !== (m ? '1' : '0')) dirtyPresets.push([pBtn, m]);
       });
-      for (const [btn, act] of dirtyBtns) {
+      for (const [btn, act, cur] of dirtyBtns) {
         btn.__agOn = act;
         sa(btn, 'aria-pressed', act);
         if (act) sa(btn, 'data-pressed');
         else ra(btn, 'data-pressed');
+        const grp = btn.parentElement;
+        if (grp && ga(grp, 'data-ui-kind') === 'switch') {
+          btn.tabIndex = act ? -1 : 0;
+          sa(btn, 'tabindex', act ? '-1' : '0');
+          const swOn = isSwitchValOn(cur) ? '1' : '0';
+          if (ga(grp, 'data-switch-on') !== swOn) sa(grp, 'data-switch-on', swOn);
+        }
       }
       for (const [pBtn, m] of dirtyPresets) {
         pBtn.__agAct = m;
         sa(pBtn, 'data-active', m ? '1' : '0');
         sa(pBtn, 'aria-pressed', m);
       }
-      const th = rootEl.__prismThoughtUiHandle;
+      const th = hasThUi ? thLive : null;
+      if (th?.onLanguageChanged && th.__agLang !== l) {
+        th.onLanguageChanged(l);
+        th.__agLang = l;
+      }
       if (th?.onViewSwitched) th.onViewSwitched(effVal('thoughtView', l));
-      const tb = qs(rootEl, '[data-testid="prism-thought-ai-config"]');
-      if (tb) tb.hidden = tmMode !== 'ai';
-      const ltRow = qs(rootEl, '[data-ag-cs-row="linkTarget"]');
-      if (ltRow?.style) ltRow.style.opacity = effVal('omniModule', l) === 'off' ? '0.55' : '';
+      if (th?.onModeSwitched) {
+        th.onModeSwitched(tmMode);
+      } else {
+        const tb = qs(rootEl, '[data-testid="prism-thought-ai-config"]');
+        if (tb) tb.hidden = tmMode !== 'ai';
+      }
+      for (const [dk, dim] of [
+        ['placeholderStyle', effVal('composerRestyle', l) === false],
+        ['sidebarCompact', effVal('sidebarRestyle', l) === false],
+        ['sidebarNavFold', effVal('sidebarRestyle', l) === false],
+        ['thoughtTrigger', tmMode === 'off'],
+        ['thoughtView', tmMode === 'off'],
+        ['homeRipple', effVal('homeLayout', l) === 'off'],
+        ['linkTarget', effVal('omniModule', l) === 'off'],
+      ]) {
+        const dr = qs(rootEl, `[data-ag-cs-row="${dk}"]`);
+        if (!dr) continue;
+        if (dr.style) dr.style.opacity = dim ? '0.55' : '';
+        if (dim) sa(dr, 'data-ag-cs-dimmed', '1'); else ra(dr, 'data-ag-cs-dimmed');
+      }
       const lpDescEl = qs(rootEl, '[data-ag-cs-row="lightPreset"] [data-k="d"]');
       if (lpDescEl) {
         const curPal = effVal('palette', l);
@@ -422,7 +467,7 @@
 
       const initOpen = ['1', 'true'].includes(readStore(STORAGE_SETTINGS_OPEN_KEY));
       const savedTab = readStore(STORAGE_SETTINGS_SUBTAB_KEY);
-      let activeSubTab = ['all', 'appearance', 'interaction', 'thought', 'modules', 'beta', 'about'].includes(savedTab) ? savedTab : 'all';
+      let activeSubTab = ['appearance', 'interaction', 'thought', 'modules', 'beta', 'about', 'all'].includes(savedTab) ? savedTab : 'appearance';
 
       const sec = doc.createElement('div');
       sec.id = SETTINGS_SEC_ID;
@@ -493,6 +538,70 @@
       let cachedUpdStatus = null;
       let applyUpdateViewRef = null;
       let probeRepoRef = null;
+      let thoughtListEl = null;
+      let thoughtUiHandle = null;
+
+      const getThoughtUiHandle = () => {
+        const live = sec.__prismThoughtUiHandle || thoughtUiHandle;
+        if (live && live.box?.[K_IC]) {
+          thoughtUiHandle = live;
+          return live;
+        }
+        return null;
+      };
+
+      const mountThoughtUiIfReady = () => {
+        const curUi = (typeof window !== 'undefined' && window.__agPrismThoughtSettingsUi) || G.__agPrismThoughtSettingsUi;
+        const hasFactory = typeof curUi?.createThoughtAiConfigBox === 'function';
+        if (thoughtUiHandle && !thoughtUiHandle.box?.[K_IC]) {
+          thoughtUiHandle = null;
+          if (sec.__prismThoughtUiHandle && !sec.__prismThoughtUiHandle.box?.[K_IC]) {
+            sec.__prismThoughtUiHandle = null;
+          }
+          if (!hasFactory) return null;
+        }
+        if (thoughtUiHandle && thoughtUiHandle.box?.[K_IC]) {
+          sec.__prismThoughtUiHandle = thoughtUiHandle;
+          return thoughtUiHandle;
+        }
+        const hostList = thoughtListEl?.[K_IC] ? thoughtListEl : qs(sec, '[data-ag-cs-group="thought"] .ag-cs-settings-card');
+        if (!hostList?.[K_IC] || !hasFactory) {
+          if (!hasFactory) {
+            thoughtUiHandle = null;
+            sec.__prismThoughtUiHandle = null;
+          }
+          return null;
+        }
+        thoughtListEl = hostList;
+        const curLang = getLang();
+        const curUiText = uiText(curLang) || ui;
+        const curMode = getThoughtTranslateMode();
+        const handle = curUi.createThoughtAiConfigBox({
+          mkEl,
+          btnClass: BTN,
+          ui: curUiText,
+          lang: curLang,
+          getLang,
+          isZh,
+          getMode: getThoughtTranslateMode,
+          runGuardedMut,
+        });
+        if (!handle || !handle.box) return null;
+        runGuardedMut(() => {
+          qa(hostList, '[data-testid="prism-thought-ai-config"]').forEach((oldBox) => oldBox.remove());
+          ap(hostList, handle.box);
+        });
+        handle.__agLang = curLang;
+        thoughtUiHandle = handle;
+        sec.__prismThoughtUiHandle = handle;
+        try {
+          handle.onLanguageChanged?.(curLang);
+          handle.onViewSwitched?.(effVal('thoughtView', curLang));
+          handle.onModeSwitched?.(curMode);
+        } catch {}
+        return handle;
+      };
+      sec.__prismMountThoughtUi = mountThoughtUiIfReady;
 
       const syncFoldBadgeOnly = (st) => {
         if (!updBadge[K_IC] || !st || st.offline || st.timeout) return;
@@ -547,11 +656,14 @@
             composerRestyle: RS('composerRestyle', 'Composer', onOff),
             placeholderStyle: RS('placeholderStyle', 'Placeholder', [['studio', 'Studio'], ['host', U('optPlaceholderHost')]]),
             smoothCaret: RS('smoothCaret', 'SmoothCaret', onOff),
+            scrollBottomMotion: RS('scrollBottomMotion', 'ScrollBottom', [['smooth', U('optScrollBottomSmooth', 'Glide')], ['instant', U('optScrollBottomInstant', 'Instant')]]),
+            contextMenu: R('contextMenu', 'rowContextMenuTitle', 'rowContextMenuDesc', onOff),
             codeFont: RS('codeFont', 'CodeFont', [['default', U('optFontDefault')], ['jetbrains', 'JetBrains Mono'], ['cascadia', 'Cascadia Code'], ['sfmono', U('optFontSfmono', 'SF Mono')]]),
             codeLigatures: RS('codeLigatures', 'CodeLigatures', onOff),
             mascot: RS('mascot', 'Mascot', [['crab', mDual], ['minis', mMinis], ['off', mOff]]),
             sidebarRestyle: RS('sidebarRestyle', 'Sidebar', onOff),
             sidebarCompact: RS('sidebarCompact', 'SidebarCompact', onOff),
+            sidebarNavFold: R('sidebarNavFold', 'setSidebarNavFoldLabel', 'setSidebarNavFoldDesc', [['off', U('optSidebarNavFoldOff', 'Show All')], ['on', U('optSidebarNavFoldOn', 'Fold Extra')]]),
             thoughtTranslate: RS('thoughtTranslate', 'ThoughtMode', [['off', U('optThoughtOff')], ['machine', U('optThoughtMachine')], ['ai', U('optThoughtAi')]]),
             thoughtTrigger: RS('thoughtTrigger', 'ThoughtTrigger', [['preload', U('optTriggerPreload')], ['expand', U('optTriggerExpand')]]),
             thoughtView: RS('thoughtView', 'ThoughtView', [['immersive', U('optThoughtImmersive')], ['bilingual', U('optThoughtBilingual')]]),
@@ -566,13 +678,11 @@
 
           const groups = [
             { id: 'appearance', title: U('grpAppearance'), keys: ['palette', 'lightPreset', 'accentTone', 'cornerStyle', 'ambientIntensity', 'motionLevel', 'targetFps', 'homeLayout', 'homeRipple', 'logoInk', 'language', 'hostLocalization'] },
-            { id: 'interaction', title: U('grpInteraction'), keys: ['composerRestyle', 'placeholderStyle', 'smoothCaret', 'codeFont', 'codeLigatures', 'mascot', 'sidebarRestyle', 'sidebarCompact'] },
+            { id: 'interaction', title: U('grpInteraction'), keys: ['composerRestyle', 'placeholderStyle', 'smoothCaret', 'scrollBottomMotion', 'contextMenu', 'codeFont', 'codeLigatures', 'mascot', 'sidebarRestyle', 'sidebarCompact', 'sidebarNavFold'] },
             { id: 'thought', title: U('grpThought'), keys: ['thoughtTranslate', 'thoughtTrigger', 'thoughtView'] },
             { id: 'modules', title: U('groupModules'), keys: ['telemetryModule', 'effortSliderModule', 'omniModule', 'linkTarget'] },
             { id: 'beta', title: U('grpBeta'), keys: ['sidebarStudio'] },
           ];
-
-          let thoughtUiHandle = null;
 
           const buildRow = (r) => {
             const row = mkEl('div');
@@ -586,34 +696,72 @@
             const group = mkEl('div', 'ag-cs-seg-group');
             sa(group, 'role', 'group');
             const curVal = effVal(r.key, lang);
+            const isSwitch =
+              r.key !== 'sidebarNavFold' &&
+              r.opts.length === 2 &&
+              ((r.opts[0][0] === true && r.opts[1][0] === false) || (r.opts[0][0] === 'on' && r.opts[1][0] === 'off'));
+            if (isSwitch) {
+              sa(group, 'data-ui-kind', 'switch');
+              sa(group, 'data-switch-on', isSwitchValOn(curVal) ? '1' : '0');
+              const thumb = mkEl('span', 'ag-cs-switch-thumb');
+              sa(thumb, 'aria-hidden', 'true');
+              ap(group, thumb);
+            }
             for (const [val, lbl] of r.opts) {
               const valJson = JSON.stringify(val);
-              const b = mkB(BTN, lbl, 'data-ag-cs-key', r.key);
+              const isTone = r.key === 'accentTone';
+              const b = mkB(BTN, isTone ? undefined : lbl, 'data-ag-cs-key', r.key);
+              if (isTone) {
+                const dot = mkEl('span', 'ag-cs-tone-dot');
+                sa(dot, 'data-tone', val);
+                sa(dot, 'aria-hidden', 'true');
+                ap(b, dot, mkEl('span', '', lbl));
+              }
               sa(b, 'data-ag-cs-val', valJson);
               const act = Boolean(matchBtn(r.key, valJson, curVal));
               b.__agOn = act;
               sa(b, 'aria-pressed', act);
               if (act) sa(b, 'data-pressed');
+              if (isSwitch) {
+                b.tabIndex = act ? -1 : 0;
+                sa(b, 'tabindex', act ? '-1' : '0');
+              }
               on(b, 'click', (ev) => {
                 if (ev && typeof ev === 'object' && handledGroupClicks) handledGroupClicks.add(ev);
-                const prevBtn = Array.from(group.children).find((s) => ga(s, 'aria-pressed') === 'true' || s.hasAttribute('data-pressed'));
+                const prevBtn = Array.from(group.children).find((s) => s.tagName === 'BUTTON' && (ga(s, 'aria-pressed') === 'true' || s.hasAttribute('data-pressed')));
                 if (prevBtn === b && matchBtn(r.key, valJson, effVal(r.key, getLang()))) return;
                 // Read-then-Write: 在任何 DOM 写入与 saveSetting 之前仅读取当前行的 prevBtn 与 b，其余 29 行 0 次回流！
-                const needGlide = !!(prevBtn && prevBtn !== b && typeof runSettingsGroupGlide === 'function');
+                const needGlide = !isSwitch && !!(prevBtn && prevBtn !== b && typeof runSettingsGroupGlide === 'function');
                 const prevRect = needGlide ? rc(prevBtn) : null;
                 const nextRect = needGlide ? rc(b) : null;
+                let nextFocusBtn = null;
                 for (const sib of group.children) {
+                  if (sib.tagName !== 'BUTTON') continue;
                   const isCur = sib === b;
                   sib.__agOn = isCur;
                   sa(sib, 'aria-pressed', isCur);
                   if (isCur) sa(sib, 'data-pressed');
                   else ra(sib, 'data-pressed');
+                  if (isSwitch) {
+                    sib.tabIndex = isCur ? -1 : 0;
+                    sa(sib, 'tabindex', isCur ? '-1' : '0');
+                    if (!isCur) nextFocusBtn = sib;
+                  }
+                }
+                if (isSwitch) {
+                  sa(group, 'data-switch-on', isSwitchValOn(val) ? '1' : '0');
+                  if (nextFocusBtn && (doc.activeElement === b || ev?.detail === 0)) {
+                    try { nextFocusBtn.focus?.(); } catch {}
+                  }
                 }
                 saveSetting(r.key, val);
-                if (r.key === 'thoughtTranslate' && thoughtUiHandle) thoughtUiHandle.onModeSwitched(val);
-                if (r.key === 'thoughtView' && thoughtUiHandle?.onViewSwitched) thoughtUiHandle.onViewSwitched(val);
+                if (r.key === 'thoughtTranslate') {
+                  mountThoughtUiIfReady();
+                  getThoughtUiHandle()?.onModeSwitched?.(val);
+                }
+                if (r.key === 'thoughtView') getThoughtUiHandle()?.onViewSwitched?.(val);
                 if (r.key === 'updateChannel' && applyUpdateViewRef) {
-                  setTimeout(() => { void invokePrismRepoAction('update-status', version).then((st) => st && applyUpdateViewRef(st)).catch(() => {}); }, 40);
+                  void invokePrismRepoAction('update-status', { version, channel: val }).then((st) => st && applyUpdateViewRef(st)).catch(() => {});
                 }
                 const lNow = getLang();
                 syncRootState(sec, lNow, uiText(lNow));
@@ -649,13 +797,13 @@
             for (const [gid, gel] of groupElsById.entries()) setVis(gel, sid === 'all' || sid === gid);
           };
           for (const [sid, slbl] of [
-            ['all', U('subTabAll', 'All')],
             ['appearance', U('subTabAppearance', 'Appearance')],
             ['interaction', U('subTabInteraction', 'Workspace')],
             ['thought', U('subTabThought', 'Thought')],
             ['modules', U('subTabModules', 'Modules')],
             ['beta', U('subTabBeta', 'Beta')],
             ['about', U('subTabAbout', 'Config & About')],
+            ['all', U('subTabAll', 'All')],
           ]) {
             const sb = mkB('ag-cs-subtab-btn', slbl, 'data-ag-cs-subtab', sid);
             sa(sb, 'role', 'tab');
@@ -678,10 +826,8 @@
             groupElsById.set(grp.id, grpEl);
             const list = mkEl('div', CARD_CLS);
             for (const k of grp.keys) if (rowDefs[k]) ap(list, buildRow(rowDefs[k]));
-            if (grp.id === 'thought' && G.__agPrismThoughtSettingsUi?.createThoughtAiConfigBox) {
-              thoughtUiHandle = G.__agPrismThoughtSettingsUi.createThoughtAiConfigBox({ mkEl, btnClass: BTN, ui, lang, getLang, isZh, getMode: getThoughtTranslateMode, runGuardedMut });
-              sec.__prismThoughtUiHandle = thoughtUiHandle;
-              ap(list, thoughtUiHandle?.box);
+            if (grp.id === 'thought') {
+              thoughtListEl = list;
             }
             ap(groupsWrap, ap(grpEl, mkEl('div', 'ag-cs-settings-subhead', grp.title), list));
           }
@@ -944,6 +1090,7 @@
           );
           ap(groupsWrap, ap(aboutGrp, mkEl('div', 'ag-cs-settings-subhead', U('aboutGroupTitle', 'About')), aboutBox));
           ap(foldBody, groupsWrap);
+          mountThoughtUiIfReady();
 
           let uBusy = false;
           onClk(uBtn, () => runGuardedMut(() => setVis(uBox, !!(uBox.hidden))));
@@ -998,7 +1145,9 @@
             const lNow = getLang(), uNow = uiText(lNow), cur = {};
             for (const k of SCHEMA_KEYS) cur[k] = effVal(k, lNow);
             const win = typeof window !== 'undefined' ? window : G;
-            const rawThought = await Promise.resolve(win?.__agPrismThought?.getConfig?.()).catch(() => null);
+            const rawThought = await Promise.resolve(
+              win?.__agPrismThought?.getConfig ? win.__agPrismThought.getConfig() : win?.__agPrismThoughtBridge?.call?.({ action: 'get-config' })
+            ).catch(() => null);
             const jsonStr = JSON.stringify(buildSanitizedConfigExport(cur, rawThought || null, version), null, 2);
             try {
               if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
@@ -1024,21 +1173,28 @@
             pendingCfgToast = { key: 'cfgImportOk', fallback: 'OK', tone: 'ok', exp: Date.now() + 2500 };
             if (O.keys(res.settings).length > 0) {
               applyBatch(res.settings);
-              if (res.settings.thoughtTranslate && thoughtUiHandle) thoughtUiHandle.onModeSwitched(res.settings.thoughtTranslate);
-              if (res.settings.thoughtView && thoughtUiHandle?.onViewSwitched) thoughtUiHandle.onViewSwitched(res.settings.thoughtView);
+              if (res.settings.thoughtTranslate) {
+                mountThoughtUiIfReady();
+                getThoughtUiHandle()?.onModeSwitched?.(res.settings.thoughtTranslate);
+              }
+              if (res.settings.thoughtView) getThoughtUiHandle()?.onViewSwitched?.(res.settings.thoughtView);
             }
             if (res.thought) {
               const win = typeof window !== 'undefined' ? window : G;
               try {
-                void Promise.resolve(win?.__agPrismThought?.saveConfig?.(res.thought))
+                void Promise.resolve(
+                  win?.__agPrismThought?.saveConfig
+                    ? win.__agPrismThought.saveConfig(res.thought)
+                    : win?.__agPrismThoughtBridge?.call?.({ action: 'save-config', ...res.thought })
+                )
                   .then(() => {
-                    const liveTh = doc.getElementById(SETTINGS_SEC_ID)?.__prismThoughtUiHandle || thoughtUiHandle;
+                    const liveTh = doc.getElementById(SETTINGS_SEC_ID)?.__prismThoughtUiHandle || getThoughtUiHandle();
                     liveTh?.reloadConfig?.();
                     liveTh?.ensureLoaded?.(true);
                   })
                   .catch(() => {});
               } catch {}
-              thoughtUiHandle?.reloadConfig?.();
+              getThoughtUiHandle()?.reloadConfig?.();
             }
             const rl = getLang(), ru = uiText(rl);
             if (sec.isConnected) {
@@ -1068,8 +1224,11 @@
             const defs = getDefaultSettingsPatch();
             pendingCfgToast = { key: 'cfgResetOk', fallback: 'OK', tone: 'ok', exp: Date.now() + 2500 };
             applyBatch(defs);
-            if (thoughtUiHandle) thoughtUiHandle.onModeSwitched(defs.thoughtTranslate);
-            if (thoughtUiHandle?.onViewSwitched) thoughtUiHandle.onViewSwitched(defs.thoughtView);
+            const curTh = getThoughtUiHandle();
+            if (curTh) {
+              curTh.onModeSwitched?.(defs.thoughtTranslate);
+              curTh.onViewSwitched?.(defs.thoughtView);
+            }
             const rl = getLang(), ru = uiText(rl);
             if (sec.isConnected) {
               pendingCfgToast = null;

@@ -26,8 +26,134 @@ const DEFAULT_TOKENS = {
 };
 
 const VENDOR_SLIDER_PATH = path.join(REPO_ROOT, 'vendor', 'effort-slider', 'upstream-client.js');
+const CDP_MODULE_PATH = path.join(REPO_ROOT, 'cdp.js');
+const HOST_MIRROR_DIR = path.join(REPO_ROOT, '.antigravity', 'host-mirror');
+
+const ROOT_WATCH_FILES = [
+  'style.css',
+  'ui-runtime.js',
+  'dual-mascot-rig.js',
+  'host-workbench-enhancer.js',
+  'stream-choreography.js',
+  'pulse-vial-bridge.js',
+  'settings-panel.js',
+  'home-studio-panel.js',
+  'home-ripple-host.js',
+  'conv-aura.js',
+  path.join('vendor', 'inline-diff', 'inline-diff-client.js'),
+];
+
+const PRISM_CACHE_SOURCE_PATHS = Array.from(
+  new Set([
+    CDP_MODULE_PATH,
+    ...ROOT_WATCH_FILES.map((rel) => path.join(REPO_ROOT, rel)),
+    VENDOR_SLIDER_PATH,
+    path.join(REPO_ROOT, 'i18n-locales.js'),
+    path.join(REPO_ROOT, 'context-menu-btw.js'),
+    path.join(REPO_ROOT, 'prism-rim-canvas.js'),
+    path.join(REPO_ROOT, 'vial-core.js'),
+    path.join(REPO_ROOT, 'ripple-core.js'),
+    path.join(REPO_ROOT, 'motion-engine.js'),
+    path.join(REPO_ROOT, 'animated-icons.js'),
+    path.join(REPO_ROOT, 'model-glyph-crystal.js'),
+    path.join(REPO_ROOT, 'crystal-prism-core.js'),
+    path.join(REPO_ROOT, 'vendor', 'omni-viewer', 'omni-client.js'),
+    path.join(REPO_ROOT, 'vendor', 'omni-viewer', 'workbench-page.mjs'),
+  ])
+);
+
+const MAX_PRISM_CACHE_ENTRIES = 24;
+let cachedPrismSig = '';
+let cachedCdpMod = null;
+const prismCompileCache = new Map();
+
+function computePrismSourceSig() {
+  const parts = [];
+  for (let i = 0; i < PRISM_CACHE_SOURCE_PATHS.length; i++) {
+    const p = PRISM_CACHE_SOURCE_PATHS[i];
+    try {
+      const st = fs.statSync(p);
+      parts.push(`${Math.trunc(st.mtimeMs)}:${st.size}`);
+    } catch {
+      parts.push('0:0');
+    }
+  }
+  return parts.join('|');
+}
+
+function getCachedCdpAndCache() {
+  const sig = computePrismSourceSig();
+  if (!cachedCdpMod || sig !== cachedPrismSig) {
+    cachedCdpMod = loadFreshCdp();
+    cachedPrismSig = sig;
+    prismCompileCache.clear();
+  }
+  return { cdpMod: cachedCdpMod, cache: prismCompileCache };
+}
+
+function putPrismCache(cache, key, val) {
+  if (cache.has(key)) cache.delete(key);
+  cache.set(key, val);
+  while (cache.size > MAX_PRISM_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    cache.delete(oldest);
+  }
+}
+
+function loadFreshCdp() {
+  try {
+    const resolved = require.resolve(CDP_MODULE_PATH);
+    delete require.cache[resolved];
+  } catch {}
+  return require(CDP_MODULE_PATH);
+}
+
+function parseReplicaPrismConfig(searchParams) {
+  const cfg = {
+    enabled: true,
+    sidebarStudio: 'off',
+    thoughtTranslateMode: 'off',
+    omniViewer: 'off',
+  };
+  const allow = {
+    palette: ['obsidian', 'warm', 'host'],
+    lightPreset: ['crystal', 'alabaster'],
+    cornerStyle: ['sharp', 'balanced', 'soft'],
+    sidebarNavFold: ['off', 'on'],
+    scrollBottomMotion: ['smooth', 'instant'],
+    motionLevel: ['off', 'subtle', 'standard', 'ultra'],
+    accentTone: ['follow', 'mono', 'cobalt', 'iris', 'amber'],
+    homeLayout: ['studio', 'classic', 'off'],
+    telemetryModule: ['auto', 'on', 'off'],
+    effortSliderModule: ['auto', 'on', 'off'],
+    language: ['zh-CN', 'zh-TW', 'yue', 'en', 'ja'],
+    codeFont: ['default', 'jetbrains', 'cascadia', 'sfmono'],
+  };
+  for (const [k, vals] of Object.entries(allow)) {
+    const v = searchParams.get(k);
+    if (v && vals.includes(v)) cfg[k] = v;
+  }
+  const cornersAlias = searchParams.get('corners');
+  if (!cfg.cornerStyle && cornersAlias) {
+    const mapped = cornersAlias === 'crisp' ? 'sharp' : cornersAlias;
+    if (['sharp', 'balanced', 'soft'].includes(mapped)) cfg.cornerStyle = mapped;
+  }
+  const boolKeys = ['mascotMiniPile', 'sidebarCompact', 'composerRestyle', 'sidebarEnhanced'];
+  for (const bk of boolKeys) {
+    const v = searchParams.get(bk);
+    if (v === '1' || v === 'true') cfg[bk] = true;
+    else if (v === '0' || v === 'false') cfg[bk] = false;
+  }
+  const amb = searchParams.get('ambientIntensity');
+  if (amb !== null && amb !== '') {
+    const n = Number(amb);
+    if (Number.isFinite(n)) cfg.ambientIntensity = Math.max(0, Math.min(2, n));
+  }
+  return cfg;
+}
 
 const SHARED_MODULE_MAP = {
+  '/shared/style.css': path.join(REPO_ROOT, 'style.css'),
   '/shared/ripple-core.js': path.join(REPO_ROOT, 'ripple-core.js'),
   '/shared/motion-engine.js': path.join(REPO_ROOT, 'motion-engine.js'),
   '/shared/animated-icons.js': path.join(REPO_ROOT, 'animated-icons.js'),
@@ -35,6 +161,7 @@ const SHARED_MODULE_MAP = {
   '/shared/vial-core.js': path.join(REPO_ROOT, 'vial-core.js'),
   '/shared/crystal-prism-core.js': path.join(REPO_ROOT, 'crystal-prism-core.js'),
   '/shared/effort-slider-client.js': VENDOR_SLIDER_PATH,
+  '/shared/inline-diff-client.js': path.join(REPO_ROOT, 'vendor', 'inline-diff', 'inline-diff-client.js'),
   '/shared/sidebar-state-machine.mjs': SIDEBAR_STATE_MACHINE_PATH,
 };
 
@@ -50,19 +177,6 @@ const MIME_TYPES = {
 
 const LOOPBACK_HOST_RE = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i;
 const MAX_BODY_BYTES = 65536;
-
-function isLoopbackOriginAllowed(req) {
-  const host = String(req.headers.host || '').trim();
-  if (host && !LOOPBACK_HOST_RE.test(host)) return false;
-  const origin = String(req.headers.origin || '').trim();
-  if (!origin) return true;
-  try {
-    const parsed = new URL(origin);
-    return LOOPBACK_HOST_RE.test(parsed.host);
-  } catch {
-    return false;
-  }
-}
 
 function getAllowedStudioHosts(server) {
   const addr = server && typeof server.address === 'function' ? server.address() : null;
@@ -312,6 +426,7 @@ function createWorkbenchServer(options = {}) {
   const enableWatch = options.watch !== false;
   const sseClients = new Set();
   let watcher = null;
+  const rootWatchers = [];
   let reloadTimer = null;
 
   // 每实例独立随机 Token 与严格 mkdtemp 私有沙盒（绝不触碰 ~/.gemini/config）
@@ -395,9 +510,22 @@ function createWorkbenchServer(options = {}) {
     } catch {
       watcher = null;
     }
+    for (const rel of ROOT_WATCH_FILES) {
+      try {
+        const w = fs.watch(path.join(REPO_ROOT, rel), () => {
+          clearTimeout(reloadTimer);
+          reloadTimer = setTimeout(broadcastReload, 140);
+        });
+        rootWatchers.push(w);
+      } catch {
+        // 忽略单个文件监听失败
+      }
+    }
   }
 
   const server = http.createServer((req, res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+
     let pathname;
     try {
       const reqUrl = new URL(req.url || '/', 'http://127.0.0.1');
@@ -408,8 +536,9 @@ function createWorkbenchServer(options = {}) {
       return;
     }
 
-    if (!isLoopbackOriginAllowed(req)) {
-      sendJson(res, 403, { ok: false, error: 'Forbidden origin or host' });
+    const loopSec = verifyLoopbackHostAndOrigin(req, server, { requireOrigin: false });
+    if (!loopSec.ok) {
+      sendJson(res, loopSec.status, { ok: false, error: loopSec.error });
       return;
     }
 
@@ -521,11 +650,6 @@ function createWorkbenchServer(options = {}) {
         return;
       }
       if (req.method === 'POST') {
-        const sec = verifyLoopbackHostAndOrigin(req, server, { requireOrigin: false });
-        if (!sec.ok) {
-          sendJson(res, sec.status, { ok: false, error: sec.error });
-          return;
-        }
         const ctype = String(req.headers['content-type'] || '').toLowerCase();
         if (ctype && !ctype.includes('application/json')) {
           sendJson(res, 415, { ok: false, error: 'Content-Type must be application/json' });
@@ -569,6 +693,113 @@ function createWorkbenchServer(options = {}) {
       return;
     }
 
+    if (req.method === 'GET' && pathname === '/api/host-mirror/native.css') {
+      const cssFile = path.join(HOST_MIRROR_DIR, 'native.css');
+      if (fs.existsSync(cssFile)) {
+        serveFile(res, cssFile, { 'X-Host-Mirror': 'live' }, HOST_MIRROR_DIR);
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-store', 'X-Host-Mirror': 'fallback' });
+        res.end('/* Host mirror cache absent; using standalone fallback */\n');
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/host-mirror/blueprint.json') {
+      const bpFile = path.join(HOST_MIRROR_DIR, 'blueprint.json');
+      if (fs.existsSync(bpFile)) {
+        serveFile(res, bpFile, { 'X-Host-Mirror': 'live' }, HOST_MIRROR_DIR);
+      } else {
+        sendJson(res, 200, { meta: { fallback: true }, parts: { svgIcons: {} } });
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && pathname.startsWith('/api/host-mirror/fonts/')) {
+      const safeName = path.basename(pathname.slice('/api/host-mirror/fonts/'.length));
+      const fontsDir = path.join(HOST_MIRROR_DIR, 'fonts');
+      if (safeName && fs.existsSync(path.join(fontsDir, safeName))) {
+        serveFile(res, path.join(fontsDir, safeName), {}, fontsDir);
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Not Found');
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/prism-inject.js') {
+      try {
+        const reqUrl = new URL(req.url || '/api/prism-inject.js', 'http://127.0.0.1');
+        const cfg = parseReplicaPrismConfig(reqUrl.searchParams);
+        const { cdpMod, cache } = getCachedCdpAndCache();
+        const cacheKey = `inject|${JSON.stringify(cfg)}`;
+        let expr = cache.get(cacheKey);
+        if (expr === undefined) {
+          expr = cdpMod.buildInjectExpression(cfg);
+          if (typeof cdpMod.buildInlineDiffInjectExpression === 'function') {
+            const ch6 = cdpMod.buildInlineDiffInjectExpression(cfg);
+            if (ch6) expr = `${expr};\n${ch6}`;
+          }
+          putPrismCache(cache, cacheKey, expr);
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        res.end(expr);
+      } catch {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end('Failed to compile Prism bundle');
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/prism-inline-diff.js') {
+      try {
+        const reqUrl = new URL(req.url || '/api/prism-inline-diff.js', 'http://127.0.0.1');
+        const cfg = parseReplicaPrismConfig(reqUrl.searchParams);
+        const { cdpMod, cache } = getCachedCdpAndCache();
+        const cacheKey = `inline-diff|${JSON.stringify(cfg)}`;
+        let expr = cache.get(cacheKey);
+        if (expr === undefined) {
+          expr =
+            typeof cdpMod.buildInlineDiffInjectExpression === 'function'
+              ? String(cdpMod.buildInlineDiffInjectExpression(cfg) || '')
+              : '';
+          putPrismCache(cache, cacheKey, expr);
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        res.end(expr);
+      } catch {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end('Failed to compile Prism Channel 6 bundle');
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/prism-remove.js') {
+      try {
+        const { cdpMod, cache } = getCachedCdpAndCache();
+        const cacheKey = 'remove';
+        let expr = cache.get(cacheKey);
+        if (expr === undefined) {
+          expr = String(cdpMod.REMOVE_EXPRESSION || '');
+          putPrismCache(cache, cacheKey, expr);
+        }
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Cache-Control': 'no-store',
+        });
+        res.end(expr);
+      } catch {
+        res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end('Failed to read REMOVE_EXPRESSION');
+      }
+      return;
+    }
+
     if (pathname === '/studio' || pathname === '/studio/') {
       const sec = verifyStudioRequestSecurity(req, server, studioToken, false);
       if (!sec.ok) {
@@ -579,12 +810,22 @@ function createWorkbenchServer(options = {}) {
       return;
     }
 
-    if (SHARED_MODULE_MAP[pathname]) {
-      serveFile(res, SHARED_MODULE_MAP[pathname]);
+    if (pathname === '/legacy' || pathname === '/legacy/') {
+      serveFile(res, path.join(WORKBENCH_DIR, 'index.html'), {}, WORKBENCH_DIR);
       return;
     }
 
-    const relPath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+    if (pathname.startsWith('/c/')) {
+      serveFile(res, path.join(WORKBENCH_DIR, 'replica.html'), {}, WORKBENCH_DIR);
+      return;
+    }
+
+    if (SHARED_MODULE_MAP[pathname]) {
+      serveFile(res, SHARED_MODULE_MAP[pathname], {}, REPO_ROOT);
+      return;
+    }
+
+    const relPath = pathname === '/' ? 'replica.html' : pathname.replace(/^\/+/, '');
     const resolved = path.resolve(WORKBENCH_DIR, relPath);
     if (resolved !== WORKBENCH_DIR && !resolved.startsWith(WORKBENCH_DIR + path.sep)) {
       res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -607,6 +848,12 @@ function createWorkbenchServer(options = {}) {
         watcher.close();
       } catch {}
       watcher = null;
+    }
+    while (rootWatchers.length) {
+      const w = rootWatchers.pop();
+      try {
+        w.close();
+      } catch {}
     }
     for (const client of sseClients) {
       try {
@@ -655,7 +902,7 @@ if (require.main === module) {
   const server = createWorkbenchServer();
   server.listen(port, host, () => {
     const addr = server.address();
-    console.log(`Obsidian Prism v1.0.6 Workbench listening on http://${host}:${addr.port}`);
+    console.log(`Obsidian Prism v1.0.7-beta.1 Workbench listening on http://${host}:${addr.port}`);
     console.log(`  · Optical Workbench: http://${host}:${addr.port}/`);
     console.log(`  · Bipolar Studio:    http://${host}:${addr.port}/studio`);
   });

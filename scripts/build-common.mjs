@@ -28,6 +28,7 @@ function createManifest() {
     styleId: cdp.STYLE_ID,
     settingBinding: cdp.SETTING_BINDING,
     sidebarBinding: cdp.SIDEBAR_BINDING,
+    inlineDiffBinding: cdp.INLINE_DIFF_BINDING,
     parts: getEffectiveRuntimeParts(),
     defaultConfig: cdp.DEFAULT_CONFIG,
     validators: VALIDATORS,
@@ -156,6 +157,40 @@ function collectOptionalSidebarTopEntries() {
   }
 }
 
+function collectOptionalThoughtTopEntries() {
+  const entries = [];
+  for (const rel of [
+    'vendor/thought-translator/thought-client.js',
+    'vendor/thought-translator/thought-settings-ui.js',
+  ]) {
+    const abs = path.join(ROOT_DIR, ...rel.split('/'));
+    if (!fs.existsSync(abs)) continue;
+    try {
+      entries.push({
+        name: rel,
+        data: Buffer.from(cdp.minifyJs(fs.readFileSync(abs, 'utf8')), 'utf8'),
+      });
+    } catch {}
+  }
+  return entries;
+}
+
+function collectOptionalInlineDiffTopEntries() {
+  const rel = 'vendor/inline-diff/inline-diff-client.js';
+  const abs = path.join(ROOT_DIR, 'vendor', 'inline-diff', 'inline-diff-client.js');
+  if (!fs.existsSync(abs)) return [];
+  try {
+    return [
+      {
+        name: rel,
+        data: Buffer.from(cdp.minifyJs(fs.readFileSync(abs, 'utf8')), 'utf8'),
+      },
+    ];
+  } catch {
+    return [];
+  }
+}
+
 function collectOptionalOmniTopEntries() {
   const entries = [];
   const omniClientRel = 'vendor/omni-viewer/omni-client.js';
@@ -169,6 +204,8 @@ function collectOptionalOmniTopEntries() {
     } catch {}
   }
   entries.push(...collectOptionalSidebarTopEntries());
+  entries.push(...collectOptionalThoughtTopEntries());
+  entries.push(...collectOptionalInlineDiffTopEntries());
   return entries;
 }
 
@@ -367,6 +404,8 @@ export {
   resolveActiveConfigFile,
   collectOptionalOmniTopEntries,
   collectOptionalSidebarTopEntries,
+  collectOptionalThoughtTopEntries,
+  collectOptionalInlineDiffTopEntries,
   collectNativePluginEntries,
   renderPrismIconPng,
   buildMultiResIco,

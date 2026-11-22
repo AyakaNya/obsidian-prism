@@ -1,4 +1,4 @@
-// Obsidian Prism — Omni Native Browser Router, Context Menu & Streaming Workbench Client (v1.0.6)
+// Obsidian Prism — Omni Native Browser Router, Context Menu & Streaming Workbench Client (v1.0.7-beta.1)
 // Second-channel runtime (`window.__agPrismOmni`) + CommonJS factory for deterministic unit tests.
 // Engineering & security guarantees:
 // 1. ZERO custom side-dock DOM or rogue `wcvBrowser` calls: 100% native integration with Antigravity's
@@ -32,7 +32,7 @@
 })(typeof window !== 'undefined' ? window : globalThis, function () {
   'use strict';
 
-  const VERSION = '1.0.6';
+  const VERSION = '1.0.7-beta.1';
   const STYLE_EL_ID = 'ag-prism-omni-css';
   const HL_URL_NAME = 'ag-omni-url';
   const HL_PATH_NAME = 'ag-omni-path';
@@ -659,8 +659,9 @@
     '.ag-omni-mermaid-zoom-btn{position:absolute;top:6px;right:6px;z-index:3;height:24px;padding:0 7px;border-radius:var(--ag-cs-r-sm,4px);border:1px solid var(--ag-cs-border-2,rgba(148,163,184,.22));background:var(--ag-cs-popover-bg,var(--card,rgba(20,23,30,.88)));color:var(--foreground,#e2e8f0);font-size:11px;cursor:pointer;opacity:0;transition:opacity .14s ease,background-color .14s ease}',
     '[data-omni-mermaid-box]:hover>.ag-omni-mermaid-zoom-btn,.ag-omni-mermaid-zoom-btn:focus-visible{opacity:.92}',
     '.ag-omni-mermaid-zoom-btn:hover{opacity:1!important;background:color-mix(in srgb,var(--ag-cs-accent,var(--primary,#669DF6)) 18%,var(--card,#1e293b))}',
-    '.ag-omni-aux-bar{display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid var(--ag-cs-border-1,var(--border,rgba(148,163,184,.16)));background:var(--card,var(--ag-cs-panel-bg,rgba(20,23,30,.9)));font-size:11.5px;flex-shrink:0}',
-    '.ag-omni-aux-overlay{width:100%;flex:1 1 0%;min-height:360px;border:0;display:block}',
+    '.ag-omni-aux-bar{display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid var(--ag-cs-border-1,var(--border,rgba(148,163,184,.16)));background:var(--ag-cs-tonal-2,var(--card,var(--ag-cs-panel-bg,rgba(20,23,30,.9))));font-size:11.5px;flex-shrink:0}',
+    '.ag-omni-aux-overlay{width:100%;flex:1 1 0%;min-height:360px;border:0;display:block;background:var(--ag-cs-tonal-0,var(--background,#0B0B0E));opacity:0;transition:opacity 140ms ease}',
+    '.ag-omni-aux-overlay[data-wb-ready="1"]{opacity:1}',
   ].join('');
 
   function createOmniClient(env = {}) {
@@ -2010,6 +2011,7 @@
 
       for (const rec of mountedAuxSwitches) {
         if (rec.iframe && rec.iframe.isConnected && ev.source === rec.iframe.contentWindow) {
+          rec.iframe.setAttribute('data-wb-ready', '1');
           pushWorkbenchSyncToIframe(rec.iframe, { filePath: rec.filePath });
           return;
         }
@@ -2591,14 +2593,21 @@
               ifr.setAttribute('data-ag-prism-omni-owned', '1');
               ifr.setAttribute('referrerpolicy', 'no-referrer');
               ifr.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
-              ifr.addEventListener('load', () => pushWorkbenchSyncToIframe(ifr, { filePath: rec.filePath }));
+              if (ifr.style) ifr.style.backgroundColor = 'var(--ag-cs-tonal-0,var(--background,#0B0B0E))';
+              ifr.addEventListener('load', () => {
+                pushWorkbenchSyncToIframe(ifr, { filePath: rec.filePath });
+                if (!ifr.hasAttribute('data-wb-ready')) ifr.setAttribute('data-wb-ready', '1');
+              });
               rec.iframe = ifr;
               hostEl.appendChild(ifr);
             }
             rec.activeMode = 'workbench';
             const nextSrc = buildViewerUrl(meta, { filePath: rec.filePath, kind: detectPreviewKind(rec.filePath) });
             rec.iframe.hidden = false;
-            if (rec.iframe.src !== nextSrc) rec.iframe.src = nextSrc;
+            if (rec.iframe.src !== nextSrc) {
+              rec.iframe.removeAttribute('data-wb-ready');
+              rec.iframe.src = nextSrc;
+            }
             pushWorkbenchSyncToIframe(rec.iframe, { filePath: rec.filePath });
           } else {
             btnRaw.setAttribute('data-active', '1');
@@ -2961,6 +2970,10 @@
         try { domObserver.disconnect(); } catch (_) {}
         domObserver = null;
       }
+      if (removeRootAttrs && rootAttrObserver) {
+        try { rootAttrObserver.disconnect(); } catch (_) {}
+        rootAttrObserver = null;
+      }
       closeContextMenu();
       purgeLegacyOmniDock();
       unwrapAllModifications();
@@ -2973,10 +2986,12 @@
         D.removeEventListener('visibilitychange', onWindowBlurOrScroll);
         D.removeEventListener('scroll', onWindowBlurOrScroll, true);
         try { D.getElementById?.(STYLE_EL_ID)?.remove?.(); } catch (_) {}
-        if (removeRootAttrs && D.documentElement) {
-          D.documentElement.removeAttribute?.('data-ag-prism-omni');
-          D.documentElement.removeAttribute?.('data-ag-prism-link-target');
+        if (D.documentElement) {
           D.documentElement.removeAttribute?.('data-ag-omni-hover-token');
+          if (removeRootAttrs) {
+            D.documentElement.removeAttribute?.('data-ag-prism-omni');
+            D.documentElement.removeAttribute?.('data-ag-prism-link-target');
+          }
         }
       }
       if (W) {
@@ -3006,7 +3021,6 @@
 
       if (destroyed && !nextEnabled) return getState();
       destroyed = false;
-      ensureRootAttrObserver();
 
       const rawTarget =
         cfg && cfg.linkTarget !== undefined
@@ -3015,18 +3029,19 @@
       linkTarget = rawTarget === 'external' ? 'external' : 'builtin';
 
       enabled = nextEnabled;
+      if (!enabled) {
+        detachRuntime(true);
+        return getState();
+      }
+
+      ensureRootAttrObserver();
       if (rootEl?.setAttribute) {
-        if (rootEl.getAttribute('data-ag-prism-omni') !== (enabled ? 'on' : 'off')) {
-          rootEl.setAttribute('data-ag-prism-omni', enabled ? 'on' : 'off');
+        if (rootEl.getAttribute('data-ag-prism-omni') !== 'on') {
+          rootEl.setAttribute('data-ag-prism-omni', 'on');
         }
         if (rootEl.getAttribute('data-ag-prism-link-target') !== linkTarget) {
           rootEl.setAttribute('data-ag-prism-link-target', linkTarget);
         }
-      }
-
-      if (!enabled) {
-        detachRuntime(false);
-        return getState();
       }
 
       attachRuntime();

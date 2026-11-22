@@ -209,7 +209,7 @@ export class UpdateService {
     fetchFn = globalThis.fetch,
     spawnFn = spawn,
     platform = process.platform,
-    currentVersion = '1.0.6',
+    currentVersion = '1.0.7-beta.1',
     channel = 'stable',
     checkTtlMs = CHECK_TTL_MS,
     manualCooldownMs = MANUAL_COOLDOWN_MS,
@@ -221,7 +221,7 @@ export class UpdateService {
     this.fetchFn = fetchFn;
     this.spawnFn = spawnFn;
     this.platform = platform;
-    this.currentVersion = normalizeVersionStr(currentVersion) || '1.0.6';
+    this.currentVersion = normalizeVersionStr(currentVersion) || '1.0.7-beta.1';
     this.channel = normalizeUpdateChannel(channel);
     this.checkTtlMs = Math.max(0, Number(checkTtlMs) || 0);
     this.manualCooldownMs = Math.max(0, Number(manualCooldownMs) || 0);
@@ -615,11 +615,17 @@ export class UpdateService {
       timeoutMs: 15_000,
     });
     if (!res.ok) {
+      try { await res.body?.cancel?.(); } catch {}
       throw new Error(`sha256sums_http_${res.status}`);
     }
     const buf = await readResponseBufferWithLimit(res, 1024 * 1024);
     const sums = parseSha256Sums(buf.toString('utf8'));
-    return sums.get(sel.targetAsset.name) || null;
+    if (sums.has(sel.targetAsset.name)) return sums.get(sel.targetAsset.name);
+    const lowerTarget = sel.targetAsset.name.toLowerCase();
+    for (const [k, v] of sums.entries()) {
+      if (k.toLowerCase() === lowerTarget) return v;
+    }
+    return null;
   }
 
   async applyReleaseUpdate({ confirm = false, auto = false } = {}) {
@@ -698,9 +704,16 @@ export class UpdateService {
           timeoutMs: 120_000,
         });
         if (!dlRes.ok) {
+          try { await dlRes.body?.cancel?.(); } catch {}
           throw new Error(`download_http_${dlRes.status}`);
         }
         const buf = await readResponseBufferWithLimit(dlRes, this.maxAssetBytes);
+
+        // 写盘前先在内存中完成 SHA-256 验签，杜绝未验签二进制落盘
+        const actualSha256 = crypto.createHash('sha256').update(buf).digest('hex').toLowerCase();
+        if (actualSha256 !== expectedSha256) {
+          throw new Error('sha256_mismatch');
+        }
 
         const rootStat = this.lstatSyncFn(this.tmpRoot);
         if (
@@ -732,19 +745,17 @@ export class UpdateService {
           throw new Error('asset_too_large');
         }
 
-        const actualSha256 = crypto.createHash('sha256').update(buf).digest('hex').toLowerCase();
-        if (actualSha256 !== expectedSha256) {
-          try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-          tmpDir = null;
-          throw new Error('sha256_mismatch');
-        }
-
+        const spawnCwd =
+          this.platform === 'win32'
+            ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32')
+            : path.dirname(exePath);
         const child = this.spawnFn(exePath, ['--install', '--silent', '--no-relaunch-prompt'], {
           detached: true,
-          cwd: this.tmpRoot,
+          cwd: spawnCwd,
           stdio: 'ignore',
           windowsHide: true,
         });
+        child?.on?.('error', () => {});
         child?.unref?.();
 
         this._lastError = null;

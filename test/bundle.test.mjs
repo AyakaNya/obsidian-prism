@@ -21,6 +21,27 @@ test('buildInjectExpression and REMOVE_EXPRESSION compile cleanly and stay withi
   assert.equal(injectExpr.includes('__agCsPerfAssets'), false);
   assert.equal(injectExpr.includes('__agCsEffortCore'), false);
   assert.ok(removeExpr.includes('window.__agPrism.destroy'));
+  for (const token of [
+    'data-ag-cs-scroll-bottom',
+    'data-ag-cs-sb-fold',
+    '__agPrismInlineDiffResolve',
+    '__agPrismInlineDiff',
+    '__agPrismInlineDiffFactory',
+    'ag-prism-inline-diff-css',
+    'data-pv-warn',
+    'data-ag-inline-diff-open',
+    'data-ag-inline-diff-host',
+    'data-ag-sb-more-hidden',
+    'data-ag-sb-more-item',
+    'data-ag-scrolling',
+    '.ag-cs-inline-diff-box',
+    '.ag-cs-sb-more-wrap',
+    '.ag-v2-habitat-prop',
+  ]) {
+    assert.ok(removeExpr.includes(token), `REMOVE_EXPRESSION must clean ${token}`);
+  }
+  assert.equal(removeExpr.includes('data-ag-perm-hosted'), false, 'REMOVE_EXPRESSION must drop obsolete data-ag-perm-hosted');
+  assert.equal(removeExpr.includes('.ag-cs-perm-deck'), false, 'REMOVE_EXPRESSION must drop obsolete .ag-cs-perm-deck');
 });
 
 test('inject expression mounts cleanly without model-button or telemetry conflict, and REMOVE_EXPRESSION restores DOM', async () => {
@@ -372,8 +393,8 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     assert.ok(sandbox.window.__agPrism, 'Expected window.__agPrism exposed');
     assert.equal(sandbox.window.__agClaudeStyle, sandbox.window.__agPrism, 'Expected legacy alias pointing to __agPrism');
     const st = sandbox.window.__agPrism.getState();
-    assert.equal(st.version, '1.0.6');
-    assert.equal(html.getAttribute('data-ag-prism'), '1.0.6');
+    assert.equal(st.version, '1.0.7-beta.1');
+    assert.equal(html.getAttribute('data-ag-prism'), '1.0.7-beta.1');
     assert.equal(html.getAttribute('data-ag-cs-light-preset'), 'crystal');
     assert.equal(html.getAttribute('data-ag-cs-telemetry'), 'auto');
     assert.equal(html.getAttribute('data-ag-cs-effort-slider'), 'auto');
@@ -420,7 +441,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     const settingsSec = appearancePanel.querySelector('#ag-cs-settings-sec');
     assert.ok(settingsSec);
     assert.equal(settingsSec.querySelector('h3')?.textContent, 'Obsidian Prism · 黑曜棱镜');
-    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v1.0.6');
+    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v1.0.7-beta.1');
     const brandMarkHtml = settingsSec.querySelector('.ag-cs-settings-brand-mark')?.innerHTML || '';
     assert.ok(
       brandMarkHtml.includes('ag-cs-brand-logo-svg') || brandMarkHtml.includes('ag-cs-settings-brand-svg'),
@@ -446,9 +467,21 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
       settingGroups.map((g) => g.getAttribute('data-ag-cs-group')),
       ['appearance', 'interaction', 'thought', 'modules', 'beta', 'about']
     );
+    const thoughtCfgBoxBefore = settingsSec.querySelector('[data-testid="prism-thought-ai-config"]');
+    assert.equal(thoughtCfgBoxBefore, null, 'Default off mode must NOT bundle or mount Channel 5 thought AI config card');
+    assert.equal(sandbox.window.__agPrismThought, undefined, 'Default off mode must have 0 thought runtime');
+    assert.equal(sandbox.window.__agPrismThoughtSettingsUi, undefined, 'Default off mode must have 0 thought UI runtime');
+
+    // Hot-plug Channel 5 while settings panel is already open
+    sandbox.window.__agPrism.refreshConfig({ ...cdp.DEFAULT_CONFIG, thoughtTranslate: 'ai' });
+    const thoughtExprAi = cdp.buildThoughtExpression({ ...cdp.DEFAULT_CONFIG, thoughtTranslate: 'ai' });
+    assert.ok(thoughtExprAi.length > 0, 'Expected non-empty Channel 5 expression in ai mode');
+    const thoughtMountRes = vm.runInNewContext(thoughtExprAi, sandbox);
+    assert.equal(thoughtMountRes.ok, true);
+    assert.equal(thoughtMountRes.status, 'mounted');
     const thoughtCfgBox = settingsSec.querySelector('[data-testid="prism-thought-ai-config"]');
-    assert.ok(thoughtCfgBox, 'Expected built-in OpenAI thought translator config card');
-    assert.equal(thoughtCfgBox.hidden, true, 'Thought AI config card should start hidden when mode is off');
+    assert.ok(thoughtCfgBox, 'Expected built-in OpenAI thought translator config card hot-mounted into open settingsSec');
+    assert.equal(thoughtCfgBox.hidden, false, 'Thought AI config card should be visible when mode is ai');
 
     // Verify About section: Git status/sync button + 8 upstream repo external links + GPL-3.0 & upstream MIT notices + Google disclaimer
     const aboutBox = settingsSec.querySelector('.ag-cs-about-box');
@@ -487,11 +520,12 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
         .map((b) => b.getAttribute('data-ag-cs-key'))
         .filter(Boolean)
     );
-    assert.equal(settingKeys.size, 30);
+    assert.equal(settingKeys.size, 33);
     for (const expectedKey of [
       'palette',
       'lightPreset',
       'motionLevel',
+      'scrollBottomMotion',
       'targetFps',
       'homeLayout',
       'homeRipple',
@@ -501,9 +535,11 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
       'composerRestyle',
       'placeholderStyle',
       'smoothCaret',
+      'contextMenu',
       'mascot',
       'sidebarRestyle',
       'sidebarCompact',
+      'sidebarNavFold',
       'thoughtTranslate',
       'thoughtTrigger',
       'telemetryModule',
@@ -564,9 +600,9 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     );
     appearanceH2.textContent = '外观';
 
-    // Switching palette/mascot externally syncs root attrs & setting button active state immediately (warm & claude alias compat)
+    // Switching palette/mascot externally syncs root attrs & setting button active state immediately (claude alias normalized to warm)
     sandbox.window.__agPrism.refreshConfig({ ...cdp.DEFAULT_CONFIG, palette: 'claude' });
-    assert.equal(html.getAttribute('data-ag-cs-palette'), 'claude');
+    assert.equal(html.getAttribute('data-ag-cs-palette'), 'warm');
     const warmBtn = appearancePanel
       .querySelectorAll('#ag-cs-settings-sec button')
       .find((b) => b.getAttribute('data-ag-cs-key') === 'palette' && b.getAttribute('data-ag-cs-val') === '"warm"');
@@ -582,7 +618,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     assert.equal(html.getAttribute('data-ag-cs-code-font'), 'default');
     assert.equal(html.getAttribute('data-ag-cs-ligatures'), '0');
     assert.equal(html.getAttribute('data-ag-cs-ambient'), '1');
-    assert.equal(html.getAttribute('data-ag-prism-thought-view'), 'immersive');
+    assert.equal(html.getAttribute('data-ag-prism-thought-view'), null);
 
     const beforeBatchLen = bindingCalls.length;
     sandbox.window.__agPrism.saveSettingsBatch({
@@ -591,6 +627,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
       codeFont: 'jetbrains',
       codeLigatures: true,
       ambientIntensity: '70',
+      thoughtTranslate: 'machine',
       thoughtView: 'bilingual',
     });
     assert.equal(html.getAttribute('data-ag-cs-accent'), 'iris');
@@ -627,10 +664,20 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     assert.equal(html.getAttribute('data-ag-cs-palette'), 'warm', 'Zero-arg refreshConfig() must not revert file-refreshed palette');
     assert.equal(html.getAttribute('data-ag-cs-accent'), 'cobalt');
 
+    // Verify sidebarNavFold defaults to 'off', toggles data-ag-cs-sb-fold & getState().cfg, and REMOVE_EXPRESSION cleans it + __agPrismInlineDiffResolve
+    assert.equal(html.getAttribute('data-ag-cs-sb-fold'), 'off');
+    assert.equal(sandbox.window.__agPrism.getState().cfg.sidebarNavFold, 'off');
+    sandbox.window.__agPrism.saveSettingsBatch({ sidebarNavFold: 'on' });
+    assert.equal(html.getAttribute('data-ag-cs-sb-fold'), 'on');
+    assert.equal(sandbox.window.__agPrism.getState().cfg.sidebarNavFold, 'on');
+    sandbox.window.__agPrismInlineDiffResolve = () => {};
+
     // Teardown cleanly removes everything and restores host greeting text
     const rem = vm.runInNewContext(cdp.REMOVE_EXPRESSION, sandbox);
     assert.ok(rem.removed >= 1);
     assert.equal(html.hasAttribute('data-ag-prism'), false);
+    assert.equal(html.hasAttribute('data-ag-cs-sb-fold'), false);
+    assert.equal(sandbox.window.__agPrismInlineDiffResolve, undefined);
     assert.equal(html.hasAttribute('data-ag-cs-target-fps'), false);
     assert.equal(html.hasAttribute('data-ag-cs-style'), false);
     assert.equal(html.hasAttribute('data-ag-cs-light-preset'), false);
@@ -3084,10 +3131,21 @@ test('v1.0.1 compiler safety fixes, unified shared string pool (< 690 KiB CI bud
     payloadBytes < 690 * 1024,
     `Expected unified bundle payload < ${690 * 1024} bytes (690 KiB), got ${payloadBytes}`
   );
-  // Omni modules must never bloat static RUNTIME_PARTS
+  // Omni & Channel 5 Thought modules must never bloat static RUNTIME_PARTS
   for (const part of cdp.RUNTIME_PARTS) {
     assert.equal(part.includes('omni-viewer'), false, `Omni module ${part} must load via second channel, not RUNTIME_PARTS`);
+    assert.equal(part.includes('thought-translator'), false, `Thought module ${part} must load via Channel 5, not RUNTIME_PARTS`);
   }
+  assert.equal(
+    cdp.RUNTIME_PARTS.includes('vendor/thought-translator/thought-client.js'),
+    false,
+    'vendor/thought-translator/thought-client.js must not appear in cdp.RUNTIME_PARTS'
+  );
+  assert.equal(
+    cdp.RUNTIME_PARTS.includes('vendor/thought-translator/thought-settings-ui.js'),
+    false,
+    'vendor/thought-translator/thought-settings-ui.js must not appear in cdp.RUNTIME_PARTS'
+  );
   const tWarm0 = performance.now();
   const expr2 = cdp.buildInjectExpression({ palette: 'warm', motionLevel: 'subtle', accentTone: 'iris' });
   const warmElapsed = performance.now() - tWarm0;

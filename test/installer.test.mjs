@@ -49,6 +49,9 @@ function createMockCdpServer(options = {}) {
   let prismMounted = false;
   let lastInjectedExpr = null;
   let lastRemovedExpr = null;
+  const thoughtInjectExprs = [];
+  const thoughtRemoveExprs = [];
+  const addedScriptsById = new Map();
 
   function encodeWsTextFrame(str) {
     const payload = Buffer.from(str, 'utf8');
@@ -82,7 +85,9 @@ function createMockCdpServer(options = {}) {
     receivedCalls.push(msg);
     let result = {};
     if (msg.method === 'Page.addScriptToEvaluateOnNewDocument') {
-      result = { identifier: 'script-' + receivedCalls.length };
+      const id = 'script-' + receivedCalls.length;
+      addedScriptsById.set(id, (msg.params && msg.params.source) || '');
+      result = { identifier: id };
     } else if (msg.method === 'Page.getFrameTree') {
       result = { frameTree: { frame: { id: 'MAIN_FRAME' } } };
     } else if (msg.method === 'Runtime.enable') {
@@ -119,6 +124,7 @@ function createMockCdpServer(options = {}) {
               hasOmniServerMeta: prismMounted,
               hasOmni: prismMounted,
               omniMode: 'on',
+              hasInlineDiff: prismMounted,
               codeHash: '',
               hasLegacyCss: false,
               needsDashboardSync: false,
@@ -130,6 +136,44 @@ function createMockCdpServer(options = {}) {
           result: {
             type: 'object',
             value: { ok: true, status: 'mounted' },
+          },
+        };
+      } else if (expr.includes('const targetHash =') && expr.includes('__agPrismInlineDiff')) {
+        result = {
+          result: {
+            type: 'object',
+            value: { ok: true, status: 'mounted' },
+          },
+        };
+      } else if (
+        expr.includes('delete window.__agPrismInlineDiff') &&
+        expr.includes("status: 'off'") &&
+        !expr.includes('const targetHash =')
+      ) {
+        result = {
+          result: {
+            type: 'object',
+            value: { ok: true, status: 'off' },
+          },
+        };
+      } else if (expr.includes('const targetHash =') && expr.includes('__agPrismThoughtSettingsUi')) {
+        thoughtInjectExprs.push(expr);
+        result = {
+          result: {
+            type: 'object',
+            value: { ok: true, status: 'mounted' },
+          },
+        };
+      } else if (
+        expr.includes('delete window.__agPrismThoughtSettingsUi') &&
+        expr.includes("status: 'off'") &&
+        !expr.includes('const targetHash =')
+      ) {
+        thoughtRemoveExprs.push(expr);
+        result = {
+          result: {
+            type: 'object',
+            value: { ok: true, status: 'off' },
           },
         };
       } else if (
@@ -317,6 +361,15 @@ function createMockCdpServer(options = {}) {
     getLastRemovedExpr() {
       return lastRemovedExpr;
     },
+    getThoughtInjectExprs() {
+      return thoughtInjectExprs;
+    },
+    getThoughtRemoveExprs() {
+      return thoughtRemoveExprs;
+    },
+    getAddedScriptsById() {
+      return addedScriptsById;
+    },
     async close() {
       for (const s of sockets) s.destroy();
       await new Promise((resolve) => server.close(resolve));
@@ -460,6 +513,8 @@ test(
       assert.ok(fs.existsSync(path.join(installDir, 'host-workbench-enhancer.js')));
       assert.ok(fs.existsSync(path.join(installDir, 'vendor', 'pulse-dashboard', 'inline-fallback.js')));
       assert.ok(fs.existsSync(path.join(installDir, 'vendor', 'effort-slider', 'slider-coexist.js')));
+      assert.ok(fs.existsSync(path.join(installDir, 'vendor', 'thought-translator', 'thought-client.js')));
+      assert.ok(fs.existsSync(path.join(installDir, 'vendor', 'thought-translator', 'thought-settings-ui.js')));
       assert.ok(fs.existsSync(path.join(installDir, '.watch.pid')));
 
       // Verify full 5-channel native Sidecar plugin directory deployed cleanly
@@ -559,6 +614,39 @@ test(
         const newer = mockCdp.getCalls().slice(beforeCallCount);
         return newer.some((c) => c.method === 'Page.removeScriptToEvaluateOnNewDocument') ? true : null;
       });
+
+      // 3a. Channel 5 (thought-translator): default off must not inject; hot-toggle ai -> off injects then removes cleanly
+      assert.equal(
+        mockCdp.getThoughtInjectExprs().length,
+        0,
+        'Channel 5 thought expression must NOT be injected when thoughtTranslate defaults to off'
+      );
+      mockCdp.emitBindingCalled(cdp.SETTING_BINDING, { key: 'thoughtTranslate', value: 'ai' });
+      const thoughtInjected = await waitFor(() => {
+        const arr = mockCdp.getThoughtInjectExprs();
+        return arr.length > 0 ? arr[arr.length - 1] : null;
+      }, 6000, 100);
+      assert.doesNotThrow(() => new vm.Script(thoughtInjected), 'C# Channel 5 thought JS must compile cleanly');
+      assert.ok(thoughtInjected.includes('"thoughtTranslate":"ai"'), 'C# Channel 5 bootCfg reflects ai mode');
+      const registeredThoughtScriptId = Array.from(mockCdp.getAddedScriptsById().entries())
+        .reverse()
+        .find(([, src]) => src.includes('const targetHash =') && src.includes('__agPrismThoughtSettingsUi'))?.[0];
+      assert.ok(registeredThoughtScriptId, 'C# Watcher must register Channel 5 via Page.addScriptToEvaluateOnNewDocument');
+
+      const beforeDisableCallIdx = mockCdp.getCalls().length;
+      mockCdp.emitBindingCalled(cdp.SETTING_BINDING, { key: 'thoughtTranslate', value: 'off' });
+      await waitFor(() => {
+        const removedExprs = mockCdp.getThoughtRemoveExprs();
+        const removedScript = mockCdp
+          .getCalls()
+          .slice(beforeDisableCallIdx)
+          .some(
+            (c) =>
+              c.method === 'Page.removeScriptToEvaluateOnNewDocument' &&
+              c.params?.identifier === registeredThoughtScriptId
+          );
+        return removedExprs.length > 0 && removedScript ? true : null;
+      }, 6000, 100);
 
       // 3b. Test Watcher polite yield when native Sidecar daemon (.daemon.pid) is alive & auto-resume on exit
       const daemonPidPath = path.join(nativePluginDir, '.daemon.pid');
@@ -1042,4 +1130,202 @@ test('interactive GUI installers require explicit user confirmation before insta
   assert.match(macInitMatch[0], /prepareInstallChoice\s*\(/);
   assert.match(macSrc, /#selector\(handleInstallClick\)/);
   assert.match(macSrc, /closeBtn\s*=\s*NSButton\(title:\s*"取消"/);
+});
+
+test('Windows C# installer & Watcher Channel 5 contracts and cdp.js REMOVE_EXPRESSION data-ces-model-selected cleanup', () => {
+  const cdpCs = fs.readFileSync(path.join(ROOT_DIR, 'installer', 'common', 'CdpClient.cs'), 'utf8');
+  const watcherCs = fs.readFileSync(path.join(ROOT_DIR, 'installer', 'watcher', 'Program.cs'), 'utf8');
+
+  assert.ok(cdpCs.includes('public static bool ShouldEnableThought(Dictionary<string, object> cfg)'));
+  assert.ok(cdpCs.includes('public static string BuildThoughtExpression(string pluginDir, Dictionary<string, object> cfg)'));
+  assert.ok(cdpCs.includes('public const string ThoughtRemoveExpression'));
+  assert.ok(cdpCs.includes('ResolveSafePluginFile'));
+  assert.ok(cdpCs.includes('vendor/thought-translator/thought-client.js'));
+  assert.ok(cdpCs.includes('vendor/thought-translator/thought-settings-ui.js'));
+
+  assert.ok(watcherCs.includes('public string ThoughtScriptId;'));
+  assert.ok(watcherCs.includes('CdpHelper.ShouldEnableThought('));
+  assert.ok(watcherCs.includes('CdpHelper.BuildThoughtExpression('));
+  assert.ok(watcherCs.includes('CdpHelper.ThoughtRemoveExpression'));
+  assert.ok(watcherCs.includes('vendor/thought-translator/'));
+
+  // Verify cdp.js REMOVE_EXPRESSION statically includes & strips data-ces-model-selected
+  assert.ok(
+    cdp.REMOVE_EXPRESSION.includes("'data-ces-model-selected'"),
+    'cdp.REMOVE_EXPRESSION static attribute cleanup list must include data-ces-model-selected'
+  );
+  const removedAttrs = [];
+  const fakeRow = {
+    removeAttribute(attr) {
+      removedAttrs.push(attr);
+    },
+  };
+  const fakeDoc = {
+    documentElement: {
+      removeAttribute() {},
+      getAttribute() { return null; },
+      style: { removeProperty() {} },
+    },
+    getElementById() { return null; },
+    querySelector() { return null; },
+    querySelectorAll(sel) {
+      if (sel === '[data-ces-model-selected]') return [fakeRow];
+      return [];
+    },
+  };
+  const ctx = { window: {}, globalThis: {}, document: fakeDoc };
+  ctx.window = ctx;
+  ctx.globalThis = ctx;
+  vm.runInNewContext(cdp.REMOVE_EXPRESSION, ctx);
+  assert.ok(
+    removedAttrs.includes('data-ces-model-selected'),
+    'Executing cdp.REMOVE_EXPRESSION must strip data-ces-model-selected from DOM nodes'
+  );
+});
+
+test('Windows C# CdpClient ReconcileConfigAliases (#5) & BuildConfigRefreshExpression thoughtView off removal (#7b)', () => {
+  const cdpCs = fs.readFileSync(path.join(ROOT_DIR, 'installer', 'common', 'CdpClient.cs'), 'utf8');
+
+  // Static contract parity
+  for (const key of ['telemetryModule', 'effortSliderModule', 'omniModule', 'sidebarStudio', 'autoUpdate']) {
+    assert.ok(cdpCs.includes(`"${key}"`), `C# ReconcileConfigAliases must handle boolean->on/off for ${key}`);
+  }
+  assert.ok(cdpCs.includes('"claude"') && cdpCs.includes('"warm"'), 'C# ReconcileConfigAliases maps palette claude->warm');
+  assert.ok(cdpCs.includes('"dual"') && cdpCs.includes('"crab"'), 'C# ReconcileConfigAliases maps mascot dual->crab');
+  assert.ok(
+    cdpCs.includes("removeAttribute('data-ag-prism-thought-view')"),
+    'C# BuildConfigRefreshExpression removes data-ag-prism-thought-view when thoughtTranslate is off'
+  );
+
+  // Live C# execution verification on Windows via csc.exe
+  if (process.platform === 'win32') {
+    const winDir = process.env.WINDIR || 'C:\\Windows';
+    const csc = [
+      path.join(winDir, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'),
+      path.join(winDir, 'Microsoft.NET', 'Framework', 'v4.0.30319', 'csc.exe'),
+    ].find((p) => fs.existsSync(p));
+    assert.ok(csc, 'Expected .NET Framework csc.exe on Windows');
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-prism-cs-alias-'));
+    try {
+      const probeCs = path.join(tmpDir, 'Probe.cs');
+      const probeExe = path.join(tmpDir, 'probe.exe');
+      const cfgDir = path.join(tmpDir, 'plugin');
+      fs.mkdirSync(cfgDir, { recursive: true });
+      fs.writeFileSync(path.join(cfgDir, 'style.css'), '/* stub */', 'utf8');
+      fs.writeFileSync(path.join(cfgDir, 'ui-runtime.js'), '/* stub */', 'utf8');
+      fs.writeFileSync(
+        path.join(cfgDir, 'config.json'),
+        JSON.stringify({
+          palette: 'claude',
+          mascot: 'dual',
+          telemetryModule: true,
+          effortSliderModule: false,
+          omniModule: false,
+          sidebarStudio: true,
+          autoUpdate: true,
+          thoughtTranslate: 'off',
+          thoughtView: 'bilingual',
+        }),
+        'utf8'
+      );
+
+      fs.writeFileSync(
+        probeCs,
+        [
+          'using System;',
+          'using System.Collections.Generic;',
+          'using AgyClaudeStyle;',
+          'class Probe {',
+          '  static void Main(string[] args) {',
+          '    var m = new PluginManifest();',
+          '    m.Version = "1.0.6";',
+          '    m.SettingBinding = "__agPrismSetting";',
+          '    m.Parts = new List<string> { "ui-runtime.js" };',
+          '    m.DefaultConfig = new Dictionary<string, object>(StringComparer.Ordinal) {',
+          '      { "palette", "obsidian" }, { "mascot", "crab" }, { "thoughtTranslate", "off" }, { "thoughtView", "immersive" }',
+          '    };',
+          '    var cfg = CdpHelper.ReadConfig(args[0], m);',
+          '    var exprOff = CdpHelper.BuildConfigRefreshExpression(args[0], m);',
+          '    var outObj = new Dictionary<string, object>(StringComparer.Ordinal) {',
+          '      { "cfg", cfg },',
+          '      { "exprOff", exprOff }',
+          '    };',
+          '    Console.Write(MiniJson.Stringify(outObj, false));',
+          '  }',
+          '}',
+        ].join('\n'),
+        'utf8'
+      );
+
+      execFileSync(
+        csc,
+        [
+          '/nologo',
+          '/utf8output',
+          '/codepage:65001',
+          '/target:exe',
+          `/out:${probeExe}`,
+          '/r:System.dll',
+          '/r:System.Core.dll',
+          '/r:System.Net.Http.dll',
+          path.join(ROOT_DIR, 'installer', 'common', 'MiniJson.cs'),
+          path.join(ROOT_DIR, 'installer', 'common', 'CdpClient.cs'),
+          probeCs,
+        ],
+        { stdio: 'pipe' }
+      );
+
+      const rawOut = execFileSync(probeExe, [cfgDir], { encoding: 'utf8' });
+      const parsed = JSON.parse(rawOut);
+      assert.equal(parsed.cfg.palette, 'warm', 'C# ReadConfig/ReconcileConfigAliases must normalize palette claude->warm');
+      assert.equal(parsed.cfg.mascot, 'crab', 'C# ReadConfig/ReconcileConfigAliases must normalize mascot dual->crab');
+      assert.equal(parsed.cfg.telemetryModule, 'on');
+      assert.equal(parsed.cfg.effortSliderModule, 'off');
+      assert.equal(parsed.cfg.omniModule, 'off');
+      assert.equal(parsed.cfg.sidebarStudio, 'on');
+      assert.equal(parsed.cfg.autoUpdate, 'on');
+
+      // Execute C#-generated BuildConfigRefreshExpression in VM for off vs ai
+      assert.doesNotThrow(() => new vm.Script(parsed.exprOff), 'C# BuildConfigRefreshExpression must be valid JS');
+      const attrs = new Map([['data-ag-prism-thought-view', 'bilingual']]);
+      let liveCfg = null;
+      const htmlEl = {
+        hasAttribute: (k) => attrs.has(k),
+        getAttribute: (k) => (attrs.has(k) ? attrs.get(k) : null),
+        setAttribute: (k, v) => attrs.set(k, String(v)),
+        removeAttribute: (k) => attrs.delete(k),
+      };
+      const vmCtx = {
+        document: { documentElement: htmlEl },
+        window: {
+          __agPrism: {
+            version: '1.0.6',
+            refreshConfig(c) {
+              liveCfg = c;
+            },
+            getState() {
+              return { cfg: liveCfg };
+            },
+          },
+        },
+      };
+      const resOff = vm.runInNewContext(parsed.exprOff, vmCtx);
+      assert.equal(resOff.refreshed, true);
+      assert.equal(htmlEl.hasAttribute('data-ag-prism-thought-view'), false, 'C# refresh expr must strip thought-view when off');
+
+      // Re-run with thoughtTranslate='ai' -> sets data-ag-prism-thought-view='bilingual'
+      fs.writeFileSync(
+        path.join(cfgDir, 'config.json'),
+        JSON.stringify({ thoughtTranslate: 'ai', thoughtView: 'bilingual' }),
+        'utf8'
+      );
+      const parsedOn = JSON.parse(execFileSync(probeExe, [cfgDir], { encoding: 'utf8' }));
+      const resOn = vm.runInNewContext(parsedOn.exprOff, vmCtx);
+      assert.equal(resOn.refreshed, true);
+      assert.equal(htmlEl.getAttribute('data-ag-prism-thought-view'), 'bilingual');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
 });
