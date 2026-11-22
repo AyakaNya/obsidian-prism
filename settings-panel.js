@@ -113,13 +113,13 @@
     return spec.allowed.includes(val) ? { valid: true, value: val } : { valid: false };
   };
 
-  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.7-beta.2') => {
+  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.7-beta.3') => {
     const settings = {};
     for (const [k, spec] of O.entries(PRISM_SETTINGS_SCHEMA)) {
       const c = sanitizeKeyVal(k, currentSettings[k]);
       settings[k] = c.valid ? c.value : spec.default;
     }
-    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.7-beta.2'), exportedAt: new Date().toISOString(), settings };
+    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.7-beta.3'), exportedAt: new Date().toISOString(), settings };
     const tSrc = isObj(rawThoughtCfg) && isObj(rawThoughtCfg.config) ? rawThoughtCfg.config : rawThoughtCfg;
     if (isObj(tSrc) && !isArr(tSrc) && !isFn(tSrc.then) && tSrc.ok !== false) {
       out.thought = {
@@ -834,13 +834,20 @@
             if (grp.id === 'thought') {
               thoughtListEl = list;
             }
-            ap(groupsWrap, ap(grpEl, mkEl('div', 'ag-cs-settings-subhead', grp.title), list));
-            if (grp.id === 'appearance') {
+            ap(grpEl, mkEl('div', 'ag-cs-settings-subhead', grp.title));
+            if (grp.id === 'beta') {
+              const bNote = mkEl('div', 'ag-cs-beta-notice', U('betaPlaceholderNotice', 'Notice: Beta items are mostly placeholders and not ready for normal use.'));
+              sa(bNote, 'data-testid', 'prism-beta-notice');
+              ap(grpEl, bNote);
+            }
+            ap(grpEl, list);
+            if (grp.id === 'beta') {
               wpSlot = mkEl('div');
               sa(wpSlot, 'data-testid', K_WP);
               setVis(wpSlot, false);
               ap(grpEl, wpSlot);
             }
+            ap(groupsWrap, grpEl);
           }
 
           const aboutGrp = mkEl('div', 'ag-cs-settings-group');

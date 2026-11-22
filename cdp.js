@@ -8,7 +8,7 @@ const { execFile, execFileSync, spawn } = require('child_process');
 
 const STYLE_ID = 'ag-prism-css';
 const LEGACY_STYLE_ID = 'ag-claude-style-css';
-const PLUGIN_VERSION = '1.0.7-beta.2';
+const PLUGIN_VERSION = '1.0.7-beta.3';
 const SETTING_BINDING = '__agPrismSetting';
 const LEGACY_SETTING_BINDING = '__agClaudeStyleSetting';
 const OMNI_BINDING = '__agPrismOmniCall';
@@ -8745,6 +8745,7 @@ const REMOVE_EXPRESSION = `(() => {
       'data-ag-cs-sb-fold',
       'data-ag-cs-has-crab',
       'data-ag-cs-model-menu',
+      'data-ag-cs-takeover-open',
       'data-ag-cs-lang',
       'data-ag-cs-cjk',
       'data-ag-cs-effort-accent',

@@ -393,17 +393,17 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     assert.ok(sandbox.window.__agPrism, 'Expected window.__agPrism exposed');
     assert.equal(sandbox.window.__agClaudeStyle, sandbox.window.__agPrism, 'Expected legacy alias pointing to __agPrism');
     const st = sandbox.window.__agPrism.getState();
-    assert.equal(st.version, '1.0.7-beta.2');
-    assert.equal(html.getAttribute('data-ag-prism'), '1.0.7-beta.2');
+    assert.equal(st.version, '1.0.7-beta.3');
+    assert.equal(html.getAttribute('data-ag-prism'), '1.0.7-beta.3');
     assert.equal(html.getAttribute('data-ag-cs-light-preset'), 'crystal');
     assert.equal(html.getAttribute('data-ag-cs-telemetry'), 'auto');
     assert.equal(html.getAttribute('data-ag-cs-effort-slider'), 'auto');
     assert.equal(st.cfg.palette, 'obsidian');
 
-    // Home UI mounts, optical glyph & prism rim & orbital backdrop mount, and Clawd queued clearance works
+    // Home UI mounts, optical glyph & prism rim mount (without hairline orbital backdrop), and Clawd queued clearance works
     assert.ok(head.querySelector('#ag-prism-css'));
     assert.ok(home.querySelector('.ag-cs-home-panel'));
-    assert.ok(home.querySelector('.ag-cs-orbital-backdrop'));
+    assert.equal(home.querySelector('.ag-cs-orbital-backdrop'), null, 'Home Studio must not inject hairline .ag-cs-orbital-backdrop');
     assert.ok(home.querySelector('.ag-cs-ripple-host'));
     assert.ok(home.querySelector('.ag-cs-brand-glow'));
     assert.ok(home.querySelector('.ag-cs-ripple-canvas'));
@@ -441,7 +441,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     const settingsSec = appearancePanel.querySelector('#ag-cs-settings-sec');
     assert.ok(settingsSec);
     assert.equal(settingsSec.querySelector('h3')?.textContent, 'Obsidian Prism · 黑曜棱镜');
-    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v1.0.7-beta.2');
+    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v1.0.7-beta.3');
     const brandMarkHtml = settingsSec.querySelector('.ag-cs-settings-brand-mark')?.innerHTML || '';
     assert.ok(
       brandMarkHtml.includes('ag-cs-brand-logo-svg') || brandMarkHtml.includes('ag-cs-settings-brand-svg'),
