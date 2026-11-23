@@ -73,6 +73,7 @@
     thoughtView: mkSp(['immersive', 'bilingual']),
     telemetryModule: S_AUTO,
     effortSliderModule: S_AUTO,
+    effortMemory: S_ON,
     omniModule: S_ON,
     linkTarget: mkSp(['builtin', 'external']),
     sidebarStudio: S_OFF,
@@ -113,13 +114,13 @@
     return spec.allowed.includes(val) ? { valid: true, value: val } : { valid: false };
   };
 
-  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.7-beta.3') => {
+  const buildSanitizedConfigExport = (currentSettings = {}, rawThoughtCfg = null, version = '1.0.7-beta.4') => {
     const settings = {};
     for (const [k, spec] of O.entries(PRISM_SETTINGS_SCHEMA)) {
       const c = sanitizeKeyVal(k, currentSettings[k]);
       settings[k] = c.valid ? c.value : spec.default;
     }
-    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.7-beta.3'), exportedAt: new Date().toISOString(), settings };
+    const out = { schema: 'obsidian-prism-config-v1', version: String(version || '1.0.7-beta.4'), exportedAt: new Date().toISOString(), settings };
     const tSrc = isObj(rawThoughtCfg) && isObj(rawThoughtCfg.config) ? rawThoughtCfg.config : rawThoughtCfg;
     if (isObj(tSrc) && !isArr(tSrc) && !isFn(tSrc.then) && tSrc.ok !== false) {
       out.thought = {
@@ -429,8 +430,43 @@
       }
       const hiDescEl = qs(rootEl, '[data-ag-cs-row="hostLocalization"] [data-k="d"]');
       if (hiDescEl) {
-        const hiText = effVal('hostLocalization', l) === 'auto' && hiState === 'yielded' && u.hostI18nYieldHint ? u.hostI18nYieldHint : (u.setHostI18nDesc || '');
+        const hiModeNow = effVal('hostLocalization', l);
+        const hiDisabledNow = hiModeNow === 'off' || (hiModeNow === 'auto' && l !== 'zh-CN');
+        let extZhActive = false;
+        if (hiDisabledNow) {
+          try {
+            const winRef = doc.defaultView || globalThis;
+            if (
+              winRef?.__antigravityZhInstalled ||
+              winRef?.__AGY_HANS__ ||
+              qs(doc, '[data-agy-hans-ui], #agy-theme-switcher, #antigravity-translation-audit')
+            ) {
+              extZhActive = true;
+            } else {
+              for (const hn of qa(doc, '[data-testid="new-conversation-button"], [role="dialog"] h1, [role="dialog"] h2, [data-ag-cs-settings-dlg="1"] [data-ag-cs-settings-nav="1"]')) {
+                if (hn && !hn.closest?.('#' + SETTINGS_SEC_ID) && /[\u4e00-\u9fff]/.test(String(hn.textContent || ''))) {
+                  extZhActive = true;
+                  break;
+                }
+              }
+            }
+          } catch {}
+        }
+        const hiWarn =
+          hiModeNow === 'auto' && hiState === 'yielded' && u.hostI18nYieldHint
+            ? '1'
+            : hiDisabledNow && extZhActive && u.hostI18nOffExtHint
+              ? 'ext'
+              : '';
+        const hiText =
+          hiWarn === '1'
+            ? u.hostI18nYieldHint
+            : hiWarn === 'ext'
+              ? u.hostI18nOffExtHint
+              : (u.setHostI18nDesc || '');
         if (hiDescEl[K_TC] !== hiText) hiDescEl[K_TC] = hiText;
+        if (hiWarn) sa(hiDescEl, 'data-ag-cs-hi-warn', hiWarn);
+        else ra(hiDescEl, 'data-ag-cs-hi-warn');
       }
     };
 
@@ -674,6 +710,7 @@
             RS('thoughtView', [['immersive', U('optThoughtImmersive')], ['bilingual', U('optThoughtBilingual')]]),
             RS('telemetryModule', autoOnOff, 'Telemetry'),
             RS('effortSliderModule', autoOnOff, 'EffortSlider'),
+            RS('effortMemory', onOffStr, 'EffortMemory'),
             RS('omniModule', onOffStr, 'Omni'),
             RS('linkTarget', [['builtin', U('optLinkBuiltin')], ['external', U('optLinkExternal')]]),
             RS('sidebarStudio', onOffStr),
@@ -685,7 +722,7 @@
             { id: 'appearance', title: U('grpAppearance'), keys: ['palette', 'lightPreset', 'accentTone', 'cornerStyle', 'ambientIntensity', 'motionLevel', 'targetFps', 'homeLayout', 'homeRipple', 'logoInk', 'language', 'hostLocalization'] },
             { id: 'interaction', title: U('grpInteraction'), keys: ['composerRestyle', 'placeholderStyle', 'smoothCaret', 'scrollBottomMotion', 'contextMenu', 'codeFont', 'codeLigatures', 'mascot', 'sidebarRestyle', 'sidebarCompact', 'sidebarNavFold'] },
             { id: 'thought', title: U('grpThought'), keys: ['thoughtTranslate', 'thoughtTrigger', 'thoughtView'] },
-            { id: 'modules', title: U('groupModules'), keys: ['telemetryModule', 'effortSliderModule', 'omniModule', 'linkTarget'] },
+            { id: 'modules', title: U('groupModules'), keys: ['telemetryModule', 'effortSliderModule', 'effortMemory', 'omniModule', 'linkTarget'] },
             { id: 'beta', title: U('grpBeta'), keys: ['sidebarStudio'] },
           ];
 
