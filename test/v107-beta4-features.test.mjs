@@ -321,7 +321,7 @@ test('v1.0.7-beta.4: dual-mascot-rig peek mode enforces full pointer pass-throug
     assert.equal(a.getAttribute('tabindex'), '-1');
     assert.equal(a.getAttribute('aria-hidden'), 'true');
     assert.equal(a.style.pointerEvents, 'none');
-    assert.equal(a.style.zIndex, '4');
+    assert.equal(a.style.zIndex, '8');
   }
   for (const mc of miniCrabs) {
     assert.equal(mc.style.pointerEvents, 'none', 'mini-crabs must disable pointer events in peek mode');
@@ -365,6 +365,19 @@ test('v1.0.7-beta.4: dual-mascot-rig peek mode enforces full pointer pass-throug
 
   const css = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
   assert.ok(css.includes('.ag-cs-crab[data-ag-mascot-peek="1"]'), 'style.css must style peek pass-through');
+  assert.ok(
+    /\.ag-cs-crab\[data-ag-mascot-peek="1"\][^{]*\{z-index:8 !important;/.test(css),
+    'peek mascot stage must sit at z-index 8 (> prism rim 7, < takeover card 12)'
+  );
+  assert.ok(
+    css.includes('& .surface-composer-card>.ag-cs-prism-rim-cv,& [data-ag-cs-prism-reflect="bottom"]>.ag-cs-prism-rim-cv{') &&
+      /\.surface-composer-card>\.ag-cs-prism-rim-cv[^{]*\{[^}]*z-index:7 !important;/.test(css),
+    'prism rim canvas must sit at z-index 7 so peeking mascots cover the rim cleanly'
+  );
+  assert.ok(
+    css.includes('[data-testid="input-box-bottom-toolbar"]{pointer-events:none !important;'),
+    'Issue #39: input-box-bottom-toolbar transparent container must pass pointer events through to mascot stage'
+  );
   assert.ok(!/:has\(/.test(css), 'style.css must stay 0 :has()');
 });
 
@@ -760,5 +773,336 @@ test('v1.0.7-beta.4: ui-runtime immediately destroys host-i18n on off/en, shows 
     assert.equal(hiDescEn.getAttribute('data-ag-cs-hi-warn'), 'ext');
   } finally {
     sandbox.__agPrism?.destroy?.();
+  }
+});
+
+test('v1.0.7: thought-client auto-translates asynchronously updated & newly added conversation titles without observing chat stream', async () => {
+  const vm = require('node:vm');
+  const { doc, win } = createFakeDom();
+  const observers = [];
+  class MockMutationObserver {
+    constructor(cb) {
+      this.cb = cb;
+      this.targets = [];
+      observers.push(this);
+    }
+    observe(target, opts) { this.targets.push({ target, opts }); }
+    disconnect() { this.targets = []; }
+    takeRecords() { return []; }
+    trigger(records) { this.cb(records, this); }
+  }
+
+  // Sidebar list with an initial placeholder new conversation row
+  const listEl = doc.createElement('div');
+  listEl.setAttribute('data-testid', 'conversation-list-sidebar');
+  const row1 = doc.createElement('div');
+  row1.setAttribute('data-testid', 'conversation-row-sidebar');
+  const row1Span = doc.createElement('span');
+  row1Span.className = 'truncate';
+  const row1Text = doc.createTextNode('New Conversation');
+  row1Span.appendChild(row1Text);
+  row1.appendChild(row1Span);
+  listEl.appendChild(row1);
+  doc.body.appendChild(listEl);
+
+  // Top breadcrumb nav (workspace + active conversation title)
+  const nav = doc.createElement('nav');
+  const bc1 = doc.createElement('a');
+  bc1.setAttribute('data-testid', 'breadcrumb-segment');
+  bc1.appendChild(doc.createTextNode('obsidian-prism'));
+  const bc2 = doc.createElement('a');
+  bc2.setAttribute('data-testid', 'breadcrumb-segment');
+  const bc2Span = doc.createElement('span');
+  bc2Span.className = 'truncate';
+  const bc2Text = doc.createTextNode('New Conversation');
+  bc2Span.appendChild(bc2Text);
+  bc2.appendChild(bc2Span);
+  nav.appendChild(bc1);
+  nav.appendChild(bc2);
+  doc.body.appendChild(nav);
+
+  // Chat stream area (must NEVER be observed by titleObserver)
+  const convView = doc.createElement('div');
+  convView.setAttribute('data-testid', 'conversation-view');
+  const autoScroll = doc.createElement('div');
+  autoScroll.setAttribute('data-testid', 'autoscroll-viewport');
+  convView.appendChild(autoScroll);
+  doc.body.appendChild(convView);
+
+  const dict = {
+    'New Conversation': '新会话',
+    'Optimize Async Title Sync': '优化异步标题同步',
+    'Debug WebGL Rim Layer': '调试 WebGL 棱镜层',
+  };
+  const batchCalls = [];
+  const bridge = {
+    async call(req) {
+      if (req?.action === 'get-cache') return { ok: true, entries: {}, translateTitles: true };
+      return { ok: true };
+    },
+    async translateStream(req) {
+      const payload = JSON.parse(req.text);
+      batchCalls.push(payload.items);
+      return { ok: true, items: payload.items.map((s) => dict[s] || s) };
+    },
+  };
+
+  const sandbox = {
+    window: null,
+    globalThis: null,
+    document: doc,
+    console,
+    setTimeout,
+    clearTimeout,
+    performance: { now: () => Date.now() },
+    navigator: { language: 'zh-CN' },
+    localStorage: win.localStorage,
+    MutationObserver: MockMutationObserver,
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }),
+    __agPrismThoughtBridge: bridge,
+    innerHeight: 900,
+    innerWidth: 1400,
+  };
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  doc.defaultView = sandbox;
+
+  const thoughtSrc = fs.readFileSync(path.join(ROOT, 'vendor', 'thought-translator', 'thought-client.js'), 'utf8');
+  vm.runInNewContext(thoughtSrc, sandbox);
+  const th = sandbox.__agPrismThought;
+  assert.ok(th);
+
+  try {
+    th.sync({ thoughtTranslate: 'machine', language: 'zh-CN', translateTitles: true });
+    th.scanImmediate();
+    await new Promise((r) => setTimeout(r, 30));
+
+    assert.equal(row1Text.nodeValue, '新会话');
+    assert.equal(bc2Text.nodeValue, '新会话');
+    assert.ok(th.__observedTitleRoots.has(listEl), 'titleObserver must observe conversation-list-sidebar');
+    assert.ok(th.__observedTitleRoots.has(nav), 'titleObserver must observe breadcrumb nav');
+    assert.equal(th.__observedTitleRoots.has(doc.body), false, 'titleObserver must NEVER observe document.body');
+    assert.equal(th.__observedTitleRoots.has(convView), false, 'titleObserver must NEVER observe conversation-view');
+
+    const titleObs = observers.find((o) => o.targets.some((t) => t.target === listEl));
+    assert.ok(titleObs, 'title MutationObserver must be active');
+
+    // Echo of our own translation write must NOT trigger another RPC
+    const callsAfterInit = batchCalls.length;
+    titleObs.trigger([{ type: 'characterData', target: row1Text }]);
+    await new Promise((r) => setTimeout(r, 180));
+    assert.equal(batchCalls.length, callsAfterInit, 'self-written translated text must not loop-trigger scan');
+
+    // Simulate Antigravity backend asynchronously replacing placeholder text in-place (characterData)
+    row1Text.nodeValue = 'Optimize Async Title Sync';
+    bc2Text.nodeValue = 'Optimize Async Title Sync';
+    titleObs.trigger([
+      { type: 'characterData', target: row1Text },
+      { type: 'characterData', target: bc2Text },
+    ]);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(row1Text.nodeValue, '优化异步标题同步', 'sidebar new conversation title must auto-translate on async characterData update');
+    assert.equal(bc2Text.nodeValue, '优化异步标题同步', 'breadcrumb new conversation title must auto-translate on async characterData update');
+    assert.equal(batchCalls.length, callsAfterInit + 1, 'simultaneous sidebar+breadcrumb updates must coalesce into 1 batch RPC');
+
+    // Simulate a brand new sidebar row inserted dynamically (childList)
+    const row2 = doc.createElement('div');
+    row2.setAttribute('data-testid', 'conversation-row-sidebar');
+    const row2Span = doc.createElement('span');
+    row2Span.className = 'truncate';
+    const row2Text = doc.createTextNode('Debug WebGL Rim Layer');
+    row2Span.appendChild(row2Text);
+    row2.appendChild(row2Span);
+    listEl.appendChild(row2);
+    titleObs.trigger([{ type: 'childList', target: listEl, addedNodes: [row2] }]);
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(row2Text.nodeValue, '调试 WebGL 棱镜层', 'newly inserted sidebar row must auto-translate');
+
+    // Disabling translateTitles disconnects titleObserver and restores latest English originals (NOT stale placeholder)
+    th.setTranslateTitles(false);
+    assert.equal(th.__observedTitleRoots.size, 0, 'disabling translateTitles must disconnect titleObserver');
+    assert.equal(row1Text.nodeValue, 'Optimize Async Title Sync');
+    assert.equal(bc2Text.nodeValue, 'Optimize Async Title Sync');
+    assert.equal(row2Text.nodeValue, 'Debug WebGL Rim Layer');
+  } finally {
+    th.destroy();
+  }
+});
+
+test('v1.0.7: elevated peek geometry + prism rim ambient bounce light preserves 0fps sleep and dedups micro-jitter', () => {
+  // 1. Verify elevated peek sprite geometry keeps grip claws/paws anchored at oy=7 while lifting body/eyes/ears
+  assert.equal(dualMascotRig.CLAWD_PARTS.body.peek.oy, 2, 'peek body must start at oy=2 (6 rows tall)');
+  assert.equal(dualMascotRig.CLAWD_PARTS.body.peek.rows.length, 6);
+  assert.equal(dualMascotRig.CLAWD_PARTS.eyes.peekOpen.oy, 4, 'peekOpen eyes must sit clearly above rim at oy=4');
+  assert.equal(dualMascotRig.CLAWD_PARTS.eyes.peekHalf.oy, 5);
+  assert.equal(dualMascotRig.CAT_PARTS.ears.peek.oy, 1, 'cat peek ears must rise to oy=1');
+  assert.equal(dualMascotRig.CLAWD_PARTS.clawL.peekGrip.oy, 7);
+  assert.equal(dualMascotRig.CLAWD_PARTS.clawR.peekGrip.oy, 7);
+  assert.equal(dualMascotRig.CAT_PARTS.paws.peekGrip.oy, 7);
+
+  // 2. Mount rig in reducedMotion (0fps sleep) with canvas tracking source-atop gradients
+  const { doc, win } = createFakeDom();
+  const compositeOps = [];
+  const gradCalls = [];
+  const origCreate = doc.createElement.bind(doc);
+  doc.createElement = (tag) => {
+    const el = origCreate(tag);
+    if (String(tag).toLowerCase() === 'canvas') {
+      el.width = 0;
+      el.height = 0;
+      el.getContext = () => ({
+        setTransform() {},
+        clearRect() {},
+        fillRect() {},
+        save() {},
+        restore() {},
+        translate() {},
+        scale() {},
+        rotate() {},
+        beginPath() {},
+        moveTo() {},
+        lineTo() {},
+        closePath() {},
+        clip() {},
+        drawImage() {},
+        set globalCompositeOperation(v) { compositeOps.push(v); },
+        get globalCompositeOperation() { return compositeOps[compositeOps.length - 1] || 'source-over'; },
+        createRadialGradient(x0, y0, r0, x1, y1, r1) {
+          const stops = [];
+          gradCalls.push({ x0, y0, r0, x1, y1, r1, stops });
+          return { addColorStop(o, c) { stops.push([o, c]); } };
+        },
+        fillStyle: '',
+        imageSmoothingEnabled: false,
+      });
+    }
+    return el;
+  };
+  win.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
+  const host = doc.createElement('div');
+  host.getBoundingClientRect = () => ({ left: 0, top: 0, width: 520, height: 84, right: 520, bottom: 84 });
+  doc.body.appendChild(host);
+
+  const rig = dualMascotRig.mountDualMascotStage(host, {
+    doc,
+    win,
+    initialCamp: 'gemini',
+    miniPile: false,
+    reducedMotion: true,
+  });
+
+  try {
+    // Enter peek mode: actor vertical offset must be +1px (gripping rim) with zIndex 8
+    rig.setState({ yieldMode: 'peek' });
+    const peekSnap = rig.getLayoutSnapshot();
+    assert.equal(peekSnap.perf.timerIntervalMs, 0, 'reducedMotion must keep 0fps sleep');
+    assert.equal(peekSnap.actors[0].renderCache.lastY, 1, 'elevated peek must position actor at y=+1px instead of +6px');
+    assert.equal(host.querySelector('.ag-v2-mascot-actor')?.style?.zIndex, '8', 'peek actor z-index must sit at 8 above rim (7) and below cards (12)');
+
+    // Activate composer rim bounce light directly below cat
+    const catCx = peekSnap.actors.find((a) => a.id === 'cat').worldCx;
+    const drawsBefore = peekSnap.perf.canvasDraws;
+    compositeOps.length = 0;
+    gradCalls.length = 0;
+
+    rig.setRimLight({ active: true, localX: catCx, strength: 0.9, toneKey: 'cobalt', dark: true });
+    const litSnap = rig.getLayoutSnapshot();
+    assert.equal(litSnap.perf.timerIntervalMs, 0, 'setRimLight must NEVER wake 0fps sleep timer');
+    assert.equal(litSnap.rimLight.active, true);
+    assert.equal(litSnap.rimLight.toneKey, 'cobalt');
+    assert.ok(litSnap.perf.canvasDraws > drawsBefore, 'illuminating rim near actor must repaint canvas once');
+    assert.ok(compositeOps.includes('source-atop'), 'rim bounce light must paint inside silhouette via source-atop');
+    assert.ok(gradCalls.some((g) => g.stops.some(([, c]) => c.includes('148,228,255'))), 'cobalt dark bounce palette must be applied');
+    assert.ok(litSnap.actors.find((a) => a.id === 'cat').renderCache.tintState.includes(':r'), 'lit actor tintState must include quantized rim bounce key');
+
+    // Micro-jitter within quantization bucket must dedup with 0 extra draws
+    const drawsLit = litSnap.perf.canvasDraws;
+    rig.setRimLight({ active: true, localX: catCx + 1, strength: 0.905, toneKey: 'cobalt', dark: true });
+    assert.equal(rig.getLayoutSnapshot().perf.canvasDraws, drawsLit, 'micro-jitter inside same quantized bucket must not redraw');
+
+    // Clearing rim light resets tintState cleanly and stays 0fps
+    rig.setRimLight({ active: false });
+    const offSnap = rig.getLayoutSnapshot();
+    assert.equal(offSnap.rimLight.active, false);
+    assert.equal(offSnap.perf.timerIntervalMs, 0);
+    assert.equal(offSnap.actors.find((a) => a.id === 'cat').renderCache.tintState.includes(':r'), false, 'clearing rim light must restore clean tintState');
+  } finally {
+    rig.dispose();
+  }
+});
+
+test('v1.0.7: prism-rim-canvas emits quantized onComposerRimUpdate on hover near composer top edge and clears on leave/ambient=0/hidden', () => {
+  const rimMod = require(path.join(ROOT, 'prism-rim-canvas.js'));
+  const { doc, win } = createFakeDom();
+  const prevDoc = globalThis.document;
+  const prevWin = globalThis.window;
+  const prevRaf = globalThis.requestAnimationFrame;
+  const prevCaf = globalThis.cancelAnimationFrame;
+
+  const box = doc.createElement('div');
+  box.className = 'surface-composer-card';
+  box.setAttribute('data-ag-cs-prism-box', '1');
+  box.getBoundingClientRect = () => ({ left: 100, top: 400, right: 620, bottom: 520, width: 520, height: 120 });
+  doc.body.appendChild(box);
+
+  let ambientVal = 100;
+  let rafQueue = [];
+  const events = [];
+
+  globalThis.document = doc;
+  globalThis.window = win;
+  globalThis.requestAnimationFrame = (cb) => { rafQueue.push(cb); return rafQueue.length; };
+  globalThis.cancelAnimationFrame = () => { rafQueue = []; };
+  const flushRaf = () => { const q = rafQueue.splice(0); q.forEach((fn) => fn(performance.now())); };
+
+  const ctrl = rimMod.createPrismRimCanvasController({
+    isDestroyed: () => false,
+    isDarkTheme: () => true,
+    motionReduced: () => false,
+    getMinFrameGapMs: () => 0,
+    getAmbientIntensity: () => ambientVal,
+    getAccentTone: () => 'iris',
+    canMountRealCanvas: () => false,
+    setAttrIfChanged: (el, k, v) => el?.setAttribute?.(k, v),
+    runGuardedMut: (fn) => fn(),
+    getActiveCrystalTrack: () => null,
+    onComposerRimUpdate: (info) => events.push(info),
+  });
+
+  try {
+    // Move pointer directly onto composer top rim (y=402 -> ly=2)
+    ctrl.onPointerMove({ clientX: 260, clientY: 402 });
+    flushRaf();
+    assert.equal(events.length, 1);
+    assert.equal(events[0].active, true);
+    assert.equal(events[0].toneKey, 'iris');
+    assert.equal(events[0].dark, true);
+    assert.ok(events[0].strength > 0.9, 'pointer right at composer top edge must yield high bounce strength');
+    assert.equal(events[0].localX, 160);
+
+    // Setting ambientIntensity=0 must emit active:false once
+    ambientVal = 0;
+    ctrl.invalidateMetrics();
+    assert.equal(events[events.length - 1].active, false, 'ambient=0 must immediately turn off mascot rim bounce');
+    const offCount = events.length;
+
+    // Repeated invalidation while already off must dedup (no duplicate off spam)
+    ctrl.invalidateMetrics();
+    assert.equal(events.length, offCount, 'repeated inactive clears must deduplicate');
+
+    // Re-enable ambient and hide document -> shrinkRims(1) must also clear bounce light
+    ambientVal = 100;
+    ctrl.onPointerMove({ clientX: 300, clientY: 406 });
+    flushRaf();
+    assert.equal(events[events.length - 1].active, true);
+    doc.hidden = true;
+    ctrl.invalidateMetrics();
+    assert.equal(events[events.length - 1].active, false, 'document.hidden shrink must clear mascot rim bounce');
+  } finally {
+    ctrl.teardown();
+    globalThis.document = prevDoc;
+    globalThis.window = prevWin;
+    globalThis.requestAnimationFrame = prevRaf;
+    globalThis.cancelAnimationFrame = prevCaf;
   }
 });

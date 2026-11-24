@@ -2,7 +2,7 @@
   if (typeof module === 'object' && module.exports) module.exports = factory;
   else root.__agCsUiMain = factory;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function (initialConfig) {
-  const VERSION = '1.0.7-beta.4';
+  const VERSION = '1.0.7';
   const D = document, W = window, GT = globalThis, ST = setTimeout, CT = clearTimeout, O = Object, AF = Array.from, LS = typeof localStorage !== 'undefined' ? localStorage : null;
   const LEGACY_API_VERSION = 3;
   const CODE_HASH = initialConfig?.codeHash || '';
@@ -783,6 +783,9 @@
             msActAt = now;
             notifyMascot('activity', {});
           }
+        },
+        onComposerRimUpdate: (info) => {
+          try { msRig?.setRimLight?.(info); } catch {}
         },
       })
     : noopStub({ getLastPointerPos: () => ({ x: -9999, y: -9999 }) });
@@ -1978,7 +1981,7 @@
         dirtyFlags.r = dirtyFlags.c = dirtyFlags.l = dirtyFlags.tk = dirtyFlags.cf = touchedButtons = true;
       }
 
-      if (tid === 'conversation-row-sidebar' || ancSide || q('[data-testid="conversation-row-sidebar"]')) {
+      if (tid === 'conversation-row-sidebar' || tid === 'breadcrumb-segment' || tid === 'conversation-row-history' || ancSide || q('[data-testid="conversation-row-sidebar"],[data-testid="breadcrumb-segment"],[data-testid="conversation-row-history"]')) {
         dirtyFlags.s = true;
         if (isAdded) touchedButtons = true;
       }
