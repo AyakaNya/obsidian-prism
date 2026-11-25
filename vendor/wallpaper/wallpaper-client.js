@@ -1,4 +1,4 @@
-// Obsidian Prism — Channel 7 Local Static/Dynamic Wallpaper Client Runtime (v1.0.7 · Beta)
+// Obsidian Prism — Channel 7 Local Static/Dynamic Wallpaper Client Runtime (v1.0.8-beta.1 · Beta)
 // Decoupled from Channel 1 static bundle:
 // - Pure DOM construction (0 innerHTML), 5+1 anti-translation attributes, dedicated <style id="ag-prism-wallpaper-css">
 // - 0 :has() selectors, balanced braces, 0 style impact when wallpaper is disabled
@@ -41,6 +41,7 @@
     'html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"]) :is(aside,[data-testid="sidebar-split"]>div:first-child):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]){background:color-mix(in srgb,var(--sidebar,var(--ag-cs-sidebar,var(--background,#0B0B0E))) 72%,transparent) !important;background-color:color-mix(in srgb,var(--sidebar,var(--ag-cs-sidebar,var(--background,#0B0B0E))) 72%,transparent) !important;}',
     'html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"]) [data-ag-cs-conv-seat="1"]:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]){background-color:color-mix(in srgb,var(--background,#0B0B0E) 76%,transparent) !important;}',
     'html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"]) [data-testid="conversation-view"]::before{display:none !important;background:none !important;}',
+    'html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"]) [data-testid="plugin-theme-home-wallpaper"]{display:none !important;visibility:hidden !important;opacity:0 !important;pointer-events:none !important;}',
     'html[data-ag-prism-wallpaper="on"][data-ag-cs-theme="light"]:not([data-ag-prism-wallpaper-hole="1"]) :is(.agy-shell,[data-ag-cs-home-sheet="1"],[data-main-content-body]):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]),html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"])>body:is(.theme-light,.light-theme,.light) :is(.agy-shell,[data-ag-cs-home-sheet="1"],[data-main-content-body]):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]){background:color-mix(in srgb,var(--background,#F4F7FB) 72%,transparent) !important;}',
     'html[data-ag-prism-wallpaper="on"][data-ag-cs-theme="light"]:not([data-ag-prism-wallpaper-hole="1"]) :is(aside,[data-testid="sidebar-split"]>div:first-child):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]),html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"])>body:is(.theme-light,.light-theme,.light) :is(aside,[data-testid="sidebar-split"]>div:first-child):not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]){background:color-mix(in srgb,var(--sidebar,var(--ag-cs-sidebar,var(--background,#F4F7FB))) 78%,transparent) !important;background-color:color-mix(in srgb,var(--sidebar,var(--ag-cs-sidebar,var(--background,#F4F7FB))) 78%,transparent) !important;}',
     'html[data-ag-prism-wallpaper="on"][data-ag-cs-theme="light"]:not([data-ag-prism-wallpaper-hole="1"]) [data-ag-cs-conv-seat="1"]:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]),html[data-ag-prism-wallpaper="on"]:not([data-ag-prism-wallpaper-hole="1"])>body:is(.theme-light,.light-theme,.light) [data-ag-cs-conv-seat="1"]:not([data-has-browser-hole="true"]):not([data-has-drawer-browser-hole="true"]){background-color:color-mix(in srgb,var(--background,#F4F7FB) 82%,transparent) !important;}',
@@ -336,6 +337,7 @@
       if (html && typeof html.getAttribute === 'function') {
         if (html.getAttribute('data-ag-prism-mode') === 'chat') return true;
         if (html.getAttribute('data-ag-cs-motion') === 'off') return true;
+        if (html.getAttribute('data-ag-pp-open') === '1') return true;
         if (state.pauseOnBlur !== false && html.getAttribute('data-ag-cs-win-blur') === '1') return true;
       }
       if (state.pauseOnBlur !== false && winBlurred) return true;
@@ -635,7 +637,7 @@
           try {
             htmlObserver.observe(doc.documentElement, {
               attributes: true,
-              attributeFilter: ['data-ag-cs-win-blur', 'data-ag-prism-mode', 'data-ag-cs-motion', 'data-ag-cs-theme'],
+              attributeFilter: ['data-ag-cs-win-blur', 'data-ag-prism-mode', 'data-ag-cs-motion', 'data-ag-cs-theme', 'data-ag-pp-open'],
             });
           } catch {}
         }

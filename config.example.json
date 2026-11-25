@@ -1,6 +1,6 @@
 {
-  "language": "zh-CN",
-  "lang": "zh-CN",
+  "language": "auto",
+  "lang": "auto",
   "palette": "obsidian",
   "lightPreset": "crystal",
   "motionLevel": "ultra",
@@ -8,6 +8,7 @@
   "telemetryModule": "auto",
   "effortSliderModule": "auto",
   "effortMemory": "on",
+  "periodicModelPicker": "on",
   "thoughtTranslate": "off",
   "thoughtTrigger": "preload",
   "homeLayout": "studio",
@@ -38,5 +39,6 @@
   "sidebarStudio": "off",
   "hostLocalization": "auto",
   "autoUpdate": "off",
-  "updateChannel": "stable"
+  "updateChannel": "stable",
+  "autoArchiveOnExit": false
 }

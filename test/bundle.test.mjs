@@ -353,6 +353,9 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
   try {
     const res = vm.runInNewContext(cdp.buildInjectExpression(cdp.DEFAULT_CONFIG), sandbox);
     assert.equal(res.status, 'ok');
+    // Load Channel 10 Mascot (split out of Channel 1) & Channel 9 Settings on demand
+    vm.runInNewContext(cdp.buildMascotChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
+    vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
     assert.equal(html.getAttribute('data-ag-cs-style'), '1');
     assert.equal(html.getAttribute('data-ag-cs-palette'), 'obsidian');
     assert.equal(html.getAttribute('data-ag-cs-home'), 'studio');
@@ -393,8 +396,8 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     assert.ok(sandbox.window.__agPrism, 'Expected window.__agPrism exposed');
     assert.equal(sandbox.window.__agClaudeStyle, sandbox.window.__agPrism, 'Expected legacy alias pointing to __agPrism');
     const st = sandbox.window.__agPrism.getState();
-    assert.equal(st.version, '1.0.7');
-    assert.equal(html.getAttribute('data-ag-prism'), '1.0.7');
+    assert.equal(st.version, '1.0.8-beta.1');
+    assert.equal(html.getAttribute('data-ag-prism'), '1.0.8-beta.1');
     assert.equal(html.getAttribute('data-ag-cs-light-preset'), 'crystal');
     assert.equal(html.getAttribute('data-ag-cs-telemetry'), 'auto');
     assert.equal(html.getAttribute('data-ag-cs-effort-slider'), 'auto');
@@ -435,13 +438,14 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     assert.equal(injectedCss.includes('.ag-cs-effort-popover'), false);
     assert.equal(injectedCss.includes('.ag-cs-ctx-popover'), false);
 
-    // Settings section mounts ONLY in Appearance, rebranded to Obsidian Prism collapsible banner + About & 6 credits
+    // Settings section mounts ONLY in Appearance via on-demand Settings Channel (Ch9), rebranded to Obsidian Prism collapsible banner + About & 6 credits
     assert.equal(sandbox.window.__agPrism.brand, 'Obsidian Prism');
+    vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
     assert.equal(generalPanel.querySelector('#ag-cs-settings-sec'), null);
     const settingsSec = appearancePanel.querySelector('#ag-cs-settings-sec');
     assert.ok(settingsSec);
     assert.equal(settingsSec.querySelector('h3')?.textContent, 'Obsidian Prism · 黑曜棱镜');
-    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v1.0.7');
+    assert.equal(settingsSec.querySelector('.ag-cs-settings-ver')?.textContent, 'v1.0.8-beta.1');
     const brandMarkHtml = settingsSec.querySelector('.ag-cs-settings-brand-mark')?.innerHTML || '';
     assert.ok(
       brandMarkHtml.includes('ag-cs-brand-logo-svg') || brandMarkHtml.includes('ag-cs-settings-brand-svg'),
@@ -483,11 +487,11 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     assert.ok(thoughtCfgBox, 'Expected built-in OpenAI thought translator config card hot-mounted into open settingsSec');
     assert.equal(thoughtCfgBox.hidden, false, 'Thought AI config card should be visible when mode is ai');
 
-    // Verify About section: Git status/sync button + 8 upstream repo external links + GPL-3.0 & upstream MIT notices + Google disclaimer
+    // Verify About section: Git status/sync button + 9 upstream repo external links + GPL-3.0 & upstream MIT notices + Google disclaimer
     const aboutBox = settingsSec.querySelector('.ag-cs-about-box');
     assert.ok(aboutBox, 'Expected .ag-cs-about-box inside About group');
     const creditLinks = aboutBox.querySelectorAll('a');
-    assert.equal(creditLinks.length, 8, 'Expected all 8 upstream credited repository links');
+    assert.equal(creditLinks.length, 9, 'Expected all 9 upstream credited repository links');
     assert.deepEqual(
       creditLinks.map((a) => a.getAttribute('href')),
       [
@@ -499,6 +503,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
         'https://github.com/Microqian2th/dsh-codex-effort-slider',
         'https://github.com/mobius/dsh-performance-slider',
         'https://github.com/claudenoshujin/claude-web',
+        'https://github.com/wp3171216237/dsh-TUI',
       ]
     );
     for (const a of creditLinks) {
@@ -520,7 +525,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
         .map((b) => b.getAttribute('data-ag-cs-key'))
         .filter(Boolean)
     );
-    assert.equal(settingKeys.size, 34);
+    assert.equal(settingKeys.size, 35);
     for (const expectedKey of [
       'palette',
       'lightPreset',
@@ -533,6 +538,7 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
       'language',
       'hostLocalization',
       'effortMemory',
+      'periodicModelPicker',
       'composerRestyle',
       'placeholderStyle',
       'smoothCaret',
@@ -581,8 +587,18 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
       assert.equal(placeholder.getAttribute('data-ag-cs-placeholder'), expectedPlaceholder);
     };
 
+    // Verify all 8 language buttons switch dashboard, greeting, placeholder & settings copy + emit CDP binding (no yue)
+    assert.equal(getLangBtns().length, 8, 'Expected exactly 8 language buttons');
+    assert.equal(getLangBtns().some((b) => b.getAttribute('data-ag-cs-val') === '"yue"'), false, 'yue button must be removed');
     checkLangSwitch('zh-TW', '外觀', '介面語言', '概覽', '接下來做什麼？', '描述任務或提出問題');
-    checkLangSwitch('yue', '外觀', '介面語言', '概覽', '跟住想做啲咩？', '寫低你想做嘅任務或者問題');
+    checkLangSwitch('ko', 'Appearance', 'UI 언어', '개요', '다음은 무엇을 할까요?', '작업 설명이나 질문을 입력하세요');
+    assert.equal(html.getAttribute('data-ag-cs-cjk'), '1');
+    checkLangSwitch('es', 'Appearance', 'Idioma de la interfaz', 'Resumen', '¿Qué hacemos ahora?', 'Describe una tarea o haz una pregunta');
+    assert.equal(html.hasAttribute('data-ag-cs-cjk'), false);
+    checkLangSwitch('fr', 'Appearance', 'Langue de l’interface', 'Aperçu', 'Que faisons-nous ensuite ?', 'Décrivez une tâche ou posez une question');
+    assert.equal(html.hasAttribute('data-ag-cs-cjk'), false);
+    checkLangSwitch('de', 'Appearance', 'UI-Sprache', 'Übersicht', 'Was steht als Nächstes an?', 'Aufgabe beschreiben oder Frage stellen');
+    assert.equal(html.hasAttribute('data-ag-cs-cjk'), false);
     checkLangSwitch('en', 'Appearance', 'UI Language', 'Overview', "What's up next?", 'How can I help you today?');
     assert.equal(html.hasAttribute('data-ag-cs-cjk'), false);
     checkLangSwitch('ja', '外観', '表示言語', '概要', '次は何をしますか？', 'タスクの説明や質問を入力してください');
@@ -593,7 +609,10 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
       bindingCalls.map((c) => [c.key, c.value]),
       [
         ['language', 'zh-TW'],
-        ['language', 'yue'],
+        ['language', 'ko'],
+        ['language', 'es'],
+        ['language', 'fr'],
+        ['language', 'de'],
         ['language', 'en'],
         ['language', 'ja'],
         ['language', 'zh-CN'],
@@ -668,14 +687,45 @@ test('inject expression mounts cleanly without model-button or telemetry conflic
     // Verify sidebarNavFold defaults to 'off', toggles data-ag-cs-sb-fold & getState().cfg, and REMOVE_EXPRESSION cleans it + __agPrismInlineDiffResolve
     assert.equal(html.getAttribute('data-ag-cs-sb-fold'), 'off');
     assert.equal(sandbox.window.__agPrism.getState().cfg.sidebarNavFold, 'off');
+    assert.equal(sandbox.window.__agPrism.getState().cfg.periodicModelPicker, 'on');
     sandbox.window.__agPrism.saveSettingsBatch({ sidebarNavFold: 'on' });
     assert.equal(html.getAttribute('data-ag-cs-sb-fold'), 'on');
     assert.equal(sandbox.window.__agPrism.getState().cfg.sidebarNavFold, 'on');
     sandbox.window.__agPrismInlineDiffResolve = () => {};
 
+    // Verify html[data-ag-pp-open="1"] toggles mascot peek & window.__agPrism.sync() notifies __agPrismPeriodicPicker.onHostTriggerChanged()
+    let ppTriggerHits = 0;
+    let ppDestroyed = false;
+    sandbox.window.__agPrismPeriodicPicker = {
+      onHostTriggerChanged() { ppTriggerHits += 1; },
+      destroy() { ppDestroyed = true; },
+    };
+    const crabStage = card.querySelector('.ag-cs-crab');
+    assert.ok(crabStage, 'Mascot stage must mount on primary composer card');
+    // Remove queuedWrap fixture temporarily so we isolate data-ag-pp-open as the sole peek trigger
+    inputBox.removeChild(queuedWrap);
+    sandbox.window.__agPrism.sync();
+    assert.equal(crabStage.getAttribute('data-ag-mascot-peek'), null, 'Mascot must not peek while periodic picker is closed');
+    html.setAttribute('data-ag-pp-open', '1');
+    sandbox.window.__agPrism.sync();
+    assert.equal(crabStage.getAttribute('data-ag-mascot-peek'), '1', 'html[data-ag-pp-open="1"] must switch mascot into peek mode');
+    assert.ok(ppTriggerHits >= 1, 'window.__agPrism.sync() must notify __agPrismPeriodicPicker.onHostTriggerChanged()');
+    html.removeAttribute('data-ag-pp-open');
+    sandbox.window.__agPrism.sync();
+    assert.equal(crabStage.getAttribute('data-ag-mascot-peek'), null, 'Removing data-ag-pp-open must exit mascot peek mode');
+    html.setAttribute('data-ag-pp-open', '1');
+    html.setAttribute('data-ag-prism-periodic-picker', '1');
+    const ppRootNode = makeNode('div', { id: 'ag-prism-periodic-picker-root' });
+    body.appendChild(ppRootNode);
+
     // Teardown cleanly removes everything and restores host greeting text
     const rem = vm.runInNewContext(cdp.REMOVE_EXPRESSION, sandbox);
     assert.ok(rem.removed >= 1);
+    assert.equal(ppDestroyed, true, 'REMOVE_EXPRESSION must destroy __agPrismPeriodicPicker');
+    assert.equal(html.hasAttribute('data-ag-pp-open'), false);
+    assert.equal(html.hasAttribute('data-ag-prism-periodic-picker'), false);
+    assert.equal(doc.getElementById('ag-prism-periodic-picker-root'), null);
+    assert.equal(sandbox.window.__agPrismPeriodicPicker, undefined);
     assert.equal(html.hasAttribute('data-ag-prism'), false);
     assert.equal(html.hasAttribute('data-ag-cs-sb-fold'), false);
     assert.equal(sandbox.window.__agPrismInlineDiffResolve, undefined);
@@ -1034,6 +1084,9 @@ test('Q&A takeover card, side-question panel, and running tasks clear Clawd masc
   try {
     const res = vm.runInNewContext(cdp.buildInjectExpression(cdp.DEFAULT_CONFIG), sandbox);
     assert.equal(res.status, 'ok');
+    // Load Channel 10 Mascot (split out of Channel 1) & Channel 9 Settings on demand
+    vm.runInNewContext(cdp.buildMascotChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
+    vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
 
     // 1. Q&A takeover card alone: wrapper raised by 46px with data-ag-cs-takeover="1"
     assert.equal(takeoverWrap.getAttribute('data-ag-cs-takeover'), '1');
@@ -1429,6 +1482,9 @@ test('v3.5.1 mounts dual mascot stage, brand optical glyphs, Orchestrator crysta
   try {
     const res = vm.runInNewContext(cdp.buildInjectExpression(cdp.DEFAULT_CONFIG), sandbox);
     assert.equal(res.status, 'ok');
+    // Load Channel 10 Mascot (split out of Channel 1) & Channel 9 Settings on demand
+    vm.runInNewContext(cdp.buildMascotChannelExpression(cdp.DEFAULT_CONFIG), sandbox);
+    vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
 
     // 1. Dual mascot stage mounts 2 real actor canvases (Clawd & Cat, 96x84)
     const stageEl = card.querySelector('.ag-cs-crab');
@@ -2329,6 +2385,7 @@ test('v3.7 orchestrates 4-tier motionLevel, Hero A~E optical transitions, dual-t
     assert.equal(copyMsgBtn.querySelector('.ag-anim-icon')?.getAttribute('data-icon-state'), 'check');
 
     // Settings motionLevel row switches tier & glides indicator; 'off' restores original host SVGs!
+    vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
     let glideCalls = 0;
     const origGlide = sandbox.__agMotionEngine.glideIndicator;
     appPanel.querySelector('[data-ag-cs-fold-toggle]')?.dispatch('click');
@@ -2927,6 +2984,7 @@ test('Prism v1.0 regression guard: Thought Translator overlay (.ag-prism-thought
     assert.equal(sandbox.window.__agPrism.getState().convAuraSleeping, false);
 
     // Also test About Git Repo Sync button with mocked __agPrismRepoBridge (no-remote & remote pull)
+    vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
     appPanel.querySelector('[data-ag-cs-fold-toggle]')?.dispatch('click');
     const repoSyncBtn = appPanel.querySelector('button[data-ag-cs-repo-sync]');
     const repoChip = appPanel.querySelector('[data-ag-cs-repo-status]');
@@ -3940,4 +3998,35 @@ test('Antigravity v2.33.0+ dual-layer CDP opt-in guard: shortcut lossless patch/
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
+});
+
+test('Channel 1 budget (< 684,500 B), periodicModelPicker default on, style.css peek rule & 0 top-level :has(', () => {
+  assert.equal(cdp.DEFAULT_CONFIG.periodicModelPicker, 'on');
+  assert.equal(cdp.shouldEnablePeriodicPicker(cdp.DEFAULT_CONFIG), true);
+  assert.equal(cdp.shouldEnablePeriodicPicker({ periodicModelPicker: 'off' }), false);
+  assert.equal(cdp.buildPeriodicPickerExpression({ ...cdp.DEFAULT_CONFIG, periodicModelPicker: 'off' }), '');
+  assert.deepEqual(cdp.PERIODIC_PICKER_MODULE_FILES, [
+    'pbr-grain-assets.js',
+    'audio-fx.js',
+    'model-catalog.js',
+    'host-bridge.js',
+    'oled-cyber-screen.js',
+    'keyboard-3d-gl.js',
+    'bento-ui.js',
+    'periodic-picker.js',
+  ]);
+
+  const expr = cdp.buildInjectExpression(cdp.DEFAULT_CONFIG);
+  const ch1Bytes = Buffer.byteLength(expr, 'utf8');
+  assert.ok(ch1Bytes < 684500, `Channel 1 bundle must stay strictly < 684,500 B (got ${ch1Bytes} B)`);
+
+  const css = fs.readFileSync(path.join(path.dirname(require.resolve('../cdp.js')), 'style.css'), 'utf8');
+  assert.ok(
+    /\.ag-cs-crab\[data-ag-mascot-peek="1"\][^{]*html\[data-ag-pp-open="1"\] \.ag-cs-crab[^{]*\{z-index:8 !important;pointer-events:none !important;user-select:none !important;/.test(css),
+    'style.css must include html[data-ag-pp-open="1"] .ag-cs-crab in the mascot peek pass-through rule'
+  );
+  const topLevelHas = css
+    .split('\n')
+    .filter((line) => !/^\s*(?:&|@|\/\*)/.test(line) && /:has\(/.test(line));
+  assert.equal(topLevelHas.length, 0, 'style.css must contain 0 top-level :has() rules');
 });

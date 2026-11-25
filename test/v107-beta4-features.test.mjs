@@ -310,7 +310,9 @@ test('v1.0.7-beta.4: dual-mascot-rig peek mode enforces full pointer pass-throug
   assert.equal(host.getAttribute('data-ag-mascot-peek'), null);
   const actors = host.querySelectorAll('.ag-v2-mascot-actor');
   assert.equal(actors.length, 2);
-  assert.equal(actors[0].getAttribute('tabindex'), '0');
+  for (const a of actors) {
+    assert.equal(a.getAttribute('tabindex'), '-1', 'Issue #58 Bug 3: decorative mascot actors must stay out of Tab order');
+  }
   const miniCrabs = host.querySelectorAll('.ag-v2-mini-crab-canvas');
   assert.ok(miniCrabs.length > 0, 'mini-crabs must mount when miniPileEnabled is true');
 
@@ -325,6 +327,8 @@ test('v1.0.7-beta.4: dual-mascot-rig peek mode enforces full pointer pass-throug
   }
   for (const mc of miniCrabs) {
     assert.equal(mc.style.pointerEvents, 'none', 'mini-crabs must disable pointer events in peek mode');
+    assert.equal(mc.style.zIndex, '8', 'mini-crabs must drop to z-index 8 behind popups in peek mode');
+    assert.match(mc.style.transform || '', /translate3d\([^,]+,\s*2px,\s*0\)/, 'mini-crabs must gently crouch by +2px in peek mode');
   }
 
   // Dispatch pointerdown + contextmenu while peeking -> must NOT call preventDefault / stopPropagation
@@ -355,10 +359,13 @@ test('v1.0.7-beta.4: dual-mascot-rig peek mode enforces full pointer pass-throug
   // Return to normal mode
   rig.setState({ yieldMode: 'none' });
   assert.equal(host.getAttribute('data-ag-mascot-peek'), null);
-  assert.equal(actors[0].getAttribute('tabindex'), '0');
-  assert.equal(actors[0].style.pointerEvents, '');
+  for (const a of actors) {
+    assert.equal(a.getAttribute('tabindex'), '-1', 'Issue #58 Bug 3: exiting peek must keep mascot actors at tabindex="-1"');
+    assert.equal(a.style.pointerEvents, '');
+  }
   for (const mc of miniCrabs) {
     assert.equal(mc.style.pointerEvents, 'auto', 'mini-crabs must restore pointerEvents=auto after exiting peek');
+    assert.equal(mc.style.zIndex, '25', 'mini-crabs must restore normal z-index after exiting peek');
   }
 
   rig.dispose();
@@ -620,7 +627,7 @@ test('v1.0.7-beta.4: Issue #38 macOS relaunch normalizes .app bundle, strips ELE
   assert.ok(sh.includes('on run argv'), 'AppleScript quit must use argv instead of string interpolation');
 });
 
-test('v1.0.7-beta.4: ui-runtime immediately destroys host-i18n on off/en, shows external zh hint, and toggles mascot peek on takeover/queued/model-menu', () => {
+test('v1.0.7-beta.4: ui-runtime switches host-i18n to off reverse-restore on off and destroys on auto+en, loads Ch9 Settings, and toggles mascot peek on takeover/queued/model-menu', () => {
   const vm = require('node:vm');
   const { doc, win } = createFakeDom();
   doc.documentElement.setAttribute('data-ag-prism-host-i18n', 'active');
@@ -628,8 +635,14 @@ test('v1.0.7-beta.4: ui-runtime immediately destroys host-i18n on off/en, shows 
   let hostI18nDestroyed = 0;
   let hostI18nModes = [];
   win.__agPrismHostI18n = {
-    destroy() { hostI18nDestroyed += 1; },
-    setMode(m) { hostI18nModes.push(m); },
+    destroy() {
+      hostI18nDestroyed += 1;
+      doc.documentElement.removeAttribute('data-ag-prism-host-i18n');
+    },
+    setMode(m) {
+      hostI18nModes.push(m);
+      doc.documentElement.setAttribute('data-ag-prism-host-i18n', m === 'off' ? 'off-enforced' : 'active');
+    },
   };
   win.performance = { now: () => Date.now() };
   win.requestAnimationFrame = () => 0;
@@ -724,14 +737,16 @@ test('v1.0.7-beta.4: ui-runtime immediately destroys host-i18n on off/en, shows 
     sandbox.__agPrism.sync();
     assert.equal(crab.getAttribute('data-ag-mascot-peek'), null, 'closing overlays must exit peek');
 
-    // Toggle hostLocalization to 'off' -> immediately calls window.__agPrismHostI18n.destroy()
+    // Toggle hostLocalization to 'off' -> immediately calls window.__agPrismHostI18n.setMode('off') (reverse English restore)
     const beforeDestroy = hostI18nDestroyed;
+    const beforeModesLen = hostI18nModes.length;
     sandbox.__agPrism.saveSettingsBatch({ hostLocalization: 'off' });
     sandbox.__agPrism.sync();
-    assert.ok(hostI18nDestroyed > beforeDestroy, 'switching hostLocalization to off must immediately call destroy()');
-    assert.equal(doc.documentElement.getAttribute('data-ag-prism-host-i18n'), null);
+    assert.equal(hostI18nDestroyed, beforeDestroy, 'switching hostLocalization to off must call setMode("off") instead of destroy()');
+    assert.equal(hostI18nModes.slice(beforeModesLen).at(-1), 'off', 'switching hostLocalization to off must call setMode("off")');
+    assert.equal(doc.documentElement.getAttribute('data-ag-prism-host-i18n'), 'off-enforced');
 
-    // Settings panel in hostLocalization === 'off' with [data-agy-hans-ui] shows external localization notice
+    // Settings panel (Channel 9 on-demand) in hostLocalization === 'off' with [data-agy-hans-ui] shows external localization notice
     const dlg = doc.createElement('div');
     dlg.setAttribute('role', 'dialog');
     const pane = doc.createElement('div');
@@ -744,6 +759,8 @@ test('v1.0.7-beta.4: ui-runtime immediately destroys host-i18n on off/en, shows 
     pane.appendChild(nativeSec);
     dlg.appendChild(pane);
     doc.body.appendChild(dlg);
+    const settingsRes = vm.runInNewContext(cdp.buildSettingsChannelExpression(), sandbox);
+    assert.equal(settingsRes.ok, true);
     sandbox.__agPrism.sync();
 
     const sec = doc.getElementById('ag-cs-settings-sec');
@@ -758,9 +775,12 @@ test('v1.0.7-beta.4: ui-runtime immediately destroys host-i18n on off/en, shows 
     assert.equal(hiDesc.textContent, locales.getUiStrings('zh-CN').hostI18nOffExtHint);
     assert.equal(hiDesc.getAttribute('data-ag-cs-hi-warn'), 'ext');
 
-    // Switching to auto + English while external zh patch is active must ALSO show the external-i18n warning pill
+    // Switching to auto + English immediately calls window.__agPrismHostI18n.destroy() and shows the external-i18n warning pill
+    const beforeAutoEnDestroy = hostI18nDestroyed;
     sandbox.__agPrism.saveSettingsBatch({ hostLocalization: 'auto', language: 'en' });
     sandbox.__agPrism.sync();
+    assert.ok(hostI18nDestroyed > beforeAutoEnDestroy, 'switching hostLocalization to auto + en must immediately call destroy()');
+    assert.equal(doc.documentElement.getAttribute('data-ag-prism-host-i18n'), null);
     const secEn = doc.getElementById('ag-cs-settings-sec');
     const toggleBtnEn = secEn?.querySelector('button[aria-expanded]');
     if (toggleBtnEn && toggleBtnEn.getAttribute('aria-expanded') === 'false') {
@@ -929,21 +949,36 @@ test('v1.0.7: thought-client auto-translates asynchronously updated & newly adde
   }
 });
 
-test('v1.0.7: elevated peek geometry + prism rim ambient bounce light preserves 0fps sleep and dedups micro-jitter', () => {
-  // 1. Verify elevated peek sprite geometry keeps grip claws/paws anchored at oy=7 while lifting body/eyes/ears
-  assert.equal(dualMascotRig.CLAWD_PARTS.body.peek.oy, 2, 'peek body must start at oy=2 (6 rows tall)');
-  assert.equal(dualMascotRig.CLAWD_PARTS.body.peek.rows.length, 6);
-  assert.equal(dualMascotRig.CLAWD_PARTS.eyes.peekOpen.oy, 4, 'peekOpen eyes must sit clearly above rim at oy=4');
-  assert.equal(dualMascotRig.CLAWD_PARTS.eyes.peekHalf.oy, 5);
-  assert.equal(dualMascotRig.CAT_PARTS.ears.peek.oy, 1, 'cat peek ears must rise to oy=1');
-  assert.equal(dualMascotRig.CLAWD_PARTS.clawL.peekGrip.oy, 7);
-  assert.equal(dualMascotRig.CLAWD_PARTS.clawR.peekGrip.oy, 7);
-  assert.equal(dualMascotRig.CAT_PARTS.paws.peekGrip.oy, 7);
+test('v1.0.7 / Issue #58: full-body gentle crouch peek (no hard bottom clip) + prism rim ambient bounce light preserves 0fps sleep and dedups micro-jitter', () => {
+  // 1. Verify peek pose renders full body grounded to maxY=9 (no hard cut) across all 4 species
+  for (const kind of ['clawd', 'cat', 'dragon', 'whale']) {
+    for (let t = 0; t < 4; t++) {
+      const layers = dualMascotRig.buildClipLayers(kind, 'peek', t, { clipTick: t });
+      const bodyRows = new Set();
+      let maxY = -99;
+      for (const l of layers) {
+        if (!l || l.grounded) continue;
+        for (let r = 0; r < (l.rows || []).length; r++) {
+          if (/[^. ]/.test(l.rows[r])) {
+            const y = l.oy + r;
+            bodyRows.add(y);
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      assert.equal(maxY, 9, `${kind} peek crouch must keep full body/legs grounded at y=9, got ${maxY}`);
+      const sortedYs = [...bodyRows].sort((a, b) => a - b);
+      for (let i = 1; i < sortedYs.length; i++) {
+        assert.equal(sortedYs[i] - sortedYs[i - 1], 1, `${kind} peek crouch must have zero vertical row gaps`);
+      }
+    }
+  }
 
-  // 2. Mount rig in reducedMotion (0fps sleep) with canvas tracking source-atop gradients
+  // 2. Mount rig in reducedMotion (0fps sleep) with canvas tracking clip() & source-atop gradients
   const { doc, win } = createFakeDom();
   const compositeOps = [];
   const gradCalls = [];
+  let clipCalls = 0;
   const origCreate = doc.createElement.bind(doc);
   doc.createElement = (tag) => {
     const el = origCreate(tag);
@@ -960,10 +995,11 @@ test('v1.0.7: elevated peek geometry + prism rim ambient bounce light preserves 
         scale() {},
         rotate() {},
         beginPath() {},
+        rect() {},
         moveTo() {},
         lineTo() {},
         closePath() {},
-        clip() {},
+        clip() { clipCalls += 1; },
         drawImage() {},
         set globalCompositeOperation(v) { compositeOps.push(v); },
         get globalCompositeOperation() { return compositeOps[compositeOps.length - 1] || 'source-over'; },
@@ -992,12 +1028,16 @@ test('v1.0.7: elevated peek geometry + prism rim ambient bounce light preserves 
   });
 
   try {
-    // Enter peek mode: actor vertical offset must be +1px (gripping rim) with zIndex 8
+    // Enter peek mode: actor gently crouches (+3px) at zIndex 8 with data-ag-mascot-peek="1" and ZERO hard bottom clip()
+    clipCalls = 0;
     rig.setState({ yieldMode: 'peek' });
     const peekSnap = rig.getLayoutSnapshot();
+    assert.equal(host.getAttribute('data-ag-mascot-peek'), '1', 'peek must preserve data-ag-mascot-peek="1" contract');
     assert.equal(peekSnap.perf.timerIntervalMs, 0, 'reducedMotion must keep 0fps sleep');
-    assert.equal(peekSnap.actors[0].renderCache.lastY, 1, 'elevated peek must position actor at y=+1px instead of +6px');
+    assert.equal(peekSnap.actors[0].renderCache.lastY, 3, 'gentle crouch peek must lower actor by +3px without hard clipping');
+    assert.equal(clipCalls, 0, 'Issue #58 Bug 1: peek mode must NOT hard-clip lower body via ctx.clip()');
     assert.equal(host.querySelector('.ag-v2-mascot-actor')?.style?.zIndex, '8', 'peek actor z-index must sit at 8 above rim (7) and below cards (12)');
+    assert.equal(host.querySelector('.ag-v2-mascot-actor')?.getAttribute('tabindex'), '-1', 'peek actor must keep tabindex="-1"');
 
     // Activate composer rim bounce light directly below cat
     const catCx = peekSnap.actors.find((a) => a.id === 'cat').worldCx;
@@ -1019,6 +1059,13 @@ test('v1.0.7: elevated peek geometry + prism rim ambient bounce light preserves 
     const drawsLit = litSnap.perf.canvasDraws;
     rig.setRimLight({ active: true, localX: catCx + 1, strength: 0.905, toneKey: 'cobalt', dark: true });
     assert.equal(rig.getLayoutSnapshot().perf.canvasDraws, drawsLit, 'micro-jitter inside same quantized bucket must not redraw');
+
+    // While periodic picker is open (data-ag-pp-open="1"), setRimLight must preserve 0fps sleep & skip repaint
+    doc.documentElement.setAttribute('data-ag-pp-open', '1');
+    rig.setRimLight({ active: true, localX: catCx, strength: 0.5, toneKey: 'iris', dark: true });
+    assert.equal(rig.getLayoutSnapshot().perf.canvasDraws, drawsLit, 'setRimLight must skip repaint while periodic picker is open');
+    assert.equal(rig.getLayoutSnapshot().perf.timerIntervalMs, 0, 'periodic picker open must preserve 0fps sleep');
+    doc.documentElement.removeAttribute('data-ag-pp-open');
 
     // Clearing rim light resets tintState cleanly and stays 0fps
     rig.setRimLight({ active: false });
