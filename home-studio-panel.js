@@ -45,6 +45,11 @@
       ['#C084FC', '#9333EA'], // 紫水晶
       ['#F472B6', '#DB2777'], // 亮粉紫
     ],
+    mistral: [
+      ['#FF7A1A', '#EA580C'], // 密斯特拉暖橘
+      ['#FFB82E', '#D97706'], // 阳光金黄
+      ['#FB923C', '#C2410C'], // 焦糖琥珀
+    ],
   };
   const MODEL_OVERFLOW_PALETTE = [
     ['#38BDF8', '#0284C7'],
@@ -69,6 +74,7 @@
     if (/claude|anthropic|opus|sonnet|haiku/.test(s)) return 'claude';
     if (/gpt|openai|codex|chatgpt|\bo[134](?:-|\b)/.test(s)) return 'gpt';
     if (/deepseek/.test(s)) return 'deepseek';
+    if (/mistral|mixtral|codestral|pixtral|ministral/.test(s)) return 'mistral';
     return 'other';
   };
   const hslToHex = (hDeg, sPct, lPct) => {

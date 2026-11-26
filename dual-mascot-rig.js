@@ -54,6 +54,7 @@
     'cat:1:#947fd6;s735eb5;o141413;ka89fc4;B6a8fd6;O947fd6;qb6a7e6;Qd9cff6|' +
     'dragon:1:#d7dfef;s95a1c2;o1e1936;Oc6cce6;qbfbde6;Qe2e1f7;Uedf1fc;Ta3a5d6;X818ab2|' +
     'whale:1:#4e6fff;s3450cf;o141413;O4e6fff;q86a2ff;Qc7d6ff;Ue5f0ff;Ta8cbff;X38bdf8|' +
+    'lechat:1:#ff7a1a;sd94e14;o141413;Off7a1a;qff9824;Qffe49e;Uffb82e;T241c19;X3d2b24|' +
     'cowboy:0:#d97757;sbf684c;o141413;H8b5e3c;Ra6744e;hrgba(20, 20, 19, 0.18)|' +
     'shades:0:#e0896b;sc16f53;o141413;G141413;g6d778a;wffffff;hrgba(20, 20, 19, 0.18)|' +
     'wizard:0:#8a74cf;s6a56aa;o141413;M5c4b9e;ye8b64a;bcfe3ee;hrgba(20, 20, 19, 0.18)'
@@ -101,10 +102,13 @@
     'w.body!stand=2,1:.10#./12#*4/##8U##/#10U#/.#8U#./..8T..;squash=1,3:..10s../.12#./14#*2/##10U##/.#10U#./..10T..;loaf=2,4:.10s./12#*2/##8U##/#10U#/.10T.;stretch=2,0:.s9#./12#*4/##8U##/#10U#/.#8U#./..8T..;flat=2,7:.10s./12#/#10U#;turnL=2,1:.9#s./11#s*4/#8U##s/10U#s/.8U#s./..8T..;turnR=~turnL;leanR=2,1:..10#/.12#*4/.##8U##/#10U#./.#8U#../..8T..;leanL=1,1:.10#../12#.*4/##8U##./.#10U#/..#8U#./..8T..;peek=2,2:.10#./12#*4/##8T##|' +
     'w.paws!none=0,6:.s/ss;flap=0,5:ss/.s;cheer=0,4:ss12.ss/.s12.s.;up=@cheer,0,2;upR=14,4:ss/.s;groom1=0,5:.s11.ss/ss11.ss;groom2=@groom1,0,4;write1=@groom1,0,5;write2=0,6:.s12.ss/ss12.ss;peekGrip=1,7:ss10.ss;tuck=1,7:s|' +
     'w.tail!up=13,1:..#..#/..4#/3.##./..3#./.3#../##s3.;sway=13,2:3.#..#/..4#./..3#../.3#3./##s4.;curl=13,3:..#.#./..3#./.3#../##s3.;loaf=13,5:..#.#./.3#../##s3.;puff=13,0:..#..#/..4#/..3#./.3#../3#3./##s3.|' +
-    'p!dragonFlame0=14,4:.f./YVf/.f.;dragonFlame1=14,3:..fF./.YVfF/VYYfF/.fF..;dragonFlame2=14,3:3.fF./.fYVfF/VYYfF./..fF..;whaleSpout0=5,-3:.B..B./..AA../..BA../..AA..;whaleSpout1=4,-5:.B4.B./B.A..A.B/..AB.BA./3.AA3./3.BA3./3.AA3.;whaleSpout2=3,-5:..B4.B../.A6.A./B3.BB3.B/4.AA4./.B..BA..B./4.AA4.;quill1=15,3:..B/.B./k..;quill2=@quill1,16,4;sheet=12,8:6c/ckk3c/6g;mug=13,4:..4D/3DbwD/D.DbbD/3DbbD/..4D;cloth1=13,2:cw../w3c/.cwc/..c.;cloth2=14,3:..cw/3cw/.cwc/..c.;bowl=12,7:5w/DBwBD/.3D.;bowlEmpty=12,8:D3gD/.3D.;chop1=12,4:3.n/..n./.n../n3.;chop2=12,3:3.n/..n./.n../w3.;fishDish=11,7:.PPsPP./7D/.5D.;fishBone=11,7:.M.M.M./7D/.5D.;envS=12,5:6d/ddwwdd/dwddwd/d4wd/6d;envSOpen=12,4:..dd../.dwwd./6d/d4wd*2/6d;letter=14,1:7d/d5cd/d3gccd/d5cd/d4gcd/d5cd/dggccrd/7d;seed=15,8,g:On/nO;p1=16,7,g:O/l*2;p2=16,6,g:O/l*3;p3=14,5,g:..O../..l../O.l.O/.3l./..l..;p4=14,3,g:..O../O.l.O/.3l./O.l.O/.3l./..l..*2;d1=13,0,g:3.O3./O5.O/.O3.O./7./O5.O/7.*2/3.O3.;d2=13,-2,g:.q3.q./3.q3./q5.q/7./.q3.q./7./3.q3.;wilt1=14,3,g:..q../q.l.q/.3l./q.l.q/.3l./..l..*2;wilt2=14,4,g:q4./.q.q./..ll./.q.l./..ll./..l..;wilt3=15,6,g:Q.Q/.l./Ql./.l.;bfUp=13,-4:B3.B/BB.BB/.BkB./..k..;bfDn=13,-4:5.*2/BBkBB/.BkB.;bfLeftUp=@bfUp,1,-5;bfLeftDn=@bfDn,1,-5;bfRest=7,-3:..B../.BB../..k..;stickUp=14,-9:WW/GG*6;stickLT=9,-9:5.tt/WG3.tt/.GG..tt/..GG.tt/3.GGtt/4.GGt/5.GG;stickRT=~stickLT,14,-9;sirenDim=5,-4:..LL../.4x.*2/6l;sirenL=5,-4:..Lx../.HLxx./.LLxx./6l;sirenF=5,-4:..HH../.LHHL./.4L./6l;sirenR=~sirenL;beamL=-1,-7:J5./.j4./..j3./6./J3j../6./.Jjj..;beamF=4,-7:J..JJ..J/.j.jj.j.;micStand=1,4,g:6.ZZ6./6.Zz6./6.ZZ6./6.Z7.*2/5.4Z5.;micSink1=1,6,g:6.ZZ6./6.Zz6./6.ZZ6./5.4Z5.;micSink2=1,8,g:6.ZZ6./5.4Z5.;smoke=6,-4:.m./mm./.mm/.m.;iceCrystal=5,-6:..av../.aavv./3a3v/.aavv./..av..;iceCrystalHi=@iceCrystal,5,-7;laser0=16,7,g:.p./pRp/.p.;laser1=18,8,g:.R./RpR;laser2=15,8,g:pRp/.R.;blueprint=12,2:7B/B4EBB/BE3BEB/B4EBB/BE3BEB/7B;headband=1,1:.12L.L/..10H..L;goalFlame0=4,-7,g:3.Y3./..fYf../.FfYfF./FfYVYfF;goalFlame1=4,-7,g:..Y4./.fYf..Y/FfYVYf./.FfYfF.;goggles=3,0:gAAg..gAAg/gEAg..gEAg;iceCrystalSpin=6,-7:.av./aavv*2/.av.;flag0=14,-6:l4A./lAAyA./l4A./l5.*4;flag1=14,-6:l..3A/lAAyAA/l3A../l5.*4;shadesProp=3,2:4Z..4Z/ZEZZ..ZEZZ;surfboard=1,8,g:..10A../.A10EA.;waveSplash0=-3,6,g:..E./E.A./.AA.;waveSplash1=-3,6,g:E3./.EA./AA..;cloudBig=12,2:..3w../.w3Ew./5wbw/.5b.;cloudMid=13,3:.3w./wEEbw/.3b.;cubeGlow=13,3:.y.y./A3EA/AEyEA/5A;hourglass0=13,1:5n/.byb./..y../.b.b./5n;hourglass1=13,1:5n/.b.b./..y../.byb./5n;pocketWatch=12,4:..y../.ywy./ywnwy/.3y.;micHand=13,2:.ZZ./ZwZZ/.gg./..g.*2;spotlight=5,-9:..VV../.VyyV./V.yy.V;book0=12,4:5B/B3wB/BwgwB/B3wB/5B;book1=12,4:BB.BB/BwBwB/BwgwB/BwBwB/BB.BB;bulbOff=5,-8:..gg../.g..g.*2/..cc..;bulbOn=5,-9:y.yy.y/.yVVy./y4Vy/..yy../..cc..;hotCup0=12,3:.m..m./m..m../5D./D3nDD/D3nD./.3D..;hotCup1=12,3:m..m../.m..m./5D./D3nDD/D3nD./.3D..;donut0=12,4:.3p./pywpp/pp.pn/5n/.3n.;donut1=12,4:.pp../pyw../pp.pn/5n/.3n.;habCactus=0,0,g:3.P3./..lGl../l.lGl../lGlGl.l/..lGlGl/.5n./..3n..;habLamp=0,0,g:..3l../.l3Vl./.l3Yl./..3l../3.z3.*4/..3z..;habHourglass=0,0,g:.5n./..byb../3.y3./..byb../.5n.|s!heart=5,-7:.r.r./5r/.3r./..r..;spark=5,-8:..y..*2/5y/..y..*2;z1=10,-6:4k/..k./.k../4k;z2=12,-9:3k/.k./3k;vein=5,-7:.r.r./rr.rr/5./rr.rr/.r.r.;bang=6,-8:.r.*3/3./.r.;q=5,-9:.3k./k3.k/3.k./..k../5./..k..;note=5,-8:..kk./..k.k/..k../3k../kk3.;sweat=13,-4:.B./BbB*2/.B.;tilde=5,-7:.k3./k.k.k/3.k.;dozeZ0=@z2,12,-3;dozeZ1=@z1,13,-7;dozeZ2=14,-12:5k/3.k./..k../.k3./5k;fireSpark0=5,-8:..Y../f3.V/..f..;fireSpark1=5,-9:.V..f/..Y../f4.;fireSpark2=5,-8:f..Y./4.V/.f3.;sleepBubble0=12,4:.b./bEb/.b.;sleepBubble1=12,3:.bb./bEwb/bEEb/.bb.|m!cowboy=0,-2:5.6H5./3.10H3./..12R../..12#../..##o6#o##../16#/..12#../3.#.#4.#.#3.;shades=0,0:..12#../..4Gg##g4G../..12G../16#/..12#../3.#.#4.#.#3.;wizard=0,-3:7.MM7./6.MyMM6./5.6M5./..12M../..12#../..##o6#o##../16#/..12#../3.#.#4.#.#3.|ma.cowboy!trick=0,-2:4.6H6./..10H4./.12R3./..12#../..##o6#o##../16#/..12#../..#..#4.#..#..|ma.shades!trick=0,0:..12#../..GwGGw##GwGGw../..12G../16#/..12#../3.#.#4.#.#3.|ma.wizard!trick=0,-3:5.y10./4.yMyMM7./5.6M5./..12M../..12#../..##o6#o##../16#/..12#y./3.#.#4.#.#.y.';
+    'l.ears!stand=2,-1:T10.T/#U8.U#;nod=@stand,2,0;loaf=@stand,2,2;airplane=0,0:TT12.TT/T#U10.U#T;peek=@stand,2,1;flat=1,6:T12.T;twitchL=2,-1:11.T/#U8.U#;twitchR=~twitchL|' +
+    'l.body!stand=2,1:2#2Us2Us2U2#/12#*2/s10#s/4#4U4#/2s2#4U2#2s/12#;loaf=1,4:.2#2U4s2U2#./14#/s12#s/5#4U5#/2s3#4U3#2s/14#;squash=1,2:.2#2U4s2U2#./14#*2/s12#s/5#4U5#/2s3#4U3#2s/14#;stretch=2,0:s2#2Us2Us2U#/12#*2/.s9#s/.3#4U3#/..2s#4U#2s/12#*2;flat=2,7:2#2U4s2U2#/s10#s/4#4U4#;turnL=2,1:2#2Us2Us2U#s/11#s*2/s10#s/3#4U3#s/2s#4U2#2s/11#s;turnR=~turnL;leanR=2,1:.2#2Us2Us2U2#/.12#*2/.s10#s/4#4U4#./2s2#4U2#2s./12#.;leanL=~leanR;peek=2,2:2#2Us2Us2U2#/12#/s10#s/4#4U4#/2s2#4U2#2s/12#|' +
+    'l.tail!up=14,3:.T/.#*2/s#;sway=14,3:.#*2/sT/#.;curl=14,4:#T/.#/s#;loaf=14,6:.#T/s#;puff=14,2:.T/##/s#/##/#.|' +
+    'p!dragonFlame0=14,4:.f./YVf/.f.;dragonFlame1=14,3:..fF./.YVfF/VYYfF/.fF..;dragonFlame2=14,3:3.fF./.fYVfF/VYYfF./..fF..;whaleSpout0=5,-3:.B..B./..AA../..BA../..AA..;whaleSpout1=4,-5:.B4.B./B.A..A.B/..AB.BA./3.AA3./3.BA3./3.AA3.;whaleSpout2=3,-5:..B4.B../.A6.A./B3.BB3.B/4.AA4./.B..BA..B./4.AA4.;croissant0=11,4:.f3Yf./fY3VYf/fn.n.nf;croissant1=11,4:..2Yf./.Y2VYf/..n..nf;breeze0=12,1:..2YV./3.fY./.2Yf../4.YV/..f2Y.;breeze1=12,0:.f2YV./4.Yf/..2YV./.fY3./3.2Yf;breeze2=12,1:2.2YV./.fY3./3.2Yf/..YV2./.2fY..;cafeCup0=13,0:.m..m./m..m../.4w./w3nww/.4w.;cafeCup1=13,0:m..m../.m..m./.4w./w3nww/.4w.;cafeBook0=11,5:5B/B3wB/BwgwB/5B;cafeBook1=11,5:BB.BB/BwBwB/BwgwB/BB.BB;quill1=15,3:..B/.B./k..;quill2=@quill1,16,4;sheet=12,8:6c/ckk3c/6g;mug=13,4:..4D/3DbwD/D.DbbD/3DbbD/..4D;cloth1=13,2:cw../w3c/.cwc/..c.;cloth2=14,3:..cw/3cw/.cwc/..c.;bowl=12,7:5w/DBwBD/.3D.;bowlEmpty=12,8:D3gD/.3D.;chop1=12,4:3.n/..n./.n../n3.;chop2=12,3:3.n/..n./.n../w3.;fishDish=11,7:.PPsPP./7D/.5D.;fishBone=11,7:.M.M.M./7D/.5D.;envS=12,5:6d/ddwwdd/dwddwd/d4wd/6d;envSOpen=12,4:..dd../.dwwd./6d/d4wd*2/6d;letter=14,1:7d/d5cd/d3gccd/d5cd/d4gcd/d5cd/dggccrd/7d;seed=15,8,g:On/nO;p1=16,7,g:O/l*2;p2=16,6,g:O/l*3;p3=14,5,g:..O../..l../O.l.O/.3l./..l..;p4=14,3,g:..O../O.l.O/.3l./O.l.O/.3l./..l..*2;d1=13,0,g:3.O3./O5.O/.O3.O./7./O5.O/7.*2/3.O3.;d2=13,-2,g:.q3.q./3.q3./q5.q/7./.q3.q./7./3.q3.;wilt1=14,3,g:..q../q.l.q/.3l./q.l.q/.3l./..l..*2;wilt2=14,4,g:q4./.q.q./..ll./.q.l./..ll./..l..;wilt3=15,6,g:Q.Q/.l./Ql./.l.;bfUp=13,-4:B3.B/BB.BB/.BkB./..k..;bfDn=13,-4:5.*2/BBkBB/.BkB.;bfLeftUp=@bfUp,1,-5;bfLeftDn=@bfDn,1,-5;bfRest=7,-3:..B../.BB../..k..;stickUp=14,-9:WW/GG*6;stickLT=9,-9:5.tt/WG3.tt/.GG..tt/..GG.tt/3.GGtt/4.GGt/5.GG;stickRT=~stickLT,14,-9;sirenDim=5,-4:..LL../.4x.*2/6l;sirenL=5,-4:..Lx../.HLxx./.LLxx./6l;sirenF=5,-4:..HH../.LHHL./.4L./6l;sirenR=~sirenL;beamL=-1,-7:J5./.j4./..j3./6./J3j../6./.Jjj..;beamF=4,-7:J..JJ..J/.j.jj.j.;micStand=1,4,g:6.ZZ6./6.Zz6./6.ZZ6./6.Z7.*2/5.4Z5.;micSink1=1,6,g:6.ZZ6./6.Zz6./6.ZZ6./5.4Z5.;micSink2=1,8,g:6.ZZ6./5.4Z5.;smoke=6,-4:.m./mm./.mm/.m.;iceCrystal=5,-6:..av../.aavv./3a3v/.aavv./..av..;iceCrystalHi=@iceCrystal,5,-7;laser0=16,7,g:.p./pRp/.p.;laser1=18,8,g:.R./RpR;laser2=15,8,g:pRp/.R.;blueprint=12,2:7B/B4EBB/BE3BEB/B4EBB/BE3BEB/7B;headband=1,1:.12L.L/..10H..L;goalFlame0=4,-7,g:3.Y3./..fYf../.FfYfF./FfYVYfF;goalFlame1=4,-7,g:..Y4./.fYf..Y/FfYVYf./.FfYfF.;goggles=3,0:gAAg..gAAg/gEAg..gEAg;iceCrystalSpin=6,-7:.av./aavv*2/.av.;flag0=14,-6:l4A./lAAyA./l4A./l5.*4;flag1=14,-6:l..3A/lAAyAA/l3A../l5.*4;shadesProp=3,2:4Z..4Z/ZEZZ..ZEZZ;surfboard=1,8,g:..10A../.A10EA.;waveSplash0=-3,6,g:..E./E.A./.AA.;waveSplash1=-3,6,g:E3./.EA./AA..;cloudBig=12,2:..3w../.w3Ew./5wbw/.5b.;cloudMid=13,3:.3w./wEEbw/.3b.;cubeGlow=13,3:.y.y./A3EA/AEyEA/5A;hourglass0=13,1:5n/.byb./..y../.b.b./5n;hourglass1=13,1:5n/.b.b./..y../.byb./5n;pocketWatch=12,4:..y../.ywy./ywnwy/.3y.;micHand=13,2:.ZZ./ZwZZ/.gg./..g.*2;spotlight=5,-9:..VV../.VyyV./V.yy.V;book0=12,4:5B/B3wB/BwgwB/B3wB/5B;book1=12,4:BB.BB/BwBwB/BwgwB/BwBwB/BB.BB;bulbOff=5,-8:..gg../.g..g.*2/..cc..;bulbOn=5,-9:y.yy.y/.yVVy./y4Vy/..yy../..cc..;hotCup0=12,3:.m..m./m..m../5D./D3nDD/D3nD./.3D..;hotCup1=12,3:m..m../.m..m./5D./D3nDD/D3nD./.3D..;donut0=12,4:.3p./pywpp/pp.pn/5n/.3n.;donut1=12,4:.pp../pyw../pp.pn/5n/.3n.;habCactus=0,0,g:3.P3./..lGl../l.lGl../lGlGl.l/..lGlGl/.5n./..3n..;habLamp=0,0,g:..3l../.l3Vl./.l3Yl./..3l../3.z3.*4/..3z..;habHourglass=0,0,g:.5n./..byb../3.y3./..byb../.5n.|s!heart=5,-7:.r.r./5r/.3r./..r..;spark=5,-8:..y..*2/5y/..y..*2;z1=10,-6:4k/..k./.k../4k;z2=12,-9:3k/.k./3k;vein=5,-7:.r.r./rr.rr/5./rr.rr/.r.r.;bang=6,-8:.r.*3/3./.r.;q=5,-9:.3k./k3.k/3.k./..k../5./..k..;note=5,-8:..kk./..k.k/..k../3k../kk3.;sweat=13,-4:.B./BbB*2/.B.;tilde=5,-7:.k3./k.k.k/3.k.;dozeZ0=@z2,12,-3;dozeZ1=@z1,13,-7;dozeZ2=14,-12:5k/3.k./..k../.k3./5k;fireSpark0=5,-8:..Y../f3.V/..f..;fireSpark1=5,-9:.V..f/..Y../f4.;fireSpark2=5,-8:f..Y./4.V/.f3.;sleepBubble0=12,4:.b./bEb/.b.;sleepBubble1=12,3:.bb./bEwb/bEEb/.bb.|m!cowboy=0,-2:5.6H5./3.10H3./..12R../..12#../..##o6#o##../16#/..12#../3.#.#4.#.#3.;shades=0,0:..12#../..4Gg##g4G../..12G../16#/..12#../3.#.#4.#.#3.;wizard=0,-3:7.MM7./6.MyMM6./5.6M5./..12M../..12#../..##o6#o##../16#/..12#../3.#.#4.#.#3.|ma.cowboy!trick=0,-2:4.6H6./..10H4./.12R3./..12#../..##o6#o##../16#/..12#../..#..#4.#..#..|ma.shades!trick=0,0:..12#../..GwGGw##GwGGw../..12G../16#/..12#../3.#.#4.#.#3.|ma.wizard!trick=0,-3:5.y10./4.yMyMM7./5.6M5./..12M../..12#../..##o6#o##../16#/..12#y./3.#.#4.#.#.y.';
 
   function decodeSpriteAtlas(raw) {
-    const out = { c: {}, k: {}, d: {}, w: {}, p: {}, s: {}, m: {}, ma: {} };
+    const out = { c: {}, k: {}, d: {}, w: {}, l: {}, p: {}, s: {}, m: {}, ma: {} };
     for (const sec of raw.split('|')) {
       const bi = sec.indexOf('!');
       const pk = sec.slice(0, bi).split('.');
@@ -168,6 +172,14 @@
       loafHalf: { ...CAT_PARTS.eyes.loafHalf, oy: 5 },
     },
     mouth: CLAWD_PARTS.mouth,
+  };
+  const LECHAT_PARTS = {
+    shadow: CLAWD_PARTS.shadow,
+    ..._A.l,
+    paws: CAT_PARTS.paws,
+    eyes: CAT_PARTS.eyes,
+    mouth: CLAWD_PARTS.mouth,
+    legs: CLAWD_PARTS.legs,
   };
   const PROPS = _A.p;
   const SYMS = _A.s;
@@ -616,7 +628,7 @@
   const SLOW_TAIL_POSES = new Set(['idle', 'lookNod', 'readAlong', 'gaze']);
   // 冰晶让位：头顶已有道具的姿态不挂冰晶；居中符号出现时冰晶暂隐，仅侧边汗滴与打盹 z 可共存
   const CRYSTAL_HIDE_POSES = new Set([
-    'siren', 'onFire', 'cheerSticks', 'peek', 'flat', 'rickroll', 'carry', 'whaleSpout',
+    'siren', 'onFire', 'cheerSticks', 'peek', 'flat', 'rickroll', 'carry', 'whaleSpout', 'eatCroissant', 'mistralBreeze', 'mistralCafe',
     'slashGoal', 'slashBoost', 'slashSchedule', 'slashGrill', 'slashLearnBulb',
   ]);
   const CRYSTAL_OK_SYMS = new Set([SYMS.sweat, SYMS.z1, SYMS.z2, SYMS.dozeZ0, SYMS.dozeZ1, SYMS.dozeZ2, SYMS.sleepBubble0, SYMS.sleepBubble1]);
@@ -658,6 +670,9 @@
     'catStretch:S:a=loaf/nod~18-,S:b=loaf/stretch~18-,S:e=loafHalf/shut~18-,S:l=~/~18-,S:t=loaf/up~18-,S:Y=z1/tilde~18-|' +
     'dragonFlame:b=turnR,e=happy/happy/happy/happy/squint/squint~l,m=small,1=dragonFlame0/dragonFlame1/dragonFlame2~l,y=fireSpark0/fireSpark1/fireSpark2~l,K:a=airplane,K:w=up/cheer~c,K:t=puff,C:L=up,C:R=front|' +
     'whaleSpout:b=squash/stand~c,N:l=crouch/stand~c,W:l=~,e=happy,1=whaleSpout0/whaleSpout1/whaleSpout2~l,K:a=nod/stand~c,K:w=cheer/up~c,K:t=puff,C:L=up,C:R=up|' +
+    'eatCroissant:b=squash/stand~c,b=stand/~18-,N:l=crouch/stand~c,N:l=stand/~18-,W:l=~,e=half/open~c,e=happy/~18-,1=croissant1/croissant0~8-18,1=~/~18-,Y=heart/~18-,K:a=nod/stand~18-,K:w=write1/write2~c,K:w=cheer/~18-,K:t=sway/puff~18-,C:R=front|' +
+    'mistralBreeze:b=leanR/stand~c,N:l=crouch/stand~c,W:l=~,e=happy,1=breeze0/breeze1/breeze2~l,y=spark,K:a=airplane/stand~c,K:w=up/cheer~c,K:t=puff/up~c,C:L=up,C:R=up|' +
+    'mistralCafe:b=turnR,e=half/open~c,e=happy/~16-,1=cafeBook0/cafeBook1~c,2=cafeCup0/cafeCup1~c,y=tilde/note~c,K:a=nod,K:w=write1/write2~c,K:t=curl/sway~c,C:R=front|' +
     'letter:b=turnR,e=open,e=half/~10-19,e=happy/~19-,1=envS/letter~0-6,1=envSOpen/~6-11,Y=heart/~19-,K:a=nod|' +
     'rickroll:b=leanR/squash/leanL/stand~4,e=happy/open~c,1=micStand/micSink1~0-31,1=micSink2/~34-,y=note,K:a=stand/nod~c,K:w=cheer,C:L=up/stub~c,C:R=stub/up~c|' +
     'readAlong:e=open/open/half/half~l,e=open/~0-2,e=open/~14-,z=0/0/1/1~l,z=0/~0-2,z=0/~14-,N:l=stand/stand/crouch/crouch~l,N:l=stand/~0-2,N:l=stand/~14-,C:y=note|' +
@@ -815,11 +830,12 @@
         clipTick: first ? lt : lt - YAWN_STRETCH_SPLIT,
       });
     }
-    const isCat = kind === 'cat';
+    const isLechat = kind === 'lechat';
+    const isCat = kind === 'cat' || isLechat;
     const isDragon = kind === 'dragon';
     const isWhale = kind === 'whale';
     const isFelineRig = isCat || isDragon || isWhale;
-    const p = isCat ? CAT_PARTS : isDragon ? DRAGON_PARTS : isWhale ? WHALE_PARTS : CLAWD_PARTS;
+    const p = isLechat ? LECHAT_PARTS : kind === 'cat' ? CAT_PARTS : isDragon ? DRAGON_PARTS : isWhale ? WHALE_PARTS : CLAWD_PARTS;
     const frameMod = tickIdx % 2;
     const phase4 = tickIdx % 4;
     const sym = opts.sym ? SYMS[opts.sym] : null;
@@ -1233,27 +1249,27 @@
     return 'greetTurn';
   }
 
-  // ── 自由点选桌宠阵容编解码（向后兼容 5 预设 + dual 别名，单物种纯开关 0/1，主宠总数 <= 4，旧多数量自动夹紧）──
-  const MASCOT_SPECIES_ORDER = ['c', 'k', 'd', 'w'];
+  // ── 自由点选桌宠阵容编解码（向后兼容 5 预设 + dual 别名，单物种纯开关 0/1，主宠总数 <= 5，旧多数量自动夹紧）──
+  const MASCOT_SPECIES_ORDER = ['c', 'k', 'd', 'w', 'l'];
   const MASCOT_MAX_PER_SPECIES = 1;
-  const MASCOT_MAX_TOTAL = 4;
+  const MASCOT_MAX_TOTAL = 5;
   const MASCOT_PRESET_MAP = {
-    off: { c: 0, k: 0, d: 0, w: 0, minis: false },
-    crab: { c: 1, k: 1, d: 0, w: 0, minis: false },
-    dual: { c: 1, k: 1, d: 0, w: 0, minis: false },
-    minis: { c: 1, k: 1, d: 0, w: 0, minis: true },
-    quad: { c: 1, k: 1, d: 1, w: 1, minis: false },
-    'quad-minis': { c: 1, k: 1, d: 1, w: 1, minis: true },
+    off: { c: 0, k: 0, d: 0, w: 0, l: 0, minis: false },
+    crab: { c: 1, k: 1, d: 0, w: 0, l: 0, minis: false },
+    dual: { c: 1, k: 1, d: 0, w: 0, l: 0, minis: false },
+    minis: { c: 1, k: 1, d: 0, w: 0, l: 0, minis: true },
+    quad: { c: 1, k: 1, d: 1, w: 1, l: 0, minis: false },
+    'quad-minis': { c: 1, k: 1, d: 1, w: 1, l: 0, minis: true },
   };
 
   function parseMascotSpec(raw) {
-    if (raw === false) return { c: 0, k: 0, d: 0, w: 0, minis: false };
+    if (raw === false) return { c: 0, k: 0, d: 0, w: 0, l: 0, minis: false };
     if (typeof raw !== 'string') return null;
     if (hasOwn(MASCOT_PRESET_MAP, raw)) return { ...MASCOT_PRESET_MAP[raw] };
     if (!raw.startsWith('r:') || raw.length <= 2) return null;
-    const m = /^r:(?:([ckdw][0-4](?:,[ckdw][0-4])*)?(\+m)?)$/.exec(raw);
+    const m = /^r:(?:([ckdwl][0-4](?:,[ckdwl][0-4])*)?(\+m)?)$/.exec(raw);
     if (!m) return null;
-    const out = { c: 0, k: 0, d: 0, w: 0, minis: Boolean(m[2]) };
+    const out = { c: 0, k: 0, d: 0, w: 0, l: 0, minis: Boolean(m[2]) };
     const seen = new Set();
     let rawTotal = 0;
     let total = 0;
@@ -1275,7 +1291,7 @@
 
   function encodeMascotSpec(spec) {
     const src = spec && typeof spec === 'object' ? spec : {};
-    const counts = { c: 0, k: 0, d: 0, w: 0 };
+    const counts = { c: 0, k: 0, d: 0, w: 0, l: 0 };
     let rem = MASCOT_MAX_TOTAL;
     for (const sp of MASCOT_SPECIES_ORDER) {
       const n = clamp(Number(src[sp]) > 0 ? 1 : 0, 0, min(MASCOT_MAX_PER_SPECIES, rem));
@@ -1283,10 +1299,10 @@
       rem -= n;
     }
     const minis = Boolean(src.minis);
-    const total = counts.c + counts.k + counts.d + counts.w;
+    const total = counts.c + counts.k + counts.d + counts.w + counts.l;
     if (total === 0 && !minis) return 'off';
-    if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0) return minis ? 'minis' : 'crab';
-    if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1) return minis ? 'quad-minis' : 'quad';
+    if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0 && counts.l === 0) return minis ? 'minis' : 'crab';
+    if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1 && counts.l === 0) return minis ? 'quad-minis' : 'quad';
     const parts = [];
     for (const sp of MASCOT_SPECIES_ORDER) {
       if (counts[sp] > 0) parts.push(sp + counts[sp]);
@@ -1407,12 +1423,13 @@
       return a;
     };
 
-    // 物种挂载顺序保持 k(cat) -> c(clawd) -> d(dragon) -> w(whale)，100% 兼容原有 ['cat','clawd'] / ['cat','clawd','dragon','whale'] 断言
+    // 物种挂载顺序保持 k(cat) -> c(clawd) -> d(dragon) -> w(whale) -> l(lechat)，100% 兼容原有断言
     const SPECIES_DEF = [
       { key: 'k', kind: 'cat', label: 'Gemini Cat', basePhase: 14 },
       { key: 'c', kind: 'clawd', label: 'Claude Clawd', basePhase: 0 },
       { key: 'd', kind: 'dragon', label: 'GPT Dragon', basePhase: 23 },
       { key: 'w', kind: 'whale', label: 'DeepSeek Whale', basePhase: 31 },
+      { key: 'l', kind: 'lechat', label: 'Mistral Le Chat', basePhase: 39 },
     ];
     const buildRosterSpecs = (r) => {
       const specs = [];
@@ -1423,7 +1440,7 @@
           kind: sd.kind,
           label: sd.label,
           phaseTicks: sd.basePhase,
-          phaseOff: specs.length * 4 + (sd.key === 'k' ? 4 : sd.key === 'd' ? 7 : sd.key === 'w' ? 10 : 0),
+          phaseOff: specs.length * 4 + (sd.key === 'k' ? 4 : sd.key === 'd' ? 7 : sd.key === 'w' ? 10 : sd.key === 'l' ? 13 : 0),
         });
       }
       return specs;
@@ -1434,7 +1451,7 @@
         if (parsed) return parsed;
       }
       const q = !!opts.quadEnabled;
-      return { c: 1, k: 1, d: q ? 1 : 0, w: q ? 1 : 0, minis: !!opts.miniPileEnabled };
+      return { c: 1, k: 1, d: q ? 1 : 0, w: q ? 1 : 0, l: 0, minis: !!opts.miniPileEnabled };
     };
     let roster = resolveInitialRoster(options);
     let mascotSpec = encodeMascotSpec(roster);
@@ -1496,12 +1513,12 @@
       }
     };
 
-    const normalizeCamp = (c) => (c === 'claude' || c === 'gemini' || c === 'gpt' || c === 'deepseek' ? c : 'gemini');
+    const normalizeCamp = (c) => (c === 'claude' || c === 'gemini' || c === 'gpt' || c === 'deepseek' || c === 'mistral' ? c : 'gemini');
     let camp = normalizeCamp(options.camp);
-    let quadEnabled = roster.d > 0 || roster.w > 0;
+    let quadEnabled = roster.d > 0 || roster.w > 0 || roster.l > 0;
     const activeMainIds = () => activeIds;
     const activeMainActors = () => activeIds.map((id) => actors[id]).filter(Boolean);
-    const CAMP_TO_KIND = { claude: 'clawd', gemini: 'cat', gpt: 'dragon', deepseek: 'whale' };
+    const CAMP_TO_KIND = { claude: 'clawd', gemini: 'cat', gpt: 'dragon', deepseek: 'whale', mistral: 'lechat' };
     const campActors = (targetCamp = camp) => {
       const k = CAMP_TO_KIND[targetCamp] || 'cat';
       return activeMainActors().filter((a) => a.kind === k);
@@ -2222,7 +2239,7 @@
       const safeRight = popoverRightWidth > 0 ? max(185, w - popoverRightWidth - 18) : w - 12;
       const leaderX = clampActorX(safeRight - 82);
       if (n === 1) return { [mains[0].id]: leaderX };
-      if (n === 2 && roster.c === 1 && roster.k === 1 && !roster.d && !roster.w) {
+      if (n === 2 && roster.c === 1 && roster.k === 1 && !roster.d && !roster.w && !roster.l) {
         const partnerX = clampActorX(leaderX - 66);
         return camp === 'claude' ? { clawd: leaderX, cat: partnerX } : { cat: leaderX, clawd: partnerX };
       }
@@ -2311,10 +2328,10 @@
       const isWorker = isWorkingActor(actor);
       if (hasError && isWorker) return 'angry';
       if (streaming) {
-        return isWorker ? 'write' : actor.kind === 'cat' || actor.kind === 'whale' ? 'loaf' : 'sleep';
+        return isWorker ? 'write' : actor.kind === 'cat' || actor.kind === 'lechat' || actor.kind === 'whale' ? 'loaf' : 'sleep';
       }
       if (dozing) return 'sleep';
-      if (!isWorker && (actor.kind === 'cat' || actor.kind === 'whale') && floor(now / 9000) % 2 === 1) return 'loaf';
+      if (!isWorker && (actor.kind === 'cat' || actor.kind === 'lechat' || actor.kind === 'whale') && floor(now / 9000) % 2 === 1) return 'loaf';
       return actor.pose || 'idle';
     };
 
@@ -2461,7 +2478,7 @@
       }
       const brk = tickIdx - a.breathTick;
       fx.breath = brk >= 0 && brk < 2;
-      if (a.kind === 'cat' || a.kind === 'dragon' || a.kind === 'whale') {
+      if (a.kind === 'cat' || a.kind === 'lechat' || a.kind === 'dragon' || a.kind === 'whale') {
         // 耳尖抖动 / 龙角闪光 / 鲸尾拍浪：6~10s 一次，1~2 拍
         if (tickIdx >= a.nextTwitchTick) {
           a.twitchTick = tickIdx;
@@ -3325,12 +3342,14 @@
         const firstPose =
           actor.kind === 'cat' && random() < 0.45
             ? 'groom'
-            : actor.kind === 'dragon' && random() < 0.55
-              ? 'dragonFlame'
-              : actor.kind === 'whale' && random() < 0.55
-                ? 'whaleSpout'
-                : 'happy';
-        startClip(actor, firstPose, firstPose === 'dragonFlame' || firstPose === 'whaleSpout' ? 1400 : 750, { sym: 'spark' });
+            : actor.kind === 'lechat' && random() < 0.65
+              ? (random() < 0.6 ? 'eatCroissant' : 'mistralBreeze')
+              : actor.kind === 'dragon' && random() < 0.55
+                ? 'dragonFlame'
+                : actor.kind === 'whale' && random() < 0.55
+                  ? 'whaleSpout'
+                  : 'happy';
+        startClip(actor, firstPose, firstPose === 'dragonFlame' || firstPose === 'whaleSpout' || firstPose === 'eatCroissant' || firstPose === 'mistralBreeze' ? 1400 : 750, { sym: firstPose === 'eatCroissant' ? 'heart' : 'spark' });
         if (fromPointer && !inTower) startBallistic(actor, 0, -4.4, { anticipate: true });
       } else if (actor.pokeCount === 2) {
         // 作废第 1 击可能挂起的 200ms 延迟弹射，防止 jiggle 被滞后弹飞打断
@@ -3358,10 +3377,11 @@
       cat: [...'groom,eatFish,chaseDot,catStretch,yawnStretch'.split(','), ...DAILY_BASE],
       dragon: [...'dragonFlame,polish,eat,stretch,spinHop,wave,yawn'.split(','), ...DAILY_BASE],
       whale: [...'whaleSpout,eatFish,spinHop,wave,yawn'.split(','), ...DAILY_BASE],
+      lechat: [...'eatCroissant,mistralBreeze,mistralCafe,groom,chaseDot,catStretch,yawnStretch'.split(','), ...DAILY_BASE],
     };
-    const DAILY_WEIGHTS = { wave: 1.3, yawn: 0.6, yawnStretch: 1.1, dragonFlame: 2.2, whaleSpout: 2.2 };
-    const NIGHT_BOOST = new Set(['yawn', 'yawnStretch', 'stretch', 'catStretch']);
-    const CLIP_MS = { wave: 1500, yawn: 1300, yawnStretch: 2200, dragonFlame: 2400, whaleSpout: 2400 };
+    const DAILY_WEIGHTS = { wave: 1.3, yawn: 0.6, yawnStretch: 1.1, dragonFlame: 2.2, whaleSpout: 2.2, eatCroissant: 2.4, mistralBreeze: 2.0, mistralCafe: 1.8 };
+    const NIGHT_BOOST = new Set(['yawn', 'yawnStretch', 'stretch', 'catStretch', 'mistralCafe']);
+    const CLIP_MS = { wave: 1500, yawn: 1300, yawnStretch: 2200, dragonFlame: 2400, whaleSpout: 2400, eatCroissant: 2400, mistralBreeze: 2400, mistralCafe: 2600 };
     const isLateNight = () => {
       const h = new Date().getHours();
       return h >= 23 || h < 5;
@@ -3421,9 +3441,11 @@
               ? [0, a.id, 'dragonFlame', 2200, { sym: 'spark' }]
               : a.kind === 'whale'
                 ? [0, a.id, 'whaleSpout', 2200, { sym: 'heart' }]
-                : a.kind === 'cat'
-                  ? [0, a.id, 'chatGreet', 2400, { mirror: true, sym: 'note' }]
-                  : [0, a.id, 'chatGreet', 2400, { sym: 'heart' }]
+                : a.kind === 'lechat'
+                  ? [0, a.id, 'eatCroissant', 2200, { sym: 'heart' }]
+                  : a.kind === 'cat'
+                    ? [0, a.id, 'chatGreet', 2400, { mirror: true, sym: 'note' }]
+                    : [0, a.id, 'chatGreet', 2400, { sym: 'heart' }]
           ),
           [0, 'crabsWave'],
         ],
@@ -4712,7 +4734,7 @@
         for (const p of partners) startClip(p, 'wow', 2200, { sym: 'spark' });
       },
       compact() {
-        for (const a of activeMainActors()) startClip(a, 'slashCompact', 2800, a.kind === 'cat' || a.kind === 'whale' ? { mirror: true } : {});
+        for (const a of activeMainActors()) startClip(a, 'slashCompact', 2800, a.kind === 'cat' || a.kind === 'lechat' || a.kind === 'whale' ? { mirror: true } : {});
       },
       schedule(workers, partners, fP) {
         scheduleWatchUntil = Date.now() + 18e5;
@@ -4725,7 +4747,7 @@
         for (const p of partners) startClip(p, 'lookNod', 2400, { face: fP(p), param: 4 });
       },
       learn() {
-        for (const a of activeMainActors()) startClip(a, a.kind === 'cat' || a.kind === 'dragon' ? 'slashLearnBook' : 'slashLearnBulb', 2600);
+        for (const a of activeMainActors()) startClip(a, a.kind === 'lechat' ? 'mistralCafe' : a.kind === 'cat' || a.kind === 'dragon' ? 'slashLearnBook' : 'slashLearnBulb', 2600);
       },
     };
     const runSlashTheater = (rawCmd) => {
@@ -4795,6 +4817,7 @@
         for (const a of mains) {
           if (a.kind === 'dragon') startClip(a, 'dragonFlame', 2000, { sym: 'spark' });
           else if (a.kind === 'whale') startClip(a, 'whaleSpout', 2000, { sym: 'heart' });
+          else if (a.kind === 'lechat') startClip(a, 'eatCroissant', 2000, { sym: 'heart' });
           else if (a.kind === 'cat') startClip(a, 'happy', 2000, { face: clawd ? faceToward(a, clawd) : 'left', sym: 'spark' });
           else startClip(a, 'happy', 2000, { face: cat ? faceToward(a, cat) : 'right', sym: 'heart' });
         }
@@ -4853,7 +4876,7 @@
         for (const a of activeMainActors()) {
           const dir = x < a.x + 48 ? 'left' : 'right';
           gaze(a, dir, 700);
-          if (a.kind === 'cat' || a.kind === 'dragon') {
+          if (a.kind === 'cat' || a.kind === 'lechat' || a.kind === 'dragon') {
             a.forceTwitchStart = tickIdx;
             a.forceTwitchSide = dir === 'left' ? 'L' : 'R';
           }
@@ -5113,8 +5136,8 @@
           campSwitch: () => {
             markActivity();
             const prevC = camp;
-            const presentCamps = ['claude', 'gemini', 'gpt', 'deepseek'].filter((c) => campActors(c).length > 0);
-            const order = presentCamps.length >= 2 ? presentCamps : quadEnabled ? ['claude', 'gemini', 'gpt', 'deepseek'] : ['claude', 'gemini'];
+            const presentCamps = ['claude', 'gemini', 'gpt', 'deepseek', 'mistral'].filter((c) => campActors(c).length > 0);
+            const order = presentCamps.length >= 2 ? presentCamps : quadEnabled ? ['claude', 'gemini', 'gpt', 'deepseek', 'mistral'] : ['claude', 'gemini'];
             camp = order[(order.indexOf(camp) + 1) % order.length];
             lastHandoffAt = 0;
             campHandoff(prevC);
@@ -5433,6 +5456,7 @@
     CAT_PARTS,
     DRAGON_PARTS,
     WHALE_PARTS,
+    LECHAT_PARTS,
     MINI_SPRITES,
     MINI_ANIM_FRAMES,
     PROPS,

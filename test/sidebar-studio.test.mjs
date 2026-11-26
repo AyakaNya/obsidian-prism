@@ -3263,7 +3263,9 @@ test('v2 sidebar-client dynamically resolves plugin/MCP whitelists and honors Pu
   assert.equal(disc1.mcp.servers[0].$typeName, undefined);
   assert.equal(spec1.cascadeConfig.plannerConfig.toolConfig.mcp.forceDisable, false);
   assert.equal(spec1.cascadeConfig.plannerConfig.toolConfig.generateImage.forceDisable, true);
-  assert.ok(spec1.config.value.toolNames.includes('mcp_notes-mcp_search_notes'));
+  assert.equal(spec1.customizationConfig.mcpServers.length, 1);
+  assert.equal(spec1.customizationConfig.mcpServers[0].serverName, 'notes-mcp');
+  assert.ok(!spec1.config.value.toolNames.includes('call_mcp_tool'));
 
   // 2) 开启 Pure zeroTools 后强制清空白名单与 toolNames，并打开 forceDisableToolCalling
   activePolicy.pure.zeroTools = true;

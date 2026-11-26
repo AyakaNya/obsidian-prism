@@ -1,1 +1,471 @@
-{"version":1,"locale":"zh-CN","exact":{"Looking for this conversation's swarm…":"正在查找当前对话的蜂群…","Looking for this conversation's swarm...":"正在查找当前对话的蜂群…","Live":"实时","Reconnecting":"重连中","Updates automatically":"自动更新","Lost contact with the swarm sidecar; retrying":"与蜂群服务失联，正在重试","Swarm views":"蜂群视图","Overview":"概览","Board":"消息板","Members":"成员","Graph":"关系图","Raw":"原始数据","Untitled swarm":"未命名蜂群","No swarm in this conversation":"当前对话暂无蜂群","Watching for a swarm":"正在监听蜂群动态","Swarms started in this conversation appear here automatically, with their board, members and @mention graph. Start one with":"在当前对话中启动的蜂群会自动显示在这里，包含消息板、成员和 @提及关系图。启动命令：","Open this pane from a conversation to see its swarm. Swarms started there appear here automatically; start one with":"从对话中打开此面板即可查看对应的蜂群，启动后会自动显示。启动命令：","System alerts":"系统告警","overview · from the narrator’s notes":"概览 · 来自播报员笔记","overview · from the narrator's notes":"概览 · 来自播报员笔记","narrator's page · AI-generated":"播报员页面 · AI 生成","narrator’s page · AI-generated":"播报员页面 · AI 生成","Narrator’s page":"播报员页面","Narrator's page":"播报员页面","Retry narrator's page":"重试播报员页面","Retry narrator’s page":"重试播报员页面","Want this view different? Tell the coordinator.":"想调整此视图的展示方式？告诉协调者即可。","Open coordinator chat":"打开协调者对话","updating":"更新中","watching":"监听中","stopped":"已停止","stale":"待更新","The narrator is updating the overview":"播报员正在更新概览","The narrator is waiting for new board posts":"播报员正在等待新的消息板动态","The narrator was killed; the overview no longer updates":"播报员已停止，概览不再更新","paused: quota":"已暂停：配额不足","paused: error":"已暂停：发生错误","No narrator in this swarm. Ask the coordinator to add one.":"当前蜂群暂无播报员。可让协调者添加一位。","The narrator's view.json is over 64 KB, so it isn't shown.":"播报员的 view.json 超过 64 KB，因此未予显示。","The narrator's view.json isn't valid JSON yet.":"播报员的 view.json 尚不是有效的 JSON。","The narrator hasn't published an overview yet.":"播报员尚未发布概览。","Showing the last good view.json; the current file is over 64 KB.":"正在显示上一份有效的 view.json；当前文件已超过 64 KB。","Showing the last good view.json; the current file is not valid JSON.":"正在显示上一份有效的 view.json；当前文件不是有效的 JSON。","system:":"系统：","Open":"打开","That link isn't allowed here.":"此处不允许打开该链接。","Opening files needs the app.":"打开文件需要应用支持。","Click a link in the view to open it.":"点击视图中的链接以打开。","Search":"搜索","Search posts":"搜索消息","Filters":"筛选","Filters (active)":"筛选（已启用）","Channels":"频道","All":"全部","Posts in every channel":"全部频道的消息","main: the whole swarm reads it":"main：整个蜂群都会收到","Filter by poster":"按发送者筛选","Show posts by one member":"仅显示指定成员发送的消息","From anyone":"任意发送者","Filter by recipient":"按接收者筛选","Show posts that call on one member":"仅显示提及指定成员的消息","To anyone":"任意接收者","To no one":"未提及任何人","To @all":"发送给 @all","Filter by channel":"按频道筛选","Show posts in one channel":"仅显示指定频道的消息","All channels":"全部频道","all channels":"全部频道","Keep the newest post in view":"保持最新消息在视图中","Follow":"跟随","Show or hide each member's posts":"显示或隐藏各成员的消息","Latest":"最新","New":"新消息","Show more":"展开更多","Show less":"收起","No posts match":"没有匹配的消息","Try a different search or member filter.":"请尝试其他搜索关键词或成员筛选条件。","Clear filters":"清除筛选","No posts yet":"暂无消息","Posts to the swarm board will appear here as members talk.":"成员在消息板发言后，内容会自动显示在这里。","Not on the roster":"不在成员名册中","Replay":"回放","Jump to start":"跳至开头","Previous post (←)":"上一条消息 (←)","Previous post":"上一条消息","Play / pause replay (space)":"播放 / 暂停回放（空格）","Play replay":"播放回放","Pause replay":"暂停回放","Next post (→)":"下一条消息 (→)","Next post":"下一条消息","Replay position":"回放进度","Scrub through board posts":"拖动浏览消息板记录","Show everything and follow live":"显示全部内容并实时跟随","Graph view":"图视图","Hive":"蜂巢","Threads as cells, with each worker where it works":"以蜂巢单元展示线程及每位成员所在位置","Mentions":"提及图","Who @mentions whom":"谁 @提及 了谁","Hide killed and inactive members from the graph":"在图中隐藏已结束和未活跃成员","Hide inactive":"隐藏非活跃","Draw @all as an edge to every member":"将 @all 绘制为指向每位成员的连线","Expand @all":"展开 @all","Replay pacing":"回放节奏","Even pacing":"匀速回放","Real-time gaps":"真实时间间隔","Replay speed":"回放倍速","Export graph replay as an animated GIF":"将图谱回放导出为动态 GIF","Export GIF":"导出 GIF","Exporting…":"正在导出…","Nothing to export yet.":"暂无可导出的内容。","Could not download GIF from embedded pane.":"无法从内嵌面板直接下载 GIF。","Could not export GIF.":"导出 GIF 失败。","@mention, width = count":"@提及，线宽 = 次数","via @all":"通过 @all","posted with no mention":"未提及他人的发言","@all posts, drawn by Expand @all":"@all 广播，由「展开 @all」控制绘制","Close preview":"关闭预览","Close":"关闭","Exported swarm graph replay":"已导出的蜂群关系图回放","Right-click image to save, or open in a new tab.":"右键图片即可保存，或在新标签页中打开。","Open in new tab":"在新标签页打开","Zoom":"缩放","Zoom out":"缩小","Zoom in":"放大","Fit the whole swarm":"适配整个蜂群","Where each worker is, by thread":"按线程展示每位成员的所在位置","Tasks done":"已完成任务","Message just sent":"刚发出的消息","Waiting on":"正在等待","No one is on this thread yet.":"该线程暂无成员参与。","File":"文件","Copy to clipboard":"复制到剪贴板","Copy":"复制","Copied":"已复制","Copy failed":"复制失败","Active":"活跃中","Waiting":"等待中","Killed":"已结束","Working":"工作中","Retired":"已退出","Stuck":"受阻","Error":"异常","Standing by":"待命中","Resting":"休眠中","Team":"团队成员","Active: mid-turn (thinking, running a tool, or waiting on the model)":"活跃中：正在思考、执行工具或等待模型响应","Waiting: turn ended, asleep on the board until a post wakes it":"等待中：回合已结束，休眠等待新消息唤醒","Killed: removed from the swarm":"已结束：已从蜂群移除","The team":"团队成员","Coordinator":"协调者","Coordinator · Working":"协调者 · 工作中","Blocked":"已阻塞","Running":"进行中","Planned next":"后续计划","Done":"已完成","Goal":"目标","Threads":"线程","Now":"当前","Progress":"进度","Compare with now":"与当前对比","Hide compare":"隐藏对比","Open full timeline":"打开完整时间线","Nothing blocked":"无阻塞项","Needs you":"需要你介入","Waiting on @coordinator":"等待 @coordinator","Nothing waiting":"无等待项","Nothing stuck":"无受阻项","Nothing needs you":"暂无需要你处理的事项","Nothing running":"暂无进行中任务","Nothing planned":"暂无后续计划","Moving":"推进中","Not started":"未开始","In review":"评审中","Other":"其他","Tasks":"任务","tasks done":"项任务已完成","thread":"个线程","threads":"个线程","No tasks completed yet.":"尚未完成任何任务。","Swarm stalled — no agents working":"蜂群已停滞 — 当前无成员工作","Search members":"搜索成员","seen just now":"刚刚在线","All workers":"全部成员","Filter by worker":"按成员筛选","Compare then and now":"对比历史与当前画面","Scrub through progress":"拖动查看进度帧","Previous":"上一帧","Next":"下一帧","Frames":"进度帧列表","Your swarm is starting":"你的蜂群正在启动","One goal":"一个目标","The coordinator splits it into tasks.":"协调者会将目标拆分为多项任务。","Many workers":"多位协作者","Each takes a task, and they run in parallel.":"各自认领任务并并行推进。","One board":"同一块消息板","Updates land here. You step in only when asked.":"进展都会汇总于此，仅在需要时请你介入。","Waiting for the first update":"等待首条进展更新","done":"已完成","queued":"排队中","running":"进行中","blocked":"已阻塞"},"patterns":[{"regex":"^(\\d+) of (\\d+) tasks done$","replacement":"$1 / $2 项任务已完成"},{"regex":"^(\\d+) of (\\d+) done$","replacement":"$1 / $2 已完成"},{"regex":"^(\\d+)/(\\d+) done$","replacement":"$1/$2 已完成"},{"regex":"^(\\d+) of (\\d+)$","replacement":"$1 / $2"},{"regex":"^Up next · (\\d+)$","replacement":"即将开始 · $1"},{"regex":"^\\+(\\d+) more$","replacement":"+$1 项更多"},{"regex":"^(\\d+) needs? you$","replacement":"$1 项需要你介入"},{"regex":"^(\\d+) in review$","replacement":"$1 项评审中"},{"regex":"^(\\d+) threads? open$","replacement":"$1 个线程进行中"},{"regex":"^(\\d+) active$","replacement":"$1 项进行中"},{"regex":"^(\\d+) stuck$","replacement":"$1 项受阻"},{"regex":"^(\\d+) waiting on @([A-Za-z0-9_.-]+)$","replacement":"$1 项等待 @$2"},{"regex":"^Waiting on @([A-Za-z0-9_.-]+)$","replacement":"等待 @$1"},{"regex":"^Waiting on (\\d+)$","replacement":"等待 $1 位成员"},{"regex":"^Working for @([A-Za-z0-9_.-]+)$","replacement":"协助 @$1 工作中"},{"regex":"^(\\d+) working$","replacement":"$1 工作中"},{"regex":"^(\\d+) waiting$","replacement":"$1 等待中"},{"regex":"^(\\d+) done$","replacement":"$1 已完成"},{"regex":"^(\\d+) bees?$","replacement":"$1 位成员"},{"regex":"^(\\d+) posts?$","replacement":"$1 条消息"},{"regex":"^over ([0-9a-zA-Z .<>]+)$","replacement":"历时 $1"},{"regex":"^of (\\d+)$","replacement":"/ $1"},{"regex":"^of (\\d+) · #(\\d+) at ([^()]+) \\(\\+([^)]+)\\)$","replacement":"/ $1 · #$2 · $3 (+$4)"},{"regex":"^read #(\\d+) · updated ([0-9a-zA-Z .<>]+ ago)$","replacement":"已读至 #$1 · 更新于 $2"},{"regex":"^read #(\\d+)$","replacement":"已读至 #$1"},{"regex":"^Narrator read up to #(\\d+) of (\\d+)$","replacement":"播报员已读至 #$1 / 共 $2 条"},{"regex":"^(\\d+) posts? since the view was updated$","replacement":"视图更新后已新增 $1 条消息"},{"regex":"^overview · from the narrator['’]s notes · view\\.html is over 64 KB$","replacement":"概览 · 来自播报员笔记 · view.html 超过 64 KB"},{"regex":"^overview · from the narrator['’]s notes · no view\\.html yet$","replacement":"概览 · 来自播报员笔记 · 尚无 view.html"},{"regex":"^overview · from the narrator['’]s notes · loading the narrator view$","replacement":"概览 · 来自播报员笔记 · 正在加载播报员视图"},{"regex":"^overview · from the narrator['’]s notes · the narrator['’]s view failed \\(([^)]+)\\)$","replacement":"概览 · 来自播报员笔记 · 播报员视图加载失败（$1）"},{"regex":"^([A-Za-z0-9_.-]+) \\(you\\)$","replacement":"$1（你）"},{"regex":"^Exporting (\\d+)%$","replacement":"正在导出 $1%"},{"regex":"^(\\d+) frames? · ([0-9.]+ (?:B|KB|MB))$","replacement":"$1 帧 · $2"},{"regex":"^Exported ([^\\n(]+) \\(([^)]+)\\)$","replacement":"已导出 $1（$2）"},{"regex":"^GIF ready \\(([^)]+)\\) — right-click image to save\\.$","replacement":"GIF 已就绪（$1）— 右键图片即可保存。"},{"regex":"^Download ([^\\n]+)$","replacement":"下载 $1"},{"regex":"^last seen (\\d+)m ago$","replacement":"$1 分钟前在线"},{"regex":"^last seen (\\d+)h ago$","replacement":"$1 小时前在线"},{"regex":"^last seen (\\d+)d ago$","replacement":"$1 天前在线"},{"regex":"^Now · (\\d+) / (\\d+)$","replacement":"当前 · $1 / $2"},{"regex":"^Go to #(\\d+) on the Board$","replacement":"跳转到消息板 #$1"},{"regex":"^Posted in #([A-Za-z0-9_.-]+); click to show only #[A-Za-z0-9_.-]+$","replacement":"发布于 #$1；点击仅查看 #$1"},{"regex":"^Everyone in #([A-Za-z0-9_.-]+)$","replacement":"#$1 频道的所有成员"},{"regex":"^#([A-Za-z0-9_.-]+) is archived: this addresses nobody$","replacement":"#$1 已归档：此提及不会通知任何人"},{"regex":"^Runs on ([^\\n]+)$","replacement":"运行于 $1"},{"regex":"^Open @([A-Za-z0-9_.-]+)$","replacement":"打开 @$1"},{"regex":"^Opening ([A-Za-z0-9_.-]+)'s conversation needs the app\\.$","replacement":"打开 $1 的对话需要应用支持。"},{"regex":"^Remote · (\\d+) machines?$","replacement":"远程 · $1 台设备"},{"regex":"^Remote · reconnecting$","replacement":"远程 · 重连中"},{"regex":"^Remote · connecting$","replacement":"远程 · 连接中"},{"regex":"^Remote · unavailable$","replacement":"远程 · 不可用"},{"regex":"^([^·\\n]+) · (\\d+) machines?$","replacement":"$1 · $2 台设备"},{"regex":"^([^·\\n]+) · reconnecting$","replacement":"$1 · 重连中"},{"regex":"^([^·\\n]+) · connecting$","replacement":"$1 · 连接中"},{"regex":"^([^·\\n]+) · unavailable$","replacement":"$1 · 不可用"}],"optionPatterns":[{"regex":"^From ([^\\n]+)$","replacement":"来自 $1"},{"regex":"^To ([^\\n]+)$","replacement":"发给 $1"},{"regex":"^#([A-Za-z0-9_.-]+) \\(archived\\)$","replacement":"#$1（已归档）"}],"protectedUiKeys":{"team":"The team","lead":"Coordinator","blocked":"Blocked","running":"Running","planned":"Planned next","done":"Done","more":"+{n} more","goal":"Goal","threads":"Threads","now":"Now","progress":"Progress","compare":"Compare with now","expand":"Open full timeline","none_blocked":"Nothing blocked","needs":"Needs you","waiting":"Waiting on @coordinator","stuck":"Stuck","none_waiting":"Nothing waiting","none_stuck":"Nothing stuck","none_needs":"Nothing needs you","none_running":"Nothing running","none_planned":"Nothing planned"}}
+{
+  "version": 1,
+  "locale": "zh-CN",
+  "exact": {
+    "Looking for this conversation's swarm…": "正在尋找目前對話的蜂群…",
+    "Looking for this conversation's swarm...": "正在查找目前对話的蜂群…",
+    "Live": "即時",
+    "Reconnecting": "正在重新連線",
+    "Updates automatically": "自動即時更新",
+    "Lost contact with the swarm sidecar; retrying": "與蜂群輔助服務失去連線，正在重試",
+    "Swarm views": "蜂群檢視",
+    "Overview": "概覽",
+    "Board": "看板",
+    "Members": "成員",
+    "Graph": "關係圖",
+    "Raw": "原始資料",
+    "Untitled swarm": "未命名蜂群",
+    "No swarm in this conversation": "目前對話沒有蜂群",
+    "Watching for a swarm": "正在等待蜂群啟動",
+    "Swarms started in this conversation appear here automatically, with their board, members and @mention graph. Start one with": "目前對話中啟動的蜂群會自動顯示於此，包含訊息看板、成員清單與 @提及 關聯圖。使用以下指令啟動：",
+    "Open this pane from a conversation to see its swarm. Swarms started there appear here automatically; start one with": "請從對話中開啟此面板以檢視其蜂群。該對話中啟動的蜂群會自動顯示於此；使用以下指令啟動：",
+    "System alerts": "系統警示",
+    "overview · from the narrator’s notes": "概覽 · 來自播報員筆記",
+    "overview · from the narrator's notes": "總覽 · 來自紀錄員筆記",
+    "narrator's page · AI-generated": "紀錄員頁面 · AI 生成",
+    "narrator’s page · AI-generated": "播報員頁面 · AI 生成",
+    "Narrator’s page": "播報員頁面",
+    "Narrator's page": "紀錄員頁面",
+    "Retry narrator's page": "重試紀錄員頁面",
+    "Retry narrator’s page": "重試播報員頁面",
+    "Want this view different? Tell the coordinator.": "想調整此檢視畫面？請直接告訴協調器。",
+    "Open coordinator chat": "開啟協調器對話",
+    "updating": "更新中",
+    "watching": "監聽中",
+    "stopped": "已停止",
+    "stale": "待更新",
+    "The narrator is updating the overview": "紀錄員正在更新總覽檢視",
+    "The narrator is waiting for new board posts": "紀錄員正在等待新的看板貼文",
+    "The narrator was killed; the overview no longer updates": "紀錄員已終止，總覽不再更新",
+    "paused: quota": "已暫停：配額不足",
+    "paused: error": "已暫停：發生錯誤",
+    "No narrator in this swarm. Ask the coordinator to add one.": "目前蜂群沒有紀錄員，請向協調器要求新增。",
+    "The narrator's view.json is over 64 KB, so it isn't shown.": "紀錄員的 view.json 超過 64 KB，因此不予顯示。",
+    "The narrator's view.json isn't valid JSON yet.": "紀錄員的 view.json 目前還不是有效的 JSON。",
+    "The narrator hasn't published an overview yet.": "紀錄員尚未發佈總覽檢視。",
+    "Showing the last good view.json; the current file is over 64 KB.": "目前檔案超過 64 KB，正在顯示上一版有效的 view.json。",
+    "Showing the last good view.json; the current file is not valid JSON.": "目前檔案不是有效的 JSON，正在顯示上一版有效的 view.json。",
+    "system:": "系統：",
+    "Open": "開啟",
+    "That link isn't allowed here.": "此處不允許開啟該連結。",
+    "Opening files needs the app.": "需要透過主應用程式開啟檔案。",
+    "Click a link in the view to open it.": "點擊檢視中的連結即可開啟。",
+    "Search": "搜尋",
+    "Search posts": "搜尋看板訊息",
+    "Filters": "篩選",
+    "Filters (active)": "篩選（已啟用）",
+    "Channels": "頻道",
+    "All": "全部",
+    "Posts in every channel": "所有頻道中的貼文",
+    "main: the whole swarm reads it": "main：全體蜂群成員皆可閱讀",
+    "Filter by poster": "依發言成員篩選",
+    "Show posts by one member": "僅顯示指定成員的發言",
+    "From anyone": "來自任何成員",
+    "Filter by recipient": "依提及對象篩選",
+    "Show posts that call on one member": "僅顯示提及指定成員的發言",
+    "To anyone": "傳給任何成員",
+    "To no one": "未提及特定成員",
+    "To @all": "廣播給全體 (@all)",
+    "Filter by channel": "依頻道篩選",
+    "Show posts in one channel": "僅顯示指定頻道的訊息",
+    "All channels": "全部頻道",
+    "all channels": "全部頻道",
+    "Keep the newest post in view": "自動捲動以追蹤最新訊息",
+    "Follow": "追蹤最新",
+    "Show or hide each member's posts": "顯示或隱藏各成員發言",
+    "Latest": "最新訊息",
+    "New": "新消息",
+    "Show more": "顯示更多",
+    "Show less": "顯示較少",
+    "No posts match": "沒有相符的貼文",
+    "Try a different search or member filter.": "請嘗試更換搜尋關鍵字或成員篩選條件。",
+    "Clear filters": "清除篩選條件",
+    "No posts yet": "目前沒有貼文",
+    "Posts to the swarm board will appear here as members talk.": "成員在看板中的交流貼文將即時顯示於此。",
+    "Not on the roster": "不在目前名單中",
+    "Replay": "重播",
+    "Jump to start": "跳至開頭",
+    "Previous post (←)": "上一則訊息 (←)",
+    "Previous post": "上一則訊息",
+    "Play / pause replay (space)": "播放 / 暫停重播 (空白鍵)",
+    "Play replay": "播放重播",
+    "Pause replay": "暫停重播",
+    "Next post (→)": "下一則訊息 (→)",
+    "Next post": "下一則訊息",
+    "Replay position": "重播進度",
+    "Scrub through board posts": "拖曳瀏覽歷史看板訊息",
+    "Show everything and follow live": "顯示全部並切回即時追蹤",
+    "Graph view": "圖視圖",
+    "Hive": "蜂巢",
+    "Threads as cells, with each worker where it works": "以蜂巢單元展示線程及每位成員所在位置",
+    "Mentions": "提及引用 (@)",
+    "Who @mentions whom": "成員 @提及關係圖",
+    "Hide killed and inactive members from the graph": "在關係圖中隱藏已終止與非活躍的成員",
+    "Hide inactive": "隱藏非活躍成員",
+    "Draw @all as an edge to every member": "將 @all 繪製為指向每位成員的連線",
+    "Expand @all": "展開 @all 廣播連線",
+    "Replay pacing": "重播節奏",
+    "Even pacing": "均勻節奏",
+    "Real-time gaps": "真實時間間隔",
+    "Replay speed": "重播速度",
+    "Export graph replay as an animated GIF": "將圖譜回放匯出為動態 GIF",
+    "Export GIF": "匯出 GIF",
+    "Exporting…": "正在匯出…",
+    "Nothing to export yet.": "暫无可匯出的内容。",
+    "Could not download GIF from embedded pane.": "无法從内嵌面板直接下載 GIF。",
+    "Could not export GIF.": "匯出 GIF 失敗。",
+    "@mention, width = count": "@提及（線寬代表次數）",
+    "via @all": "透過 @all 廣播",
+    "posted with no mention": "未提及特定成員的貼文",
+    "@all posts, drawn by Expand @all": "@all 廣播貼文（啟用「展開 @all 廣播連線」後繪製）",
+    "Close preview": "關閉預覽",
+    "Close": "關閉",
+    "Exported swarm graph replay": "已匯出的蜂群關系圖回放",
+    "Right-click image to save, or open in a new tab.": "右鍵圖片即可儲存，或在新標簽頁中開啟。",
+    "Open in new tab": "在新標簽頁開啟",
+    "Zoom": "縮放",
+    "Zoom out": "縮小",
+    "Zoom in": "放大",
+    "Fit the whole swarm": "縮放至符合整個蜂群",
+    "Where each worker is, by thread": "依工作執行緒檢視各成員目前位置",
+    "Tasks done": "已完成任務",
+    "Message just sent": "刚發出的消息",
+    "Waiting on": "正在等待",
+    "No one is on this thread yet.": "該線程暫无成員参與。",
+    "File": "檔案",
+    "Copy to clipboard": "複製到剪貼簿",
+    "Copy": "複製",
+    "Copied": "已複製",
+    "Copy failed": "複製失敗",
+    "Active": "活躍中",
+    "Waiting": "等待中",
+    "Killed": "已結束",
+    "Working": "正在運作",
+    "Retired": "已退出",
+    "Stuck": "受阻",
+    "Error": "異常",
+    "Standing by": "待命中",
+    "Resting": "休眠中",
+    "Team": "團隊成員",
+    "Active: mid-turn (thinking, running a tool, or waiting on the model)": "活躍中：正在執行目前輪次（思考、執行工具或等待模型回應）",
+    "Waiting: turn ended, asleep on the board until a post wakes it": "等待中：目前輪次已結束，於看板休眠等待新訊息喚醒",
+    "Killed: removed from the swarm": "已終止：已從蜂群中移除",
+    "The team": "團隊成員",
+    "Coordinator": "協調者",
+    "Coordinator · Working": "協調器 · 運作中",
+    "Blocked": "已阻擋",
+    "Running": "執行中",
+    "Planned next": "後續計畫",
+    "Done": "完成",
+    "Goal": "目標",
+    "Threads": "線程",
+    "Now": "目前",
+    "Progress": "進度",
+    "Compare with now": "與目前比較",
+    "Hide compare": "隱藏比較",
+    "Open full timeline": "開啟完整時間軸",
+    "Nothing blocked": "目前沒有受阻項目",
+    "Needs you": "需要您處理",
+    "Waiting on @coordinator": "等待 @coordinator",
+    "Nothing waiting": "目前沒有等待項目",
+    "Nothing stuck": "目前沒有卡住項目",
+    "Nothing needs you": "目前沒有需要您處理的項目",
+    "Nothing running": "目前沒有執行項目",
+    "Nothing planned": "目前沒有計畫項目",
+    "Moving": "推進中",
+    "Not started": "尚未開始",
+    "In review": "審閱中",
+    "Other": "其他",
+    "Tasks": "任務",
+    "tasks done": "項任務已完成",
+    "thread": "個線程",
+    "threads": "個線程",
+    "No tasks completed yet.": "目前沒有已完成的工作。",
+    "Swarm stalled — no agents working": "蜂群已停滯 — 目前无成員工作",
+    "Search members": "搜尋成員",
+    "seen just now": "剛剛上線",
+    "All workers": "全部協作者",
+    "Filter by worker": "依協作者篩選",
+    "Compare then and now": "前後比較",
+    "Scrub through progress": "拖曳檢視進度重播",
+    "Previous": "上一幀",
+    "Next": "下一幀",
+    "Frames": "進度幀列表",
+    "Your swarm is starting": "您的蜂群正在啟動",
+    "One goal": "單一目標",
+    "The coordinator splits it into tasks.": "由協調器拆分為多項工作。",
+    "Many workers": "多位協作者平行作業",
+    "Each takes a task, and they run in parallel.": "每位協作者認領一項工作並平行執行。",
+    "One board": "統一看板",
+    "Updates land here. You step in only when asked.": "進度會即時彙整於此，僅在需要時請您介入。",
+    "Waiting for the first update": "正在等待第一則進度更新",
+    "done": "已完成",
+    "queued": "排隊中",
+    "running": "進行中",
+    "blocked": "已阻塞"
+  },
+  "patterns": [
+    {
+      "regex": "^(\\d+) of (\\d+) tasks done$",
+      "replacement": "$1 / $2 項任務已完成"
+    },
+    {
+      "regex": "^(\\d+) of (\\d+) done$",
+      "replacement": "$1 / $2 已完成"
+    },
+    {
+      "regex": "^(\\d+)/(\\d+) done$",
+      "replacement": "$1/$2 已完成"
+    },
+    {
+      "regex": "^(\\d+) of (\\d+)$",
+      "replacement": "$1 / $2"
+    },
+    {
+      "regex": "^Up next · (\\d+)$",
+      "replacement": "即將開始 · $1"
+    },
+    {
+      "regex": "^\\+(\\d+) more$",
+      "replacement": "+$1 項更多"
+    },
+    {
+      "regex": "^(\\d+) needs? you$",
+      "replacement": "$1 項需要你介入"
+    },
+    {
+      "regex": "^(\\d+) in review$",
+      "replacement": "$1 項評審中"
+    },
+    {
+      "regex": "^(\\d+) threads? open$",
+      "replacement": "$1 個線程進行中"
+    },
+    {
+      "regex": "^(\\d+) active$",
+      "replacement": "$1 項進行中"
+    },
+    {
+      "regex": "^(\\d+) stuck$",
+      "replacement": "$1 項受阻"
+    },
+    {
+      "regex": "^(\\d+) waiting on @([A-Za-z0-9_.-]+)$",
+      "replacement": "$1 項等待 @$2"
+    },
+    {
+      "regex": "^Waiting on @([A-Za-z0-9_.-]+)$",
+      "replacement": "等待 @$1"
+    },
+    {
+      "regex": "^Waiting on (\\d+)$",
+      "replacement": "等待 $1 位成員"
+    },
+    {
+      "regex": "^Working for @([A-Za-z0-9_.-]+)$",
+      "replacement": "協助 @$1 工作中"
+    },
+    {
+      "regex": "^(\\d+) working$",
+      "replacement": "$1 工作中"
+    },
+    {
+      "regex": "^(\\d+) waiting$",
+      "replacement": "$1 等待中"
+    },
+    {
+      "regex": "^(\\d+) done$",
+      "replacement": "$1 已完成"
+    },
+    {
+      "regex": "^(\\d+) bees?$",
+      "replacement": "$1 位成員"
+    },
+    {
+      "regex": "^(\\d+) posts?$",
+      "replacement": "$1 條消息"
+    },
+    {
+      "regex": "^over ([0-9a-zA-Z .<>]+)$",
+      "replacement": "歷時 $1"
+    },
+    {
+      "regex": "^of (\\d+)$",
+      "replacement": "/ $1"
+    },
+    {
+      "regex": "^of (\\d+) · #(\\d+) at ([^()]+) \\(\\+([^)]+)\\)$",
+      "replacement": "/ $1 · #$2 · $3 (+$4)"
+    },
+    {
+      "regex": "^read #(\\d+) · updated ([0-9a-zA-Z .<>]+ ago)$",
+      "replacement": "已讀至 #$1 · 更新於 $2"
+    },
+    {
+      "regex": "^read #(\\d+)$",
+      "replacement": "已讀至 #$1"
+    },
+    {
+      "regex": "^Narrator read up to #(\\d+) of (\\d+)$",
+      "replacement": "播報員已讀至 #$1 / 共 $2 條"
+    },
+    {
+      "regex": "^(\\d+) posts? since the view was updated$",
+      "replacement": "視圖更新后已新增 $1 條消息"
+    },
+    {
+      "regex": "^overview · from the narrator['’]s notes · view\\.html is over 64 KB$",
+      "replacement": "概覽 · 來自播報員筆記 · view.html 超過 64 KB"
+    },
+    {
+      "regex": "^overview · from the narrator['’]s notes · no view\\.html yet$",
+      "replacement": "概覽 · 來自播報員筆記 · 尚无 view.html"
+    },
+    {
+      "regex": "^overview · from the narrator['’]s notes · loading the narrator view$",
+      "replacement": "概覽 · 來自播報員筆記 · 正在載入播報員視圖"
+    },
+    {
+      "regex": "^overview · from the narrator['’]s notes · the narrator['’]s view failed \\(([^)]+)\\)$",
+      "replacement": "概覽 · 來自播報員筆記 · 播報員視圖載入失敗（$1）"
+    },
+    {
+      "regex": "^([A-Za-z0-9_.-]+) \\(you\\)$",
+      "replacement": "$1（你）"
+    },
+    {
+      "regex": "^Exporting (\\d+)%$",
+      "replacement": "正在匯出 $1%"
+    },
+    {
+      "regex": "^(\\d+) frames? · ([0-9.]+ (?:B|KB|MB))$",
+      "replacement": "$1 幀 · $2"
+    },
+    {
+      "regex": "^Exported ([^\\n(]+) \\(([^)]+)\\)$",
+      "replacement": "已匯出 $1（$2）"
+    },
+    {
+      "regex": "^GIF ready \\(([^)]+)\\) — right-click image to save\\.$",
+      "replacement": "GIF 已就緒（$1）— 右鍵圖片即可儲存。"
+    },
+    {
+      "regex": "^Download ([^\\n]+)$",
+      "replacement": "下載 $1"
+    },
+    {
+      "regex": "^last seen (\\d+)m ago$",
+      "replacement": "$1 分鐘前在線"
+    },
+    {
+      "regex": "^last seen (\\d+)h ago$",
+      "replacement": "$1 小時前在線"
+    },
+    {
+      "regex": "^last seen (\\d+)d ago$",
+      "replacement": "$1 天前在線"
+    },
+    {
+      "regex": "^Now · (\\d+) / (\\d+)$",
+      "replacement": "目前 · $1 / $2"
+    },
+    {
+      "regex": "^Go to #(\\d+) on the Board$",
+      "replacement": "跳轉到消息板 #$1"
+    },
+    {
+      "regex": "^Posted in #([A-Za-z0-9_.-]+); click to show only #[A-Za-z0-9_.-]+$",
+      "replacement": "發布於 #$1；點擊僅查看 #$1"
+    },
+    {
+      "regex": "^Everyone in #([A-Za-z0-9_.-]+)$",
+      "replacement": "#$1 頻道的所有成員"
+    },
+    {
+      "regex": "^#([A-Za-z0-9_.-]+) is archived: this addresses nobody$",
+      "replacement": "#$1 已歸檔：此提及不會通知任何人"
+    },
+    {
+      "regex": "^Runs on ([^\\n]+)$",
+      "replacement": "執行於 $1"
+    },
+    {
+      "regex": "^Open @([A-Za-z0-9_.-]+)$",
+      "replacement": "開啟 @$1"
+    },
+    {
+      "regex": "^Opening ([A-Za-z0-9_.-]+)'s conversation needs the app\\.$",
+      "replacement": "開啟 $1 的对話需要應用支持。"
+    },
+    {
+      "regex": "^Remote · (\\d+) machines?$",
+      "replacement": "遠程 · $1 台設備"
+    },
+    {
+      "regex": "^Remote · reconnecting$",
+      "replacement": "遠程 · 重連中"
+    },
+    {
+      "regex": "^Remote · connecting$",
+      "replacement": "遠程 · 連接中"
+    },
+    {
+      "regex": "^Remote · unavailable$",
+      "replacement": "遠程 · 不可用"
+    },
+    {
+      "regex": "^([^·\\n]+) · (\\d+) machines?$",
+      "replacement": "$1 · $2 台設備"
+    },
+    {
+      "regex": "^([^·\\n]+) · reconnecting$",
+      "replacement": "$1 · 重連中"
+    },
+    {
+      "regex": "^([^·\\n]+) · connecting$",
+      "replacement": "$1 · 連接中"
+    },
+    {
+      "regex": "^([^·\\n]+) · unavailable$",
+      "replacement": "$1 · 不可用"
+    }
+  ],
+  "optionPatterns": [
+    {
+      "regex": "^From ([^\\n]+)$",
+      "replacement": "來自 $1"
+    },
+    {
+      "regex": "^To ([^\\n]+)$",
+      "replacement": "發給 $1"
+    },
+    {
+      "regex": "^#([A-Za-z0-9_.-]+) \\(archived\\)$",
+      "replacement": "#$1（已歸檔）"
+    }
+  ],
+  "protectedUiKeys": {
+    "team": "The team",
+    "lead": "Coordinator",
+    "blocked": "Blocked",
+    "running": "Running",
+    "planned": "Planned next",
+    "done": "Done",
+    "more": "+{n} more",
+    "goal": "Goal",
+    "threads": "Threads",
+    "now": "Now",
+    "progress": "Progress",
+    "compare": "Compare with now",
+    "expand": "Open full timeline",
+    "none_blocked": "Nothing blocked",
+    "needs": "Needs you",
+    "waiting": "Waiting on @coordinator",
+    "stuck": "Stuck",
+    "none_waiting": "Nothing waiting",
+    "none_stuck": "Nothing stuck",
+    "none_needs": "Nothing needs you",
+    "none_running": "Nothing running",
+    "none_planned": "Nothing planned"
+  }
+}

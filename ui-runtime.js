@@ -147,7 +147,7 @@
       out[sKey] = on ? 'on' : 'off';
     }
     out.placeholderStyle = out.promptStyle = (out.placeholderStyle ?? out.promptStyle) === 'host' ? 'host' : 'studio';
-    out.mascot = out.mascot === 'off' || out.mascot === false ? 'off' : /^(minis|quad(-minis)?|r:[ckdw0-4,+m]+)$/.test(out.mascot) ? out.mascot : 'crab';
+    out.mascot = out.mascot === 'off' || out.mascot === false ? 'off' : /^(minis|quad(-minis)?|r:[ckdwl0-4,+m]+)$/.test(out.mascot) ? out.mascot : 'crab';
     out.convRipple = normConvRipple(out.convRipple);
     for (const k of ['sidebarCompact', 'codeLigatures', 'autoArchiveOnExit']) out[k] = out[k] === true || out[k] === 'on';
     for (const k of ['sidebarNavFold', 'sidebarStudio', 'autoUpdate']) out[k] = out[k] === 'on' || out[k] === true ? 'on' : 'off';
@@ -1055,7 +1055,7 @@
     run(() => tel?.sync?.(cfg));
     run(() => eff?.sync?.(cfg));
     run(() => {
-      if (hiMode === 'auto' && curLang !== 'zh-CN') { hiInst?.destroy?.(); ra(de(), 'data-ag-prism-host-i18n'); }
+      if (hiMode === 'auto' && curLang !== 'zh-CN' && curLang !== 'zh-TW') { hiInst?.destroy?.(); ra(de(), 'data-ag-prism-host-i18n'); }
       else if (isFn(hiInst?.setMode)) hiInst.setMode(hiMode === 'on' ? 'on' : hiMode === 'off' ? 'off' : 'auto');
     });
     run(() => th?.sync?.(cfg));

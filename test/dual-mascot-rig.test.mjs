@@ -2066,9 +2066,9 @@ test('PR #45 Quad mascot mode: GPT White Dragon & DeepSeek Whale sprites, 4-camp
   assert.ok(rig.WHALE_PARTS?.body?.stand, 'WHALE_PARTS should be exported with body.stand');
   assert.ok(rig.PALETTES.dragon && rig.PALETTES.whale, 'PALETTES must include dragon and whale');
 
-  // 1. Every pose across all 4 species resolves valid palette keys and grounded maxY <= 9
-  const checkPoses = ['idle', 'walk', 'happy', 'sleep', 'loaf', 'squash', 'flat', 'peek', 'angry', 'dragonFlame', 'whaleSpout', 'slashBoost'];
-  for (const kind of ['clawd', 'cat', 'dragon', 'whale']) {
+  // 1. Every pose across all 5 species resolves valid palette keys and grounded maxY <= 9
+  const checkPoses = ['idle', 'walk', 'happy', 'sleep', 'loaf', 'squash', 'flat', 'peek', 'angry', 'dragonFlame', 'whaleSpout', 'eatCroissant', 'mistralBreeze', 'mistralCafe', 'slashBoost'];
+  for (const kind of ['clawd', 'cat', 'dragon', 'whale', 'lechat']) {
     const pal = rig.PALETTES[kind];
     for (const pose of checkPoses) {
       for (let t = 0; t < 4; t++) {
@@ -2144,6 +2144,8 @@ test('PR #45 Quad mascot mode: GPT White Dragon & DeepSeek Whale sprites, 4-camp
   assert.equal(mgc.resolveMascotCamp('o3-mini'), 'gpt');
   assert.equal(mgc.resolveMascotCamp('DeepSeek R1'), 'deepseek');
   assert.equal(mgc.resolveMascotCamp('深度求索 V3'), 'deepseek');
+  assert.equal(mgc.resolveMascotCamp('Mistral Large 2'), 'mistral');
+  assert.equal(mgc.resolveMascotCamp('Codestral 25.01'), 'mistral');
   assert.deepEqual(mgc.parseModelLabelInfo('GPT-5.2 (低)'), {
     brand: 'openai',
     tier: 'low',
@@ -2163,7 +2165,7 @@ test('Custom mascot roster DSL: single-toggle 0/1 clamp, canonical folding, 3-wa
   const sp = require('../settings-panel.js');
 
   assert.equal(rig.MASCOT_MAX_PER_SPECIES, 1, 'MASCOT_MAX_PER_SPECIES must be strictly 1');
-  assert.equal(rig.MASCOT_MAX_TOTAL, 4, 'MASCOT_MAX_TOTAL must be strictly 4');
+  assert.equal(rig.MASCOT_MAX_TOTAL, 5, 'MASCOT_MAX_TOTAL must be strictly 5');
 
   // 1. Canonical folding, legacy multi-count 0/1 clamping & bidirectional consistency across rig, settings-panel, and cdp
   const foldCases = [
@@ -2347,7 +2349,7 @@ test('Octopath HD-2D 16:9 Mascot Casting Stage sub-panel: Ch9 fallback when masc
   const newKeys = [
     'optMascotCrab', 'optMascotMinis', 'optMascotQuad', 'optMascotQuadMinis', 'optMascotOff',
     'mascotRosterTitle', 'mascotRosterCount', 'mascotRosterMinis',
-    'mascotSpeciesCrab', 'mascotSpeciesCat', 'mascotSpeciesDragon', 'mascotSpeciesWhale',
+    'mascotSpeciesCrab', 'mascotSpeciesCat', 'mascotSpeciesDragon', 'mascotSpeciesWhale', 'mascotSpeciesLechat',
     'mascotStageOpenBtn', 'mascotStageTitle', 'mascotStageBackBtn', 'mascotStageHint',
     'mascotStagePresetDual', 'mascotStagePresetQuad', 'mascotStagePresetOff',
     'mascotStageMinisSlot', 'mascotStageActiveOn', 'mascotStageActiveOff',
@@ -2359,7 +2361,7 @@ test('Octopath HD-2D 16:9 Mascot Casting Stage sub-panel: Ch9 fallback when masc
   const CJK_RE = /[\u3000-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/;
   for (const lang of ['zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'es', 'fr', 'de']) {
     const ui = i18nLocales.getUiStrings(lang);
-    assert.ok(ui.mascotRosterCount.includes('/4'), `mascotRosterCount for ${lang} must reflect /4 cap`);
+    assert.ok(ui.mascotRosterCount.includes('/5'), `mascotRosterCount for ${lang} must reflect /5 cap`);
     for (const k of newKeys) {
       assert.ok(typeof ui[k] === 'string' && ui[k].trim().length > 0, `Missing i18n key ${k} for ${lang}`);
       if (['en', 'es', 'fr', 'de'].includes(lang)) {
@@ -2487,11 +2489,20 @@ test('Octopath HD-2D 16:9 Mascot Casting Stage sub-panel: Ch9 fallback when masc
     assert.equal(state.mascot, 'quad');
     assert.equal(countEl.getAttribute('data-total'), '4');
 
-    // Toggle 5th slot (Mini Crab Corner) -> lights up mini-crab spotlight & updates state to 'quad-minis'
+    // Toggle 5th main species (Mistral Le Chat) on -> 'r:c1,k1,d1,w1,l1' with eatCroissant cheer
+    toggleBtn('l').click();
+    assert.equal(state.mascot, 'r:c1,k1,d1,w1,l1');
+    assert.equal(countEl.getAttribute('data-total'), '5');
+    assert.equal(stageApi.getSlotStates()[4].cheering, true, 'Activating Mistral Le Chat must trigger eatCroissant cheer');
+    toggleBtn('l').click();
+    assert.equal(state.mascot, 'quad');
+    assert.equal(countEl.getAttribute('data-total'), '4');
+
+    // Toggle 6th slot (Mini Crab Corner) -> lights up mini-crab spotlight & updates state to 'quad-minis'
     minisBtn.click();
     assert.equal(state.mascot, 'quad-minis');
     assert.equal(minisBtn.getAttribute('aria-pressed'), 'true');
-    assert.equal(stageApi.getSlotStates()[4].cheering, true, 'Activating 5th mini-crab corner must trigger mini-crab cheer');
+    assert.equal(stageApi.getSlotStates()[5].cheering, true, 'Activating mini-crab corner must trigger mini-crab cheer');
 
     // Clicking stage bottom preset 'crab' syncs roster back to classic dual
     stagePreset('crab').click();

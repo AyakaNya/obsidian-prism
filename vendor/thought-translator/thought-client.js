@@ -45,11 +45,18 @@
   let hasExplicitHostView = false;
   let scrollBound = false;
   let visBound = false;
+  let userIntentBound = false;
   let scrollTimer = null;
   let scanTimer = null;
   let streamingWatchTimer = null;
   let cachedConvRoot = null;
   let reqSeq = 0;
+
+  const LIVE_TAIL_PAUSE_MS = 1400;
+  const LIVE_DONE_FLUSH_MS = 180;
+  const LIVE_MUT_THROTTLE_MS = 120;
+  const KEEP_EXPANDED_GRACE_MS = 15000;
+  const KEEP_EXPANDED_MAX_REOPENS = 5;
 
   const SEL_TRIGGER = 'button[data-testid="thinking-collapsible-trigger"]';
   const SEL_OVERLAY = '.ag-prism-thought-overlay[data-op-thought="1"]';
@@ -154,6 +161,12 @@
   const panelActiveEntry = new WeakMap();
   const panelStreamStates = new WeakMap();
   const panelSettleTimers = new WeakMap();
+  const liveSegStates = new WeakMap();
+  const liveSegPanels = new Set();
+  const livePanelObservers = new WeakMap();
+  const userCollapsedTriggers = new WeakSet();
+  const keepExpandedTriggers = new Map();
+  const keepExpandedObservers = new WeakMap();
 
   const K_TC = 'textContent';
   const K_NV = 'nodeValue';
@@ -434,6 +447,141 @@
       untrackStreamingTrigger(btn);
     }
     trackedStreamingTriggers.clear();
+  }
+
+  function findThinkingTriggerFromEvent(ev) {
+    const tgt = ev && ev.target;
+    if (!tgt || typeof tgt.closest !== 'function') return null;
+    return tgt.closest(SEL_TRIGGER);
+  }
+
+  function isUserCollapsedTrigger(btn) {
+    return Boolean(btn && (userCollapsedTriggers.has(btn) || ga(btn, 'data-op-user-collapsed') === '1'));
+  }
+
+  const onDocUserTriggerPointerDown = (ev) => {
+    if (!ev || ev.isTrusted === false) return;
+    const btn = findThinkingTriggerFromEvent(ev);
+    if (!btn) return;
+    if (ga(btn, A_EXP) === 'true') {
+      userCollapsedTriggers.add(btn);
+      sa(btn, 'data-op-user-collapsed', '1');
+      unregisterKeepExpandedTrigger(btn);
+    } else {
+      userCollapsedTriggers.delete(btn);
+      ra(btn, 'data-op-user-collapsed');
+      registerKeepExpandedTrigger(btn);
+    }
+  };
+
+  const onDocUserTriggerKeyDown = (ev) => {
+    if (!ev || ev.isTrusted === false) return;
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const btn = findThinkingTriggerFromEvent(ev);
+    if (!btn) return;
+    if (ga(btn, A_EXP) === 'true') {
+      userCollapsedTriggers.add(btn);
+      sa(btn, 'data-op-user-collapsed', '1');
+      unregisterKeepExpandedTrigger(btn);
+    } else {
+      userCollapsedTriggers.delete(btn);
+      ra(btn, 'data-op-user-collapsed');
+      registerKeepExpandedTrigger(btn);
+    }
+  };
+
+  function unregisterKeepExpandedTrigger(btn) {
+    if (!btn) return;
+    const rec = keepExpandedTriggers.get(btn);
+    if (rec) {
+      if (rec.timer) clearTimeout(rec.timer);
+      keepExpandedTriggers.delete(btn);
+    }
+    const obs = keepExpandedObservers.get(btn);
+    if (obs) {
+      try { obs.disconnect(); } catch (_) {}
+      keepExpandedObservers.delete(btn);
+    }
+  }
+
+  function clearAllKeepExpandedWatchers() {
+    for (const btn of Array.from(keepExpandedTriggers.keys())) {
+      unregisterKeepExpandedTrigger(btn);
+    }
+    keepExpandedTriggers.clear();
+  }
+
+  function scheduleReopenIfAutoCollapsed(btn) {
+    if (!btn || currentMode === 'off' || !isConn(btn)) return;
+    if (isUserCollapsedTrigger(btn)) return;
+    const rec = keepExpandedTriggers.get(btn);
+    if (!rec) return;
+    if (ga(btn, A_EXP) !== 'false') return;
+    const now = nowMs();
+    if (rec.coolUntil > now) return;
+    if (rec.timer) return;
+    rec.timer = setTimeout(() => {
+      rec.timer = null;
+      if (currentMode === 'off' || !isConn(btn) || isUserCollapsedTrigger(btn)) return;
+      if (ga(btn, A_EXP) !== 'false') return;
+      if (isHiddenByAncestor(btn, null)) return;
+      const tNow = nowMs();
+      if (tNow - rec.winStart > 2000) {
+        rec.winStart = tNow;
+        rec.winCount = 0;
+      }
+      if (rec.winCount >= 4) {
+        rec.coolUntil = tNow + 4000;
+        return;
+      }
+      rec.winCount++;
+      try {
+        if (typeof btn.click === 'function') btn.click();
+      } catch (_) {}
+      scheduleScan(30);
+    }, 40);
+    rec.timer?.unref?.();
+  }
+
+  function registerKeepExpandedTrigger(btn) {
+    if (!btn || currentMode === 'off' || isUserCollapsedTrigger(btn)) return;
+    let rec = keepExpandedTriggers.get(btn);
+    if (!rec) {
+      rec = { since: nowMs(), winStart: 0, winCount: 0, coolUntil: 0, timer: null };
+      keepExpandedTriggers.set(btn, rec);
+    }
+    const MO = W.MutationObserver || (typeof MutationObserver === 'function' ? MutationObserver : null);
+    if (MO && !keepExpandedObservers.has(btn)) {
+      try {
+        const obs = new MO(() => {
+          if (currentMode === 'off' || !isConn(btn)) {
+            unregisterKeepExpandedTrigger(btn);
+            return;
+          }
+          if (isUserCollapsedTrigger(btn)) {
+            unregisterKeepExpandedTrigger(btn);
+            return;
+          }
+          if (ga(btn, A_EXP) === 'false') {
+            scheduleReopenIfAutoCollapsed(btn);
+          }
+        });
+        obs.observe(btn, { attributes: true, attributeFilter: [A_EXP] });
+        keepExpandedObservers.set(btn, obs);
+      } catch (_) {}
+    }
+  }
+
+  function markKeepExpandedTriggerDone(btn) {
+    if (!btn) return;
+    if (isUserCollapsedTrigger(btn)) {
+      unregisterKeepExpandedTrigger(btn);
+      return;
+    }
+    registerKeepExpandedTrigger(btn);
+    if (ga(btn, A_EXP) === 'false') {
+      scheduleReopenIfAutoCollapsed(btn);
+    }
   }
 
   function checkTrackedStreamingTriggers() {
@@ -1244,6 +1392,11 @@
       document.addEventListener('visibilitychange', onVisibilityChange);
       visBound = true;
     }
+    if (!userIntentBound && typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('pointerdown', onDocUserTriggerPointerDown, true);
+      document.addEventListener('keydown', onDocUserTriggerKeyDown, true);
+      userIntentBound = true;
+    }
 
     if (cacheWarmed) return;
     cacheWarmed = true;
@@ -1405,7 +1558,14 @@
       document.removeEventListener('visibilitychange', onVisibilityChange);
       visBound = false;
     }
+    if (userIntentBound && typeof document !== 'undefined' && document.removeEventListener) {
+      document.removeEventListener('pointerdown', onDocUserTriggerPointerDown, true);
+      document.removeEventListener('keydown', onDocUserTriggerKeyDown, true);
+      userIntentBound = false;
+    }
     clearAllStreamingWatchers();
+    clearAllKeepExpandedWatchers();
+    clearAllLivePanelStates();
     stopTitleObserver();
     restoreAllToolSummaries();
     restoreAllTitles();
@@ -2245,6 +2405,7 @@
 
   function retryPanelNow(panel, fallbackRawText = '', fallbackMode = '', oldSig = '') {
     if (!panel) return false;
+    clearLivePanelState(panel, true);
     const activeMode = currentMode === 'off' ? fallbackMode : currentMode;
     if (!activeMode || activeMode === 'off') return false;
     if (oldSig) failedSigs.delete(oldSig);
@@ -2281,6 +2442,7 @@
 
   function triggerSingleBlockRetranslate(panel) {
     if (!panel || currentMode === 'off') return;
+    clearLivePanelState(panel, true);
     const inf = extractPanelInfo(panel);
     if (!inf.t) return;
     const activeLang = resolveActiveLang();
@@ -3019,6 +3181,475 @@
     (hydrateHandle = setTimeout(step, 16))?.unref?.();
   }
 
+  const PARA_BLOCK_TAGS = new Set('P,PRE,BLOCKQUOTE,H1,H2,H3,H4,H5,H6,UL,OL,HR,SECTION,ARTICLE'.split(','));
+  const LINE_BLOCK_TAGS = new Set('DIV,LI,TR'.split(','));
+
+  function collectParagraphText(node, chunks, fm) {
+    if (!node) return;
+    const nt = node.nodeType;
+    if (nt === 3) {
+      if (node[K_NV] !== undefined && node[K_NV] !== null) chunks.push(node[K_NV]);
+      else if (tc(node)) chunks.push(tc(node));
+      return;
+    }
+    if (nt !== 1 || isOverlayOrIgnoredElement(node)) return;
+    const tag = node.tagName ? String(node.tagName).toUpperCase() : '';
+    if (SKIP_TAGS.has(tag)) return;
+    if (tag === 'BR') {
+      chunks.push('\n');
+      return;
+    }
+    if (fm) registerFileNodeInMap(node, fm);
+    const isPara = PARA_BLOCK_TAGS.has(tag);
+    const isLine = LINE_BLOCK_TAGS.has(tag);
+    if (isPara) chunks.push('\n\n');
+    else if (isLine) chunks.push('\n');
+    const chs = node[K_CN];
+    if (chs && chs.length) {
+      for (let i = 0; i < chs.length; i++) collectParagraphText(chs[i], chunks, fm);
+    } else if (typeof tc(node) === 'string' && (!node.children || !node.children.length)) {
+      chunks.push(tc(node));
+    }
+    if (isPara) chunks.push('\n\n');
+    else if (isLine) chunks.push('\n');
+  }
+
+  function splitThoughtParagraphs(text) {
+    const src = String(text || '').replace(/\r\n/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!src) return [];
+    const lines = src.split('\n');
+    const paras = [];
+    let buf = [];
+    let inFence = false;
+    const flush = () => {
+      const joined = buf.join('\n').trim();
+      if (joined) paras.push(joined);
+      buf = [];
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^\s*```/.test(line)) {
+        inFence = !inFence;
+        buf.push(line);
+        continue;
+      }
+      if (!inFence && line.trim() === '') flush();
+      else buf.push(line);
+    }
+    flush();
+    return paras;
+  }
+
+  function extractPanelParagraphs(panel) {
+    const chs = panel && panel[K_CN];
+    if (!chs) return [];
+    const chunks = [];
+    const fm = createEmptyFileMap();
+    for (let i = 0; i < chs.length; i++) collectParagraphText(chs[i], chunks, fm);
+    if (fm.l.length) panelFileMaps.set(panel, fm);
+    return splitThoughtParagraphs(chunks.join(''));
+  }
+
+  function disconnectLivePanelObserver(panel) {
+    if (!panel) return;
+    const obs = livePanelObservers.get(panel);
+    if (obs) {
+      try { obs.disconnect(); } catch (_) {}
+      livePanelObservers.delete(panel);
+    }
+  }
+
+  function clearLivePanelState(panel, cancelInflight = true) {
+    if (!panel) return;
+    disconnectLivePanelObserver(panel);
+    const st = liveSegStates.get(panel);
+    if (st) {
+      st.aborted = true;
+      if (st.tailTimer) {
+        clearTimeout(st.tailTimer);
+        st.tailTimer = null;
+      }
+      if (st.mutTimer) {
+        clearTimeout(st.mutTimer);
+        st.mutTimer = null;
+      }
+      if (cancelInflight && st.activeReqId) {
+        void callDaemonRpc({ action: 'cancel-translate', requestId: st.activeReqId }).catch(() => {});
+        st.activeReqId = '';
+      }
+      liveSegStates.delete(panel);
+    }
+    liveSegPanels.delete(panel);
+  }
+
+  function clearAllLivePanelStates() {
+    for (const p of Array.from(liveSegPanels)) {
+      clearLivePanelState(p, true);
+    }
+    liveSegPanels.clear();
+  }
+
+  function syncLiveSegments(st, paragraphs, activeLang) {
+    for (let i = 0; i < paragraphs.length; i++) {
+      const p = paragraphs[i];
+      if (i < st.segments.length) {
+        const seg = st.segments[i];
+        if (seg.orig !== p) {
+          seg.orig = p;
+          if (seg.status !== 'streaming') {
+            seg.status = 'pending';
+            seg.error = '';
+          }
+        }
+      } else {
+        st.segments.push({
+          orig: p,
+          translatedOrig: '',
+          translation: '',
+          streamingText: '',
+          status: 'pending',
+          engine: '',
+          error: '',
+        });
+      }
+      const seg = st.segments[i];
+      if (seg.translatedOrig !== seg.orig && seg.status !== 'streaming') {
+        if (isAlreadyTargetLang(seg.orig, activeLang)) {
+          seg.translatedOrig = seg.orig;
+          seg.translation = '';
+          seg.status = 'skipped';
+        } else {
+          const kb = computeSkelBody(normalizeTextKey(seg.orig));
+          const hit = findCachedByBody(kb, st.mode, activeLang);
+          if (hit) {
+            seg.translatedOrig = seg.orig;
+            seg.translation = hit;
+            seg.status = 'translated';
+            seg.engine = st.mode === 'machine' ? 'machine' : 'ai';
+          }
+        }
+      }
+    }
+    if (st.segments.length > paragraphs.length) {
+      st.segments.length = paragraphs.length;
+    }
+  }
+
+  function composeLiveTranslation(st) {
+    const out = [];
+    for (let i = 0; i < st.segments.length; i++) {
+      const seg = st.segments[i];
+      if (seg.status === 'translated' && seg.translation) {
+        out.push(seg.translation);
+      } else if (seg.status === 'skipped' && seg.orig) {
+        out.push(seg.orig);
+      } else if (seg.status === 'streaming') {
+        const partial = seg.streamingText || seg.translation;
+        if (partial) out.push(partial);
+      } else if (seg.translation) {
+        out.push(seg.translation);
+      }
+    }
+    return out.join('\n\n').trim();
+  }
+
+  function resolveLiveEngine(st) {
+    if (st.segments.some((s) => s.engine === 'machine-fallback')) return 'machine-fallback';
+    return st.mode === 'machine' ? 'machine' : 'ai';
+  }
+
+  function pickNextLiveSegmentIndex(st, includeTail) {
+    const lastIdx = st.segments.length - 1;
+    for (let i = 0; i <= lastIdx; i++) {
+      const seg = st.segments[i];
+      if (seg.translatedOrig === seg.orig && (seg.status === 'translated' || seg.status === 'skipped')) continue;
+      if (i === lastIdx && !st.isDone && !includeTail) continue;
+      return i;
+    }
+    return -1;
+  }
+
+  function renderLiveSegmentsToPanel(panel, st, animate) {
+    if (!panel || !isConn(panel) || st.aborted || currentMode === 'off') return;
+    if (!isPanelCurrentlyExpanded(panel) || isHiddenByAncestor(st.btn, panel)) return;
+    const combined = composeLiveTranslation(st);
+    if (combined) {
+      renderTranslatedText(panel, combined, true, null, resolveLiveEngine(st), {
+        inc: true,
+        anim: Boolean(animate && !isMotionOff()),
+        now: nowMs(),
+      });
+    } else if (ga(panel, A_RDY) !== '1') {
+      const t = getClientPack();
+      const anyStreaming = st.segments.some((s) => s.status === 'streaming');
+      if (anyStreaming) {
+        renderPendingState(panel, st.mode === 'machine' ? t[7] : t[8], st.mode === 'machine' ? 'machine' : 'ai');
+      } else {
+        renderPendingState(panel, st.isDone ? t[10] : t[9], st.isDone ? 'settling' : 'streaming');
+      }
+    }
+  }
+
+  function finalizeLivePanelIfComplete(panel, st) {
+    if (!panel || !st || st.aborted || !st.isDone) return false;
+    if (currentMode !== st.mode || (currentLang || resolveActiveLang()) !== st.lang) {
+      clearLivePanelState(panel, true);
+      return false;
+    }
+    const latestParas = extractPanelParagraphs(panel);
+    if (latestParas.length) {
+      syncLiveSegments(st, latestParas, st.lang);
+      if (pickNextLiveSegmentIndex(st, true) !== -1) return false;
+    }
+    const allDone =
+      st.segments.length > 0 &&
+      st.segments.every((s) => s.translatedOrig === s.orig && (s.status === 'translated' || s.status === 'skipped'));
+    if (!allDone) return false;
+
+    const inf = extractPanelInfo(panel);
+    const sig = sigFromBody(inf.k, st.mode, st.lang);
+    const finalZh = composeLiveTranslation(st);
+    const eng = resolveLiveEngine(st);
+    const sendPlan = sliceThoughtForSafeSend(inf.t);
+    const truncInfo = sendPlan.truncated ? sendPlan : null;
+
+    if (finalZh && inf.k) {
+      const fallbackBase = eng === 'machine-fallback' || st.mode === 'machine' ? 'mt' : activeStyleTag || 'ai_technical';
+      putMemCache(`${withLangSuffix(fallbackBase, st.lang)}${inf.k}`, finalZh, true);
+    }
+
+    clearLivePanelState(panel, false);
+
+    if (finalZh && isConn(panel)) {
+      const willStayExpanded =
+        (isPanelCurrentlyExpanded(panel) && !isHiddenByAncestor(st.btn, panel)) ||
+        Boolean(st.btn && keepExpandedTriggers.has(st.btn) && !userCollapsedTriggers.has(st.btn));
+      if (willStayExpanded) {
+        renderTranslatedText(panel, finalZh, false, sig, eng, { truncInfo });
+        const m = panelMeta.get(panel) || {};
+        m.s = false;
+        m.m = false;
+        m.ds = ga(panel, A_SIG) || sig;
+        m.ps = sig;
+        m.rs = inf.s;
+        panelMeta.set(panel, m);
+      } else {
+        const m = panelMeta.get(panel) || {};
+        m.s = false;
+        m.m = false;
+        m.ps = sig;
+        m.rs = inf.s;
+        panelMeta.set(panel, m);
+      }
+    }
+    return true;
+  }
+
+  async function drainLiveSegments(panel, st, includeTail) {
+    if (!panel || !st || st.aborted || currentMode === 'off') return;
+    if (st.running) {
+      st.pendingRescan = true;
+      if (includeTail) st.pendingIncludeTail = true;
+      return;
+    }
+    const br = getBridge();
+    if (!br || typeof br.translateStream !== 'function') return;
+
+    st.running = true;
+    try {
+      while (isConn(panel) && !st.aborted && currentMode === st.mode && (currentLang || resolveActiveLang()) === st.lang) {
+        const idx = pickNextLiveSegmentIndex(st, includeTail || st.isDone);
+        if (idx === -1) break;
+
+        const seg = st.segments[idx];
+        const targetText = seg.orig;
+        const requestId = `op_tr_${nowMs().toString(36)}_${++reqSeq}`;
+        st.activeReqId = requestId;
+        seg.status = 'streaming';
+        seg.streamingText = '';
+        seg.error = '';
+        renderLiveSegmentsToPanel(panel, st, false);
+
+        try {
+          const res = await br.translateStream(
+            {
+              text: targetText,
+              mode: st.mode,
+              priority: 28000,
+              requestId,
+              force: false,
+              bypassCache: false,
+              targetLang: st.lang,
+            },
+            (partial) => {
+              if (st.aborted || st.activeReqId !== requestId || typeof partial !== 'string') return;
+              const trimmed = partial.trimStart();
+              if (!trimmed || trimmed === seg.streamingText) return;
+              seg.streamingText = trimmed;
+              seg.status = 'streaming';
+              renderLiveSegmentsToPanel(panel, st, true);
+            }
+          );
+          if (st.activeReqId === requestId) st.activeReqId = '';
+          if (st.aborted || res?.cancelled) break;
+
+          if (res && res.ok && res.skipped) {
+            seg.translatedOrig = targetText;
+            seg.streamingText = '';
+            seg.translation = '';
+            seg.status = 'skipped';
+          } else if (res && res.ok && typeof res.text === 'string' && res.text.trim()) {
+            const tr = res.text.trim();
+            const isFb = res.engine === 'machine-fallback' || Boolean(res.fallback);
+            const eng = isFb ? 'machine-fallback' : res.engine || (st.mode === 'machine' ? 'machine' : 'ai');
+            seg.translatedOrig = targetText;
+            seg.streamingText = '';
+            seg.translation = tr;
+            seg.engine = eng;
+            seg.status = 'translated';
+            const segKb = computeSkelBody(normalizeTextKey(targetText));
+            if (segKb) {
+              const segBase = isFb || st.mode === 'machine' ? 'mt' : activeStyleTag || 'ai_technical';
+              putMemCache(`${withLangSuffix(segBase, st.lang)}${segKb}`, tr, false);
+            }
+          } else {
+            seg.streamingText = '';
+            seg.status = 'error';
+            seg.error = sanitizeClientErrorText((res && (res.error || res.message)) || '');
+            break;
+          }
+          renderLiveSegmentsToPanel(panel, st, false);
+        } catch (err) {
+          if (st.activeReqId === requestId) st.activeReqId = '';
+          seg.streamingText = '';
+          seg.status = 'error';
+          seg.error = sanitizeClientErrorText(err?.message || String(err || ''));
+          break;
+        }
+      }
+    } finally {
+      st.running = false;
+      if (st.aborted || !isConn(panel) || currentMode === 'off') return;
+      if (st.pendingRescan) {
+        const nextTail = Boolean(st.pendingIncludeTail || st.isDone);
+        st.pendingRescan = false;
+        st.pendingIncludeTail = false;
+        void drainLiveSegments(panel, st, nextTail);
+      } else if (st.isDone) {
+        if (!finalizeLivePanelIfComplete(panel, st)) {
+          if (pickNextLiveSegmentIndex(st, true) !== -1) {
+            void drainLiveSegments(panel, st, true);
+          } else if (st.segments.some((s) => s.status === 'error')) {
+            const inf = extractPanelInfo(panel);
+            const sig = sigFromBody(inf.k, st.mode, st.lang);
+            const errSeg = st.segments.find((s) => s.status === 'error');
+            clearLivePanelState(panel, false);
+            if (isConn(panel) && isPanelCurrentlyExpanded(panel) && ga(panel, A_RDY) !== '1') {
+              renderFailedState(panel, inf.t, st.mode, sig, { reason: 'generic', detail: errSeg?.error || '' });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function ensureLivePanelObserver(btn, panel, st) {
+    const MO = W.MutationObserver || (typeof MutationObserver === 'function' ? MutationObserver : null);
+    if (!MO || livePanelObservers.has(panel)) return;
+    try {
+      const obs = new MO((records) => {
+        if (currentMode === 'off' || st.aborted || !isConn(panel)) {
+          disconnectLivePanelObserver(panel);
+          return;
+        }
+        let sawRawChange = false;
+        for (let i = 0; i < records.length; i++) {
+          const tgt = records[i]?.target;
+          const el = tgt && tgt.nodeType === 1 ? tgt : parEl(tgt);
+          if (el && (isOverlayOrIgnoredElement(el) || el.closest?.('[data-prism-ignore], [data-op-thought]'))) continue;
+          sawRawChange = true;
+          break;
+        }
+        if (!sawRawChange || st.mutTimer) return;
+        st.mutTimer = setTimeout(() => {
+          st.mutTimer = null;
+          if (!st.aborted && isConn(panel) && currentMode !== 'off') {
+            processLiveStreamingPanel(btn, panel, !isTriggerStreaming(btn));
+          }
+        }, LIVE_MUT_THROTTLE_MS);
+        st.mutTimer?.unref?.();
+      });
+      obs.observe(panel, { childList: true, characterData: true, subtree: true });
+      livePanelObservers.set(panel, obs);
+    } catch (_) {}
+  }
+
+  function processLiveStreamingPanel(btn, panel, isDone) {
+    if (!panel || currentMode === 'off') return false;
+    const reqLang = currentLang || resolveActiveLang();
+    let st = liveSegStates.get(panel);
+    if (st && (st.aborted || st.mode !== currentMode || st.lang !== reqLang)) {
+      clearLivePanelState(panel, true);
+      st = null;
+    }
+    const paragraphs = extractPanelParagraphs(panel);
+    if (!paragraphs.length) {
+      if (!isDone && ga(panel, A_RDY) !== '1' && isPanelCurrentlyExpanded(panel) && !isHiddenByAncestor(btn, panel)) {
+        renderPendingState(panel, getClientPack()[9], 'streaming');
+      }
+      return Boolean(st);
+    }
+
+    if (!st) {
+      st = {
+        btn,
+        mode: currentMode,
+        lang: reqLang,
+        isDone: Boolean(isDone),
+        segments: [],
+        running: false,
+        pendingRescan: false,
+        pendingIncludeTail: false,
+        aborted: false,
+        activeReqId: '',
+        tailTimer: null,
+        mutTimer: null,
+      };
+      liveSegStates.set(panel, st);
+      liveSegPanels.add(panel);
+    } else {
+      st.btn = btn;
+      if (isDone) st.isDone = true;
+    }
+
+    if (!st.isDone) ensureLivePanelObserver(btn, panel, st);
+    else disconnectLivePanelObserver(panel);
+
+    syncLiveSegments(st, paragraphs, reqLang);
+    renderLiveSegmentsToPanel(panel, st, false);
+
+    if (st.isDone && !st.running && finalizeLivePanelIfComplete(panel, st)) {
+      return true;
+    }
+
+    if (paragraphs.length > 1 && pickNextLiveSegmentIndex(st, false) !== -1) {
+      void drainLiveSegments(panel, st, false);
+    }
+
+    if (st.tailTimer) clearTimeout(st.tailTimer);
+    st.tailTimer = setTimeout(() => {
+      st.tailTimer = null;
+      if (st.aborted || !isConn(panel) || currentMode !== st.mode) return;
+      const latestParas = extractPanelParagraphs(panel);
+      if (latestParas.length) syncLiveSegments(st, latestParas, st.lang);
+      if (!st.isDone && !isTriggerStreaming(btn)) st.isDone = true;
+      if (st.isDone && !st.running && finalizeLivePanelIfComplete(panel, st)) return;
+      void drainLiveSegments(panel, st, true);
+    }, st.isDone ? LIVE_DONE_FLUSH_MS : LIVE_TAIL_PAUSE_MS);
+    st.tailTimer?.unref?.();
+    return true;
+  }
+
   function processSingleTrigger(btn, allowPreloadCollapsed, priority = 0) {
     if (!btn) return;
     const expanded = ga(btn, A_EXP) === 'true';
@@ -3031,7 +3662,6 @@
     if (streaming) {
       const now = nowMs();
       const prevMeta = panelMeta.get(panel);
-      const alreadyStreamingPending = Boolean(prevMeta && prevMeta.s && ga(panel, A_PND) === '1');
       const meta = prevMeta || { h: '', c: now, s: true, m: true, f: 0, ds: '', ps: '', rs: '' };
       meta.s = true;
       meta.m = true;
@@ -3040,11 +3670,19 @@
       panelMeta.set(panel, meta);
       clearPanelWaitTimer(panel);
       trackStreamingTrigger(btn, panel);
-      if (alreadyStreamingPending) return;
-      if (expanded && !isHiddenByAncestor(btn, panel)) renderPendingState(panel, getClientPack()[9], 'streaming');
+      if (expanded && !isHiddenByAncestor(btn, panel)) {
+        registerKeepExpandedTrigger(btn);
+        processLiveStreamingPanel(btn, panel, false);
+      }
       return;
     }
     untrackStreamingTrigger(btn);
+    markKeepExpandedTriggerDone(btn);
+
+    if (liveSegStates.has(panel)) {
+      processLiveStreamingPanel(btn, panel, true);
+      return;
+    }
 
     if (expanded && ga(panel, A_RDY) === '1') {
       const em = panelMeta.get(panel);
@@ -4015,14 +4653,29 @@
       const isLatest = i === lastIdx;
       const allowPreload = triggerTiming === 'preload' && isLatest;
       const expanded = ga(btn, A_EXP) === 'true';
+      const streamingNow = isTriggerStreaming(btn);
+      if (!isUserCollapsedTrigger(btn)) {
+        registerKeepExpandedTrigger(btn);
+        if (!expanded && ga(btn, A_EXP) === 'false' && !isHiddenByAncestor(btn, null)) {
+          const btnBand = isLatest ? 2 : probeViewportBand(btn);
+          if (btnBand > 0) {
+            scheduleReopenIfAutoCollapsed(btn);
+          } else {
+            sawOffscreenLazy = true;
+          }
+        }
+      }
       if (!allowPreload && !expanded) continue;
 
       const panel = nextSib(btn);
       if (panel) {
         const em = panelMeta.get(panel);
-        const streamingNow = isTriggerStreaming(btn);
-        if (streamingNow && expanded && isLatest && em && em.s && ga(panel, A_PND) === '1') {
+        if (streamingNow && expanded && isLatest && em && em.s) {
           trackStreamingTrigger(btn, panel);
+          registerKeepExpandedTrigger(btn);
+          if (!isHiddenByAncestor(btn, panel)) {
+            processLiveStreamingPanel(btn, panel, false);
+          }
           activePanelSet.add(panel);
           continue;
         }
@@ -4149,6 +4802,7 @@
       ensureInitialized();
       if (changed || langChanged) {
         clearHydrateQueue();
+        clearAllLivePanelStates();
         restoreAllToolSummaries();
         restoreAllTitles();
         if (hadPrevEngine) {

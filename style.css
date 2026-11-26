@@ -857,3 +857,1786 @@ html[data-ag-cs-style][data-ag-cs-theme="light"],html[data-ag-cs-style]>body:is(
 #ag-cs-settings-sec [data-ag-cs-hi-warn="ext"]{display:inline-block;margin-top:4px;padding:3px 8px;border-radius:6px;color:#B45309 !important;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.34);font-weight:500 !important;}
 html[data-ag-cs-theme="dark"] #ag-cs-settings-sec [data-ag-cs-hi-warn="1"]{color:#FBBF24 !important;}
 html[data-ag-cs-theme="dark"] #ag-cs-settings-sec [data-ag-cs-hi-warn="ext"]{color:#FCD34D !important;background:rgba(245,158,11,.14);border-color:rgba(251,191,36,.32);}
+
+
+/* ============================================================================
+ * 船板莫蘭迪書卷美學 (Morandi & Claude-Warm) × 台灣繁體字體混血層 (by 哈基咪 for 小蔡)
+ * ----------------------------------------------------------------------------
+ * 1. Google Sans Flex × 更紗黑體 UI TC 精密字重橋接（台灣標準字形）
+ * 2. 對談正文 Anthropic Serif + 等距更紗黑體 Slab TC，首頁問候語思源宋體 + 活字微潤墨感
+ * 3. 白天模式接管為船板「莫蘭迪宣紙礦灰 (morandi)」＋ 煙嵐石青單線收口輸入框
+ * 4. 黑夜模式接管為船板「溫潤書卷暖紙深色 (claude-warm)」
+ * ============================================================================ */
+@font-face {
+  font-family: 'AgSarasaUITC';
+  src: local('Sarasa-UI-TC-Light'), local('Sarasa UI TC Light'), local('更紗黑體 UI TC Light'), local('Sarasa-UI-TC-Regular'), local('Sarasa UI TC'), local('更紗黑體 UI TC'), local('Sarasa-UI-SC-Light'), local('Sarasa UI SC');
+  font-weight: 100 299;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AgSarasaUITC';
+  src: local('Sarasa-UI-TC-Regular'), local('Sarasa UI TC'), local('更紗黑體 UI TC'), local('Sarasa-UI-SC-Regular'), local('Sarasa UI SC');
+  font-weight: 300 499;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AgSarasaUITC';
+  src: local('Sarasa-UI-TC-Italic'), local('Sarasa UI TC Italic'), local('更紗黑體 UI TC Italic'), local('Sarasa-UI-TC-Regular'), local('Sarasa UI TC'), local('更紗黑體 UI TC'), local('Sarasa-UI-SC-Italic');
+  font-weight: 300 499;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AgSarasaUITC';
+  src: local('Sarasa-UI-TC-SemiBold'), local('Sarasa UI TC SemiBold'), local('更紗黑體 UI TC SemiBold'), local('Sarasa-UI-TC-Bold'), local('Sarasa UI TC Bold'), local('更紗黑體 UI TC Bold'), local('Sarasa-UI-SC-SemiBold');
+  font-weight: 500 639;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AgSarasaUITC';
+  src: local('Sarasa-UI-TC-SemiBold-Italic'), local('Sarasa UI TC SemiBold Italic'), local('更紗黑體 UI TC SemiBold Italic'), local('Sarasa-UI-TC-Bold-Italic'), local('Sarasa-UI-TC-SemiBold'), local('Sarasa-UI-TC-Bold'), local('Sarasa-UI-SC-SemiBold-Italic');
+  font-weight: 500 639;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AgSarasaUITC';
+  src: local('Sarasa-UI-TC-Bold'), local('Sarasa UI TC Bold'), local('更紗黑體 UI TC Bold'), local('Sarasa-UI-SC-Bold');
+  font-weight: 640 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AgSarasaUITC';
+  src: local('Sarasa-UI-TC-Bold-Italic'), local('Sarasa UI TC Bold Italic'), local('更紗黑體 UI TC Bold Italic'), local('Sarasa-UI-TC-Bold'), local('Sarasa UI TC Bold'), local('Sarasa-UI-SC-Bold-Italic');
+  font-weight: 640 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AgWenKaiTC';
+  src: local('LXGWWenKaiTC-Light'), local('LXGW WenKai TC Light'), local('LXGWWenKaiTC-Regular'), local('LXGW WenKai TC');
+  font-weight: 100 299;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AgWenKaiTC';
+  src: local('LXGWWenKaiTC-Regular'), local('LXGW WenKai TC'), local('霞鶩文楷 TC');
+  font-weight: 300 499;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'AgWenKaiTC';
+  src: local('LXGWWenKaiTC-Medium'), local('LXGW WenKai TC Medium'), local('LXGWWenKaiTC-Regular'), local('LXGW WenKai TC');
+  font-weight: 500 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 全域繁體字體棧（標題／按鈕／UI 採用霞鶩文楷 TC 圓潤書卷體，正文保留無襯線更紗黑體） */
+html[data-ag-cs-style],
+html[data-ag-cs-style] body {
+  --font-sans: 'Google Sans Flex', 'Google Sans', 'AgWenKaiTC', 'LXGW WenKai TC', '霞鶩文楷 TC', 'AgSarasaUITC', 'Sarasa UI TC', '更紗黑體 UI TC', 'PingFang TC', 'Hiragino Sans TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei', 'AgSarasaUI', 'Sarasa UI SC', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  --vscode-font-family: var(--font-sans) !important;
+  --editor-font-family: 'Anthropic Mono', 'Anthropic Mono Web', 'anthropic-mono', 'Sarasa Mono Slab TC', '等距更紗黑體 Slab TC', 'Sarasa Mono Slab SC', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace !important;
+  --ag-cs-mono-stack: var(--editor-font-family) !important;
+  --font-mono: var(--editor-font-family) !important;
+  --default-font-family: var(--font-sans) !important;
+  --default-mono-font-family: var(--font-mono) !important;
+  --font-family: var(--font-sans) !important;
+  --sdk-font-family: var(--font-sans) !important;
+  --sdk-font-family-mono: var(--font-mono) !important;
+  --sdk-comment-font-family: var(--font-sans) !important;
+  --ag-ink-shadow-xs: 0 0 0.38px color-mix(in srgb, currentColor 48%, transparent);
+  --ag-ink-shadow-sm: 0 0 0.44px color-mix(in srgb, currentColor 54%, transparent);
+  --ag-ink-shadow-md: 0 0 0.48px color-mix(in srgb, currentColor 58%, transparent);
+  --ag-ink-shadow-prose: 0 0 0.48px color-mix(in srgb, currentColor 58%, transparent);
+  --ag-ink-shadow-prose-bold: 0 0 0.55px color-mix(in srgb, currentColor 64%, transparent);
+}
+
+/* 對談正文與 Markdown 書卷襯線字 (Anthropic Serif × 更紗粗襯線 TC)，完整隔離外層 350 字重與 wdth:92 窄軸 */
+html[data-ag-cs-style] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *):not(.monaco-editor *):not(.xterm *), .prose, .markdown, article),
+html[data-ag-cs-style] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *):not(.monaco-editor *):not(.xterm *), .prose, .markdown, article) :is(p, li, blockquote, h1, h2, h3, h4, h5, h6, td, th) {
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-black: 900;
+  --agy-gsf-bold-wght: 600;
+  --agy-gsf-fvs: normal;
+  --agy-gsf-italic: italic;
+  font-family: 'Anthropic Serif', 'Anthropic Serif Web Display Light', 'Anthropic Serif Web', 'Anthropic Serif Web Text Light', 'anthropic-serif', 'Tiempos Text', 'Tiempos', 'Sarasa Mono Slab TC', '等距更紗黑體 Slab TC', 'Sarasa Gothic TC', '更紗黑體 TC', 'PingFang TC', 'Microsoft JhengHei', 'Sarasa Mono Slab SC', Georgia, Cambria, 'Times New Roman', serif !important;
+  font-weight: 400 !important;
+  font-variation-settings: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: lining-nums !important;
+  letter-spacing: -0.003em !important;
+}
+
+html[data-ag-cs-style] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *):not(.monaco-editor *):not(.xterm *), .prose, .markdown, article) :is(strong, b, h1, h2, h3, h4, h5, h6, th, .font-semibold, .font-bold) {
+  font-weight: 600 !important;
+  font-variation-settings: normal !important;
+}
+
+html[data-ag-cs-style] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *):not(.monaco-editor *):not(.xterm *), .prose, .markdown, article) :is(i, em, .italic):not(.codicon, .google-symbols) {
+  font-style: italic !important;
+  font-variation-settings: normal !important;
+}
+
+html[data-ag-cs-style] :is([data-markdown-root], .select-text:not([role="dialog"] *):not(.monaco-editor *):not(.xterm *), .prose, .markdown) :is(p, li, blockquote) {
+  line-height: 1.62 !important;
+}
+
+/* 對談內的標題 (h1–h6)：與 UI 同步採用霞鶩文楷 TC，和下方無襯線正文拉開層次 */
+html[data-ag-cs-style] :is([data-markdown-root], .select-text:not([role="dialog"] *):not(.monaco-editor *):not(.xterm *), .prose, .markdown, article) :is(h1, h2, h3, h4, h5, h6) {
+  font-family: 'Anthropic Serif', 'Anthropic Serif Web Display Light', 'Anthropic Serif Web', 'Anthropic Serif Web Text Light', 'anthropic-serif', 'Tiempos Text', 'Tiempos', 'AgWenKaiTC', 'LXGW WenKai TC', '霞鶩文楷 TC', 'PingFang TC', serif !important;
+  font-weight: 600 !important;
+  font-variation-settings: normal !important;
+}
+
+/* 思考過程展開正文：鎖定無襯線更紗黑體 UI TC，不隨外層 UI 變成文楷 */
+html[data-ag-cs-style][data-ag-cs-style] :is(
+  [data-testid="thinking-collapsible-trigger"] + div,
+  [data-op-thought-panel="1"],
+  .ag-prism-thought-overlay,
+  .ag-prism-thought-body,
+  .ag-prism-thought-p
+),
+html[data-ag-cs-style][data-ag-cs-style] :is(
+  [data-testid="thinking-collapsible-trigger"] + div,
+  [data-op-thought-panel="1"],
+  .ag-prism-thought-overlay
+) :is(p, li, div, span, blockquote):not(.ag-prism-thought-code):not(.ag-prism-thought-file-pill):not(.ag-prism-thought-pre):not(.ag-prism-thought-pending-hint):not(.ag-prism-thought-fallback-badge):not(.ag-prism-thought-error-bar):not(code):not(pre):not(button):not(button *) {
+  font-family: 'Google Sans Flex', 'Google Sans', 'AgSarasaUITC', 'Sarasa UI TC', '更紗黑體 UI TC', 'PingFang TC', 'Hiragino Sans TC', system-ui, sans-serif !important;
+  font-variation-settings: normal !important;
+}
+
+/* 代碼、終端、檔名與行內檔案膠囊：Anthropic Mono + 等距更紗黑體 Slab TC（隔離襯線與 wdth:92） */
+html[data-ag-cs-style] :is(code, pre, kbd, samp, .font-mono, [class*="language-"], .monaco-editor, .xterm, pre .select-text, [class*="group/file-title"], [class*="group/file-title"] .select-text, [class*="file-title"], [class*="file-path"], [data-path], [data-file-path], [data-uri^="file:"], [data-uri^="vscode-"], a.inline-pill[href^="file:"], a.inline-pill[href^="vscode-"], :is([data-uri^="file:"], [data-uri^="vscode-"], a.inline-pill[href^="file:"], a.inline-pill[href^="vscode-"]) .select-text, :is([data-markdown-root], .select-text) :is(code, pre, kbd, samp, .font-mono)) {
+  font-family: var(--font-mono) !important;
+  font-weight: 400 !important;
+  font-variation-settings: normal !important;
+  text-shadow: none !important;
+}
+
+/* 非檔案類 UI 行內膠囊：還原 Google Sans Flex UI 字體棧 */
+html[data-ag-cs-style] :is(.inline-pill:not([data-uri^="file:"]):not([data-uri^="vscode-"]):not([href^="file:"]):not([href^="vscode-"]), .inline-pill:not([data-uri^="file:"]):not([data-uri^="vscode-"]):not([href^="file:"]):not([href^="vscode-"]) .select-text) {
+  font-family: var(--font-sans) !important;
+  font-variation-settings: "ROND" var(--agy-gsf-rond, 0), "slnt" var(--agy-gsf-slnt, 0), "wdth" var(--agy-gsf-wdth, 92) !important;
+  letter-spacing: normal !important;
+}
+
+/* 輸入框人文等寬字體（強制 400 字重與 normal 變體軸，消除 350 發虛；一併涵蓋鬼影建議與佔位提示） */
+html[data-ag-cs-style] :is(
+  div[contenteditable="true"],
+  textarea,
+  div[contenteditable="true"] :is(p, span, div),
+  [data-lexical-editor="true"],
+  [data-lexical-editor="true"] :is(p, span, div),
+  [data-lexical-editor="true"] ~ p.pointer-events-none,
+  :is(#antigravity\.agentSidePanelInputBox, [id="antigravity.agentSidePanelInputBox"]) div:has(> [data-lexical-editor="true"]) > p.pointer-events-none,
+  p[data-ag-cs-placeholder],
+  .ag-prism-ghost-overlay,
+  .ag-prism-ghost-overlay .ag-prism-ghost-text,
+  [data-testid="prism-ghost-overlay"],
+  [data-testid="prism-ghost-overlay"] .ag-prism-ghost-text,
+  [data-composer],
+  .ProseMirror,
+  .ProseMirror :is(p, span)
+),
+html[data-ag-cs-style] p[data-ag-cs-placeholder]::before {
+  font-family: 'Sarasa Mono Slab TC', '等距更紗黑體 Slab TC', 'Anthropic Mono', 'Anthropic Mono Web', ui-monospace, 'PingFang TC', 'Hiragino Sans TC', 'Microsoft JhengHei UI', 'Microsoft JhengHei', 'Sarasa Mono Slab SC', monospace !important;
+  font-weight: 400 !important;
+  letter-spacing: normal !important;
+  font-variation-settings: normal !important;
+}
+
+/* 輸入提示（鬼影建議／原生佔位）與平滑游標像素級對齊：垂直同齊 top:8px / line-height:22px，左側留出游標呼吸間距防重疊 */
+html[data-ag-cs-style] :is(.ag-prism-ghost-overlay, [data-testid="prism-ghost-overlay"]) {
+  top: 8px !important;
+  left: 14px !important;
+  right: 8px !important;
+  font-size: 14px !important;
+  line-height: 22px !important;
+}
+html[data-ag-cs-style] :is([data-lexical-editor="true"] ~ p.pointer-events-none, p[data-ag-cs-placeholder]) {
+  top: 8px !important;
+  left: 14px !important;
+  font-size: 14px !important;
+  line-height: 22px !important;
+}
+
+/* 首頁經典問候語：Anthropic Serif + 霞鶩文楷 TC 圓潤書卷風格 */
+html[data-ag-cs-style] :is([data-ag-home-greeting="true"], [data-ag-home-greeting="true"] *, .agy-home :is(h1, h2)) {
+  font-family: 'Anthropic Serif', 'Anthropic Serif Web Display Light', 'Anthropic Serif Web', 'Anthropic Serif Web Text Light', 'anthropic-serif', 'Tiempos Text', 'Tiempos', 'AgWenKaiTC', 'LXGW WenKai TC', '霞鶩文楷 TC', 'Noto Serif TC', 'Source Han Serif TC', 'Songti TC', Georgia, Cambria, 'Times New Roman', serif !important;
+  font-size: 32px !important;
+  line-height: 1.3 !important;
+  font-weight: 540 !important;
+  font-variation-settings: normal !important;
+  font-variant-ligatures: normal !important;
+  font-variant-numeric: lining-nums !important;
+  letter-spacing: 0.005em !important;
+}
+
+/* 淺色模式活字微潤墨感 */
+html[data-ag-cs-style][data-ag-cs-theme="light"] body,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) {
+  text-shadow: var(--ag-ink-shadow-xs);
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .prose, .markdown, article) :is(p, li, blockquote, td, a, em, i),
+html[data-ag-cs-style][data-ag-cs-theme="light"] .agy-home :is(h1, h2, [data-ag-home-greeting="true"]) {
+  text-shadow: var(--ag-ink-shadow-prose);
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .prose, .markdown, article) :is(strong, b, h1, h2, h3, h4, h5, h6, th) {
+  text-shadow: var(--ag-ink-shadow-prose-bold);
+}
+
+/* ============================================================================
+ * 白天模式：船板「莫蘭迪宣紙礦灰 (morandi)」完整接管
+ * ============================================================================ */
+html[data-ag-cs-style][data-ag-cs-palette][data-ag-cs-theme="light"],
+html[data-ag-cs-style][data-ag-cs-palette][data-ag-cs-light-preset][data-ag-cs-theme="light"],
+html[data-ag-cs-style][data-ag-cs-palette] > body:is(.theme-light, .light-theme, .light),
+html[data-ag-cs-style][data-ag-cs-palette][data-ag-cs-light-preset] > body:is(.theme-light, .light-theme, .light) {
+  color-scheme: light !important;
+  --background: #F4F1EA !important;
+  --content: #F4F1EA !important;
+  --shell: #E8E3D9 !important;
+  --body-background: #F4F1EA !important;
+  --sidebar: #E8E3D9 !important;
+  --vscode-sideBar-background: #E8E3D9 !important;
+  --sidebar-muted: #E1DCD1 !important;
+  --sidebar-secondary: #DAD3C6 !important;
+  --sidebar-border: rgba(54, 49, 43, 0.18) !important;
+  --card: #FAF8F3 !important;
+  --card-border: rgba(54, 49, 43, 0.18) !important;
+  --card-edge: rgba(54, 49, 43, 0.18) !important;
+  --border: rgba(54, 49, 43, 0.18) !important;
+  --sash-line: rgba(54, 49, 43, 0.18) !important;
+  --ag-cs-tonal-0: #E8E3D9 !important;
+  --ag-cs-tonal-1: #F4F1EA !important;
+  --ag-cs-tonal-2: #FAF8F3 !important;
+  --ag-cs-tonal-3: #EFECE4 !important;
+  --ag-cs-tonal-4: #FAF8F3 !important;
+  --secondary: rgba(54, 49, 43, 0.065) !important;
+  --secondary-foreground: #2E2B27 !important;
+  --muted: rgba(54, 49, 43, 0.045) !important;
+  --muted-foreground: #5E584F !important;
+  --foreground: #24221F !important;
+  --placeholder: #878075 !important;
+  --primary: #3F6E7A !important;
+  --primary-foreground: #FAF8F3 !important;
+  --link: #3F6E7A !important;
+  --color-link: #3F6E7A !important;
+  --cta: #3F6E7A !important;
+  --cta-foreground: #FAF8F3 !important;
+  --error: #B84A3E !important;
+  --warning: #9A6B28 !important;
+  --success: #2B5E53 !important;
+  --scrim: rgba(36, 34, 31, 0.32) !important;
+  --onyx-frame: #DDD7CA !important;
+  --onyx-well: #E8E3D9 !important;
+  --onyx-raised: #FAF8F3 !important;
+  --onyx-selected: #DAD3C6 !important;
+  --onyx-key: #FAF8F3 !important;
+  --glass: #F7F4ED !important;
+  --glass-border: rgba(54, 49, 43, 0.18) !important;
+  --glass-highlight: transparent !important;
+  --home-glow: transparent !important;
+
+  /* 消除工業風塑膠高光，改為溫潤紙面 */
+  --ag-cs-specular: transparent !important;
+  --_sp: none !important;
+  --_sh: none !important;
+  --_fl: none !important;
+  --_cg: #FAF8F3 !important;
+  --ag-cs-panel-bg: #FAF8F3 !important;
+  --ag-cs-popover-bg: #FAF8F3 !important;
+  --ag-cs-pill-bg: #EFECE4 !important;
+  --ag-cs-menu-bg-l: #FAF8F3 !important;
+  --ag-cs-dlg-bg: #F4F1EA !important;
+  --ag-cs-dlg-nav-bg: #E8E3D9 !important;
+  --ag-cs-dlg-nav-hov: rgba(54, 49, 43, 0.055) !important;
+  --ag-cs-dlg-nav-act: #FAF8F3 !important;
+  --ag-cs-bubble: #EAE5DA !important;
+  --_k0: #EAE5DA !important;
+  --_kb: rgba(54, 49, 43, 0.14) !important;
+  --_g0: #3D6470 !important;
+  --_g1: #FAF8F3 !important;
+  --_g2: transparent !important;
+  --_g3: 0 1px 2px rgba(46, 79, 89, 0.24) !important;
+  --_cx: 0 2px 8px -2px rgba(45, 58, 62, 0.06) !important;
+  --ag-cs-surface-sh: 0 2px 10px -2px rgba(54, 49, 43, 0.08), 0 0 0 1px rgba(54, 49, 43, 0.12) !important;
+  --_fs2: 0 4px 18px -4px rgba(54, 49, 43, 0.10), 0 0 0 1px rgba(54, 49, 43, 0.12) !important;
+
+  /* 莫蘭迪古典礦物 Tailwind 色階與代碼高亮 */
+  --color-blue-400: #6E9AA6 !important;
+  --color-blue-500: #4C7C89 !important;
+  --color-blue-600: #3F6E7A !important;
+  --color-green-500: #487D6E !important;
+  --color-green-600: #2B5E53 !important;
+  --color-amber-500: #B8843B !important;
+  --color-amber-600: #9C6D2B !important;
+  --color-orange-500: #C86D51 !important;
+  --color-red-500: #B84A3E !important;
+  --color-purple-500: #7E6889 !important;
+  --syntax-default-fg: #2A2824 !important;
+  --syntax-keyword: #3F6E7A !important;
+  --syntax-string: #2B5E53 !important;
+  --syntax-function: #B3583D !important;
+  --syntax-class-name: #9E4A32 !important;
+  --syntax-number: #8A6228 !important;
+  --syntax-variable: #9A6B28 !important;
+  --syntax-constant: #6E5679 !important;
+  --syntax-comment: #857E73 !important;
+}
+
+/* 莫蘭迪淺色輸入框：煙嵐石青單線收口 + 石青主發送鈕 */
+html[data-ag-cs-style][data-ag-cs-theme="light"][data-ag-cs-composer="on"] .surface-composer-card {
+  background-color: #FAF8F3 !important;
+  background-image: none !important;
+  border: 1px solid #A3B5BA !important;
+  box-shadow: 0 2px 8px -2px rgba(45, 58, 62, 0.06) !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"][data-ag-cs-composer="on"] .surface-composer-card:hover:not(:focus-within) {
+  border-color: #78949D !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"][data-ag-cs-composer="on"] .surface-composer-card:focus-within {
+  border-color: #3D6470 !important;
+  box-shadow: 0 6px 20px -4px rgba(61, 100, 112, 0.16) !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"][data-ag-cs-composer="on"] .surface-composer-card [data-testid="send-button"]:not(:disabled):hover {
+  background-color: #2E4F59 !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] :is([data-testid="user-message-bubble"], .agy-user-bubble) {
+  background-color: #EAE5DA !important;
+  background-image: none !important;
+  border: 1px solid rgba(54, 49, 43, 0.13) !important;
+  box-shadow: 0 1px 3px rgba(54, 49, 43, 0.05) !important;
+}
+
+/* ============================================================================
+ * 黑夜模式：船板「溫潤書卷暖紙深色 (claude-warm)」完整接管
+ * ============================================================================ */
+html[data-ag-cs-style][data-ag-cs-palette]:not([data-ag-cs-theme="light"]),
+html[data-ag-cs-style][data-ag-cs-palette][data-ag-cs-theme="dark"],
+html[data-ag-cs-style][data-ag-cs-palette] > body:not(.theme-light):not(.light-theme):not(.light),
+html[data-ag-cs-style][data-ag-cs-palette] > body:is(.theme-dark, .dark) {
+  color-scheme: dark !important;
+  --background: #242320 !important;
+  --content: #242320 !important;
+  --shell: #1B1A18 !important;
+  --body-background: #242320 !important;
+  --sidebar: #1B1A18 !important;
+  --vscode-sideBar-background: #1B1A18 !important;
+  --sidebar-muted: rgba(243, 240, 228, 0.05) !important;
+  --sidebar-secondary: rgba(243, 240, 228, 0.08) !important;
+  --sidebar-border: rgba(243, 240, 228, 0.10) !important;
+  --card: #2B2A26 !important;
+  --card-border: rgba(243, 240, 228, 0.10) !important;
+  --card-edge: rgba(243, 240, 228, 0.10) !important;
+  --border: rgba(243, 240, 228, 0.09) !important;
+  --sash-line: rgba(243, 240, 228, 0.12) !important;
+  --ag-cs-tonal-0: #1B1A18 !important;
+  --ag-cs-tonal-1: #242320 !important;
+  --ag-cs-tonal-2: #2B2A26 !important;
+  --ag-cs-tonal-3: #32302B !important;
+  --ag-cs-tonal-4: #383630 !important;
+  --secondary: rgba(243, 240, 228, 0.07) !important;
+  --secondary-foreground: #DAD5C5 !important;
+  --muted: rgba(243, 240, 228, 0.05) !important;
+  --muted-foreground: #A39E8D !important;
+  --foreground: #F3F0E4 !important;
+  --placeholder: #7E7A6B !important;
+  --primary: #D97757 !important;
+  --primary-foreground: #FFFBF2 !important;
+  --link: #DFA07E !important;
+  --color-link: #DFA07E !important;
+  --cta: #D97757 !important;
+  --error: #E0735C !important;
+  --warning: #DFAF5F !important;
+  --success: #93AE78 !important;
+  --scrim: rgba(14, 13, 11, 0.70) !important;
+  --onyx-frame: #1B1A18 !important;
+  --onyx-well: #201F1C !important;
+  --onyx-raised: #2B2A26 !important;
+  --onyx-selected: #37342E !important;
+  --onyx-key: #403D36 !important;
+  --glass: #282724 !important;
+  --glass-border: rgba(243, 240, 228, 0.10) !important;
+  --glass-highlight: transparent !important;
+  --home-glow: transparent !important;
+
+  /* 消除工業高光，改為溫潤暖炭紙面 */
+  --ag-cs-specular: transparent !important;
+  --_sp: none !important;
+  --_sh: none !important;
+  --_cg: #2B2A26 !important;
+  --ag-cs-panel-bg: #282724 !important;
+  --ag-cs-popover-bg: #2B2A26 !important;
+  --ag-cs-pill-bg: #32302B !important;
+  --ag-cs-menu-bg: #262522 !important;
+  --ag-cs-dlg-bg: #242320 !important;
+  --ag-cs-dlg-nav-bg: #1B1A18 !important;
+  --ag-cs-dlg-nav-hov: rgba(243, 240, 228, 0.06) !important;
+  --ag-cs-dlg-nav-act: #2B2A26 !important;
+  --ag-cs-bubble: #302E29 !important;
+  --_k0: #302E29 !important;
+  --_kb: rgba(243, 240, 228, 0.10) !important;
+  --_g0: #D97757 !important;
+  --_g1: #FFFBF2 !important;
+  --_g2: transparent !important;
+  --_g3: 0 2px 6px rgba(0, 0, 0, 0.32) !important;
+}
+
+/* 暖紙深色輸入框：暖陶火漆收口 */
+html[data-ag-cs-style][data-ag-cs-theme="dark"][data-ag-cs-composer="on"] .surface-composer-card {
+  background-color: #2B2A26 !important;
+  background-image: none !important;
+  border: 1px solid #6E4436 !important;
+  box-shadow: 0 10px 26px -10px rgba(0, 0, 0, 0.45) !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="dark"][data-ag-cs-composer="on"] .surface-composer-card:hover:not(:focus-within) {
+  border-color: #965944 !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="dark"][data-ag-cs-composer="on"] .surface-composer-card:focus-within {
+  border-color: #D97757 !important;
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.55) !important;
+}
+
+/* ============================================================================
+ * 炫彩霓虹與稜鏡光效徹底淨化層（保留莫蘭迪／暖紙個人化設定，歸零所有彩虹發光）
+ * ============================================================================ */
+html[data-ag-cs-style],
+html[data-ag-cs-style] > body {
+  --ag-ambient-mul: 0 !important;
+  --ag-accent-prism-mul: 0 !important;
+  --ag-prism-strength: 0 !important;
+  --_ps: transparent !important;
+  --ag-prism-cobalt: var(--primary) !important;
+  --ag-prism-iris: var(--primary) !important;
+  --ag-prism-coral: var(--primary) !important;
+  --ag-prism-amber: var(--primary) !important;
+}
+
+/* 日間模式：以莫蘭迪石青取代所有彩虹漸層與霓虹發光變數 */
+html[data-ag-cs-style][data-ag-cs-theme="light"],
+html[data-ag-cs-style][data-ag-cs-palette][data-ag-cs-theme="light"],
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) {
+  --_sb: #3F6E7A !important;
+  --_sg: none !important;
+  --_rb: #3F6E7A !important;
+  --_rr: conic-gradient(from 0deg, #3F6E7A 0deg, #78949D 140deg, rgba(63, 110, 122, 0.14) 280deg, #3F6E7A 360deg) !important;
+  --_ro: none !important;
+  --_rs: none !important;
+  --ag-cs-run-core: #FAF8F3 !important;
+  --ag-cs-run-star: #3F6E7A !important;
+  --ag-cs-run-wash: linear-gradient(90deg, rgba(63, 110, 122, 0.08) 0%, rgba(63, 110, 122, 0.02) 60%, transparent) !important;
+  --_x4: conic-gradient(from 0deg, #3F6E7A 0deg, #78949D 140deg, rgba(63, 110, 122, 0.18) 280deg, #3F6E7A 360deg) !important;
+  --_ks: 0 1px 3px rgba(54, 49, 43, 0.14) !important;
+  --_kc: #FAF8F3 !important;
+  --_x0: #FAF8F3 !important;
+  --_x1: #24221F !important;
+  --_x2: #24221F !important;
+  --_x3: none !important;
+  --_cb: #3F6E7A !important;
+  --_cs: none !important;
+  --_na: #3F6E7A !important;
+  --_ng: none !important;
+  --ag-cs-thought-rule: rgba(63, 110, 122, 0.35) !important;
+}
+
+/* 夜間模式：以暖紙陶紅取代所有彩虹漸層與霓虹發光變數 */
+html[data-ag-cs-style]:not([data-ag-cs-theme="light"]),
+html[data-ag-cs-style][data-ag-cs-palette][data-ag-cs-theme="dark"],
+html[data-ag-cs-style] > body:not(.theme-light):not(.light-theme):not(.light),
+html[data-ag-cs-style] > body:is(.theme-dark, .dark) {
+  --_sb: #D97757 !important;
+  --_sg: none !important;
+  --_rb: #D97757 !important;
+  --_rr: conic-gradient(from 0deg, #D97757 0deg, #DFA07E 140deg, rgba(217, 119, 87, 0.16) 280deg, #D97757 360deg) !important;
+  --_ro: none !important;
+  --_rs: none !important;
+  --ag-cs-run-core: #242320 !important;
+  --ag-cs-run-star: #D97757 !important;
+  --ag-cs-run-wash: linear-gradient(90deg, rgba(217, 119, 87, 0.10) 0%, rgba(217, 119, 87, 0.025) 60%, transparent) !important;
+  --_x4: conic-gradient(from 0deg, #D97757 0deg, #DFA07E 140deg, rgba(217, 119, 87, 0.20) 280deg, #D97757 360deg) !important;
+  --_ks: 0 2px 6px rgba(0, 0, 0, 0.35) !important;
+  --_kc: #2B2A26 !important;
+  --_x0: #2B2A26 !important;
+  --_x1: #F3F0E4 !important;
+  --_x2: #FFFBF2 !important;
+  --_x3: none !important;
+  --_cb: #D97757 !important;
+  --_cs: none !important;
+  --_na: #D97757 !important;
+  --_ng: none !important;
+  --ag-cs-thought-rule: rgba(217, 119, 87, 0.38) !important;
+}
+
+/* 徹底關閉純裝飾炫彩光效：發射光環、旋繞光纖邊框、焦散掃光、稜鏡光邊、對話光暈、Canvas 光效 */
+html[data-ag-cs-style] :is(
+  .ag-cs-liftoff-veil,
+  .ag-cs-liftoff-ring,
+  .ag-cs-prism-rim-cv,
+  .ag-cs-conv-aura-host,
+  .ag-cs-conv-glow,
+  .ag-cs-brand-glow,
+  .ag-cs-ripple-canvas,
+  .ag-cs-orch-canvas
+),
+html[data-ag-cs-style] .ag-cs-liftoff-veil::before,
+html[data-ag-cs-style] .ag-cs-liftoff-ring::after,
+html[data-ag-cs-style] [data-ag-cs-fiber-camp]::after,
+html[data-ag-cs-style] [data-ag-cs-caustic="1"]::after,
+html[data-ag-cs-style] [data-ag-cs-prism-box="1"]::before,
+html[data-ag-cs-style] [data-ag-cs-prism-box="1"] .surface-composer-card::before,
+html[data-ag-cs-style] [data-ag-cs-prism-reflect="bottom"]::before,
+html[data-ag-cs-style] [data-ag-cs-prism-mirror="1"]::before,
+html[data-ag-cs-style] .ag-cs-orch-track::after,
+html[data-ag-cs-style] [data-ag-cs-overview-shell="1"][data-ag-overview-running="1"]::after,
+html[data-ag-cs-style] [data-testid="step-plan"][data-ag-sp-running="1"]::after {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  background: none !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+/* 關閉藍光聲納脈衝 */
+html[data-ag-cs-style] [data-ag-cs-sonar="1"] {
+  animation: none !important;
+}
+
+/* 淨化總覽面板、步驟計畫與子代理運行列的藍紫霓虹頂光 */
+html[data-ag-cs-style] :is(
+  [data-ag-cs-overview-shell="1"][data-ag-overview-running="1"],
+  [data-testid="step-plan"],
+  [data-testid="step-plan"][data-ag-sp-running="1"],
+  [data-testid="subagent-node"][data-ag-sub-running="1"],
+  [data-testid="running-row"][data-ag-sub-running="1"],
+  [data-testid="background-task-row"][data-ag-sub-running="1"]
+) {
+  background-image: none !important;
+}
+html[data-ag-cs-style] :is(
+  [data-ag-cs-overview-shell="1"][data-ag-overview-running="1"],
+  [data-testid="step-plan"][data-ag-sp-running="1"]
+) {
+  border-color: var(--border) !important;
+}
+
+/* 淨化側邊欄滑動指示條與步驟計畫狀態點的外擴發光 */
+html[data-ag-cs-style] .ag-cs-sidebar-glide-pill::after,
+html[data-ag-cs-style] .ag-cs-sidebar-glide-pill[data-ag-cs-glide-running="1"]::after,
+html[data-ag-cs-style] .ag-cs-sidebar-glide-pill[data-ag-cs-glide-from-running="1"]::before,
+html[data-ag-cs-style] [data-testid="step-plan"] [data-status] > :first-child,
+html[data-ag-cs-style] [data-testid="step-plan"] [data-status] > :first-child > svg,
+html[data-ag-cs-style] [data-testid="step-plan"] [data-status] > :first-child::before,
+html[data-ag-cs-style] [data-testid="step-plan"] [data-status] > :first-child::after,
+html[data-ag-cs-style] .ces-ag-effort-row[data-ag-orch-p] .ces-tick {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+/* 思考中火花圖示與 Sidebar Studio 狀態點改走克制主題色，去除電光藍與霓虹光暈 */
+html[data-ag-cs-style] .ag-cs-thinking-spark:not([data-state="error"]) {
+  color: var(--primary) !important;
+  filter: none !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-dot[data-status="running"] {
+  background: var(--primary) !important;
+  box-shadow: none !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-dot[data-status="blocked"] {
+  background: var(--warning) !important;
+  box-shadow: none !important;
+}
+html[data-ag-cs-style] .ag-cs-smooth-caret {
+  box-shadow: none !important;
+}
+
+/* ============================================================================
+ * 運行中圈圈與輸入框右下停止鈕：去除厚重塑膠疊層，改為輕盈 1.5px 纖細絲滑旋轉環
+ * （覆寫 motion="subtle" 的 animation:none，確保工作狀態下持續順暢轉動）
+ * ============================================================================ */
+html[data-ag-cs-style] [data-testid="status-loading-spinner"],
+html[data-ag-cs-style][data-ag-cs-motion="subtle"] [data-testid="status-loading-spinner"] {
+  width: 15px !important;
+  height: 15px !important;
+  min-width: 15px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+html[data-ag-cs-style] [data-testid="status-loading-spinner"]::before,
+html[data-ag-cs-style][data-ag-cs-motion="subtle"] [data-testid="status-loading-spinner"]::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  border-radius: 999px !important;
+  background: none !important;
+  border: 1.5px solid color-mix(in srgb, var(--primary) 18%, transparent) !important;
+  border-top-color: var(--primary) !important;
+  border-right-color: color-mix(in srgb, var(--primary) 52%, transparent) !important;
+  box-sizing: border-box !important;
+  animation: ag-cs-orbit-spin 0.95s linear infinite !important;
+}
+html[data-ag-cs-style] [data-testid="status-loading-spinner"]::after,
+html[data-ag-cs-style] [data-testid="status-loading-spinner"] [data-agent-state-dot] {
+  display: none !important;
+}
+
+/* Sidebar Studio 運行圈圈同步為 1.5px 單色主題細環 */
+html[data-ag-cs-style] .ag-prism-sb-spin {
+  width: 14px !important;
+  height: 14px !important;
+  border: 1.5px solid color-mix(in srgb, var(--primary) 18%, transparent) !important;
+  border-top-color: var(--primary) !important;
+  border-right-color: color-mix(in srgb, var(--primary) 52%, transparent) !important;
+  animation: ag-cs-orbit-spin 0.95s linear infinite !important;
+}
+
+/* 輸入框右下圓形停止鈕：改為輕薄無厚重外殼＋1.5px 絲滑旋轉細環＋精緻停止方塊 */
+html[data-ag-cs-style] [data-testid="input-cancel-button"],
+html[data-ag-cs-style][data-ag-cs-motion="subtle"] [data-testid="input-cancel-button"] {
+  background-color: color-mix(in srgb, var(--primary) 8%, transparent) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+html[data-ag-cs-style] [data-testid="input-cancel-button"]:hover {
+  background-color: color-mix(in srgb, var(--primary) 15%, transparent) !important;
+}
+html[data-ag-cs-style] [data-testid="input-cancel-button"]::before,
+html[data-ag-cs-style][data-ag-cs-motion="subtle"] [data-testid="input-cancel-button"]::before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  border-radius: 999px !important;
+  background: none !important;
+  border: 1.5px solid color-mix(in srgb, var(--primary) 22%, transparent) !important;
+  border-top-color: var(--primary) !important;
+  box-sizing: border-box !important;
+  animation: ag-cs-orbit-spin 1.1s linear infinite !important;
+  pointer-events: none !important;
+}
+html[data-ag-cs-style] [data-testid="input-cancel-button"]::after {
+  display: none !important;
+}
+html[data-ag-cs-style] [data-testid="input-cancel-button"] > :is(div, span) {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 2px !important;
+  background-color: var(--primary) !important;
+  box-shadow: none !important;
+}
+
+/* 視窗失焦時維持省電暫停 */
+html[data-ag-cs-style][data-ag-cs-win-blur="1"] :is([data-testid="status-loading-spinner"]::before, [data-testid="input-cancel-button"]::before, .ag-prism-sb-spin) {
+  animation-play-state: paused !important;
+}
+
+/* ============================================================================
+ * 待辦清單（[data-testid="step-plan"]）：溫潤紙感扁平卡片 × 極簡書卷狀態圖示
+ * 去除冷白高光邊、重陰影與靶心圓點，統一日間莫蘭迪宣紙／夜間暖紙質感
+ * ============================================================================ */
+html[data-ag-cs-style] [data-testid="step-plan"],
+html[data-ag-cs-style] [data-testid="step-plan"][data-ag-sp-running="1"] {
+  background-color: var(--card) !important;
+  background-image: none !important;
+  border: 1px solid var(--card-border) !important;
+  border-radius: 10px !important;
+  padding: 10px 14px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16) !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] [data-testid="step-plan"],
+html[data-ag-cs-style][data-ag-cs-theme="light"] [data-testid="step-plan"][data-ag-sp-running="1"] {
+  box-shadow: 0 1px 4px rgba(54, 49, 43, 0.06) !important;
+}
+
+/* 清單項目圖示統一尺寸與輕盈比例 */
+html[data-ag-cs-style] [data-testid="step-plan-item"] {
+  gap: 10px !important;
+}
+html[data-ag-cs-style] [data-testid="step-plan-item"] > :first-child {
+  width: 15px !important;
+  height: 15px !important;
+  min-width: 15px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* 已完成：柔霧鼠尾草綠淡底＋細邊勾勾 */
+html[data-ag-cs-style] [data-testid="step-plan-item"][data-status="done"] > :first-child {
+  background: color-mix(in srgb, var(--success) 15%, transparent) !important;
+  border: 1.25px solid color-mix(in srgb, var(--success) 55%, transparent) !important;
+  color: var(--success) !important;
+}
+html[data-ag-cs-style] [data-testid="step-plan-item"][data-status="done"] > :last-child {
+  color: var(--muted-foreground) !important;
+}
+
+/* 進行中：去除靶心圓點，改為與全局一致的 1.5px 主題色絲滑旋轉細環 */
+html[data-ag-cs-style] [data-testid="step-plan-item"][data-status="in_progress"] > :first-child {
+  border: 0 !important;
+  background: transparent !important;
+}
+html[data-ag-cs-style] [data-testid="step-plan-item"][data-status="in_progress"] > :first-child > svg {
+  display: block !important;
+  width: 15px !important;
+  height: 15px !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  border: 1.5px solid color-mix(in srgb, var(--primary) 20%, transparent) !important;
+  border-top-color: var(--primary) !important;
+  border-right-color: color-mix(in srgb, var(--primary) 52%, transparent) !important;
+  box-shadow: none !important;
+  animation: ag-cs-orbit-spin 0.95s linear infinite !important;
+}
+html[data-ag-cs-style][data-ag-cs-win-blur="1"] [data-testid="step-plan-item"][data-status="in_progress"] > :first-child > svg {
+  animation-play-state: paused !important;
+}
+html[data-ag-cs-style] [data-testid="step-plan-item"][data-status="in_progress"] > :last-child {
+  color: var(--foreground) !important;
+  font-weight: 500 !important;
+}
+
+/* 待辦：拿掉中間實心點，改為極簡乾淨的空心細圓圈 */
+html[data-ag-cs-style] [data-testid="step-plan-item"][data-status="pending"] > :first-child {
+  background: transparent !important;
+  border: 1.25px solid color-mix(in srgb, var(--muted-foreground) 40%, transparent) !important;
+}
+html[data-ag-cs-style] [data-testid="step-plan-item"][data-status="pending"] > :first-child::after {
+  display: none !important;
+}
+
+/* 失敗與略過：克制柔霧色調 */
+html[data-ag-cs-style] [data-testid="step-plan-item"][data-status="failed"] > :first-child {
+  background: color-mix(in srgb, var(--error) 14%, transparent) !important;
+  border: 1.25px solid color-mix(in srgb, var(--error) 55%, transparent) !important;
+  color: var(--error) !important;
+}
+html[data-ag-cs-style] [data-testid="step-plan-item"][data-status="skipped"] > :first-child {
+  background: transparent !important;
+  border: 1.25px dashed color-mix(in srgb, var(--muted-foreground) 42%, transparent) !important;
+}
+
+/* ============================================================================
+ * 模型選擇器與長按元素週期表：輕量化書卷改造層（保留長按互動，去除厚重工業機械感）
+ * ============================================================================ */
+
+/* A. 下方輸入框模型選擇器按鈕 ([data-testid="model-selector-trigger"]) 減重（覆蓋 code 與 chat 模式高權重規則） */
+html[data-ag-cs-style][data-ag-cs-composer="on"] [data-testid="model-selector-trigger"],
+html[data-ag-cs-style][data-ag-prism-mode] #antigravity\.agentSidePanelInputBox [data-testid="model-selector-trigger"],
+html[data-ag-cs-style] #antigravity\.agentSidePanelInputBox [data-testid="model-selector-trigger"] {
+  height: 28px !important;
+  min-height: 28px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+  padding: 0 7px !important;
+  gap: 5px !important;
+}
+html[data-ag-cs-style][data-ag-cs-composer="on"] [data-testid="model-selector-trigger"]:not(:disabled, [aria-disabled="true"], [data-disabled=""], [data-disabled="true"]):is(:hover, [aria-expanded="true"]),
+html[data-ag-cs-style][data-ag-prism-mode] #antigravity\.agentSidePanelInputBox [data-testid="model-selector-trigger"]:not(:disabled, [aria-disabled="true"], [data-disabled=""], [data-disabled="true"]):is(:hover, [aria-expanded="true"]),
+html[data-ag-cs-style] #antigravity\.agentSidePanelInputBox [data-testid="model-selector-trigger"]:not(:disabled, [aria-disabled="true"], [data-disabled=""], [data-disabled="true"]):is(:hover, [aria-expanded="true"]) {
+  background: var(--secondary) !important;
+  border-color: var(--border) !important;
+  color: var(--foreground) !important;
+}
+
+/* 元素小鍵帽：保留代號與長按觸發，拿掉方框邊線與底色 */
+html[data-ag-cs-style] [data-testid="model-selector-trigger"] .ag-pp-mini-keycap,
+html[data-ag-cs-style] .ag-pp-mini-keycap {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 1px !important;
+  margin: 0 !important;
+  color: var(--muted-foreground) !important;
+  font-family: var(--font-mono) !important;
+  font-weight: 500 !important;
+  opacity: 0.78 !important;
+}
+
+/* 模型圖示：移除外擴光暈與繁複軌道衛星點，統一主題色 */
+html[data-ag-cs-style] .ag-cs-model-glyph {
+  --glyph-color: var(--primary) !important;
+  --glyph-color-hi: var(--primary) !important;
+  --glyph-glow: transparent !important;
+  filter: none !important;
+}
+html[data-ag-cs-style] .ag-cs-model-glyph :is(.ag-cs-glyph-orbit-group, .ag-cs-glyph-orbit, .ag-cs-glyph-sat) {
+  display: none !important;
+}
+
+/* B. 短按模型下拉選單與思考強度滑桿減重 */
+html[data-ag-cs-style]:not([data-ag-cs-palette="host"]) :is(
+  .agy-overlay:not([data-hover-card-popup]):not([data-testid="model-selector-panel"]),
+  .surface-glass:not([data-hover-card-popup]),
+  [role="menu"]:not([data-testid="model-selector-panel"]):not(.ag-cs-ctx-menu):not(.ag-cs-diff-ctx-menu)
+) {
+  background-color: var(--ag-cs-popover-bg, var(--card)) !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  border: 1px solid var(--card-border) !important;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.22) !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"]:not([data-ag-cs-palette="host"]) :is(
+  .agy-overlay:not([data-hover-card-popup]):not([data-testid="model-selector-panel"]),
+  .surface-glass:not([data-hover-card-popup]),
+  [role="menu"]:not([data-testid="model-selector-panel"]):not(.ag-cs-ctx-menu):not(.ag-cs-diff-ctx-menu)
+) {
+  box-shadow: 0 6px 20px -4px rgba(54, 49, 43, 0.12) !important;
+}
+
+html[data-ag-cs-style] [data-testid="model-selector-panel"] [data-testid="orchestrator-effort-bar"] {
+  background: var(--muted) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: none !important;
+}
+html[data-ag-cs-style] .ag-cs-orch-value,
+html[data-ag-cs-style] .ces-ag-effort-row[data-ag-orch-p] .ces-ag-effort-value {
+  background: none !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  color: var(--primary) !important;
+}
+html[data-ag-cs-style] .ag-cs-orch-track {
+  background: var(--secondary) !important;
+  box-shadow: inset 0 0 0 1px var(--border) !important;
+}
+html[data-ag-cs-style] .ces-ag-effort-row[data-ag-orch-p] .ces-knob {
+  background: var(--card) !important;
+  border: 1.5px solid var(--primary) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+}
+html[data-ag-cs-style] .ces-ag-effort-row[data-ag-orch-p] .ces-knob::after {
+  display: none !important;
+}
+
+/* C. 長按彈出「元素週期表」(#ag-prism-periodic-picker-root) 去 CNC 重工業化 */
+html[data-ag-cs-style] #ag-prism-periodic-picker-root,
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-kit="warm-dark"],
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-kit="obsidian-dark"] {
+  font-family: var(--font-sans) !important;
+  --ag-pp-model-accent: var(--primary) !important;
+  --ag-pp-model-secondary: var(--primary) !important;
+  --ag-pp-model-grad: none !important;
+  --ag-pp-model-glow: transparent !important;
+  --pp-spatial-scrim: rgba(27, 26, 24, 0.94) !important;
+  --pp-felt-bg: #201F1C !important;
+  --pp-dock-hairline: rgba(243, 240, 228, 0.10) !important;
+  --pp-cnc-shell: #282724 !important;
+  --pp-cnc-border: rgba(243, 240, 228, 0.10) !important;
+  --pp-cnc-chamfer-top: transparent !important;
+  --pp-cnc-chamfer-bot: transparent !important;
+  --pp-cnc-shadow: 0 2px 8px rgba(0, 0, 0, 0.18) !important;
+  --pp-screen-bg: #22211E !important;
+  --pp-screen-border: rgba(243, 240, 228, 0.08) !important;
+  --pp-screen-inset: none !important;
+  --pp-btn-well-bg: #22211E !important;
+  --pp-btn-metal: #2E2C28 !important;
+  --pp-btn-metal-hover: #37342E !important;
+  --pp-btn-metal-fg: #F3F0E4 !important;
+  --pp-bento-fg: #F3F0E4 !important;
+  --pp-bento-sub: #DAD5C5 !important;
+  --pp-bento-dim: #A39E8D !important;
+  --pp-seg-active-bg: #32302B !important;
+  --pp-seg-active-fg: #F3F0E4 !important;
+  --pp-seg-active-border: rgba(217, 119, 87, 0.45) !important;
+  --pp-seg-active-shadow: none !important;
+}
+
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-theme="light"],
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-kit="alabaster-light"],
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-kit="crystal-light"] {
+  font-family: var(--font-sans) !important;
+  --ag-pp-model-accent: var(--primary) !important;
+  --ag-pp-model-secondary: var(--primary) !important;
+  --ag-pp-model-grad: none !important;
+  --ag-pp-model-glow: transparent !important;
+  --pp-spatial-scrim: rgba(244, 241, 234, 0.94) !important;
+  --pp-felt-bg: #EFECE4 !important;
+  --pp-dock-hairline: rgba(54, 49, 43, 0.14) !important;
+  --pp-cnc-shell: #FAF8F3 !important;
+  --pp-cnc-border: rgba(54, 49, 43, 0.14) !important;
+  --pp-cnc-chamfer-top: transparent !important;
+  --pp-cnc-chamfer-bot: transparent !important;
+  --pp-cnc-shadow: 0 2px 8px rgba(54, 49, 43, 0.06) !important;
+  --pp-screen-bg: #F4F1EA !important;
+  --pp-screen-border: rgba(54, 49, 43, 0.10) !important;
+  --pp-screen-inset: none !important;
+  --pp-btn-well-bg: #EAE5DA !important;
+  --pp-btn-metal: #FAF8F3 !important;
+  --pp-btn-metal-hover: #EFECE4 !important;
+  --pp-btn-metal-fg: #24221F !important;
+  --pp-bento-fg: #24221F !important;
+  --pp-bento-sub: #5E584F !important;
+  --pp-bento-dim: #878075 !important;
+  --pp-seg-active-bg: #FAF8F3 !important;
+  --pp-seg-active-fg: #24221F !important;
+  --pp-seg-active-border: rgba(63, 110, 122, 0.45) !important;
+  --pp-seg-active-shadow: none !important;
+}
+
+/* 拿掉 CNC 機械凹槽、金屬倒角光邊與多餘陰影 */
+html[data-ag-cs-style] #ag-prism-periodic-picker-root :is(.ag-pp-dock-top-rim, .ag-pp-card-rim, .ag-pp-tele-rim, .ag-pp-floor-shadow) {
+  display: none !important;
+}
+html[data-ag-cs-style] #ag-prism-periodic-picker-root :is(.ag-pp-bento-efforts, .ag-pp-recess-screen, .ag-pp-aux-pager, .ag-pp-compact-model-pill, .ag-pp-compact-tele-wrap) {
+  box-shadow: none !important;
+}
+html[data-ag-cs-style] #ag-prism-periodic-picker-root .ag-pp-machined-well {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+html[data-ag-cs-style] #ag-prism-periodic-picker-root .ag-pp-machined-btn {
+  box-shadow: none !important;
+}
+html[data-ag-cs-style] #ag-prism-periodic-picker-root :is(
+  .ag-pp-bento-eff-btn[data-active="1"]::after,
+  .ag-pp-pinhole-dot[data-lit="1"],
+  .ag-pp-aux-page-dot[data-active="1"],
+  .ag-pp-compact-pill-dot
+) {
+  box-shadow: none !important;
+}
+
+/* ============================================================================
+ * D. 短按模型選單：徹底淨化亮藍紫星空「推理等級」滑桿 (effort-slider) 與電光藍字色
+ * ============================================================================ */
+/* 移除模型星芒中間的亮白圓心，讓圖示更純粹溫潤 */
+html[data-ag-cs-style] .ag-cs-model-glyph .ag-cs-glyph-core {
+  opacity: 0 !important;
+}
+
+/* 模型選擇器按鈕與下拉選單中的電光藍標籤字色收斂為溫潤主題色／次要字色 */
+html[data-ag-cs-style] [data-testid="model-selector-trigger"] :is([class*="text-blue"], [style*="color"]),
+html[data-ag-cs-style] [data-testid="model-selector-panel"] :is([class*="text-blue"], [data-ces-part="value"], .ces-ag-effort-value, [role="menuitem"] span[style*="color"]) {
+  color: var(--primary) !important;
+  text-shadow: none !important;
+}
+
+/* 徹底關閉 effort-slider 的紫色能量條、白色掃光、星空粒子與發光 Canvas */
+html[data-ag-cs-style] .ces-ag-section :is(.ces-energy, .ces-energy__sweep, .ces-stars, .ces-star, .ces-star__dot, .ces-claude-canvas),
+html[data-ag-cs-style] .ces-ag-effort-value::after {
+  display: none !important;
+  opacity: 0 !important;
+  animation: none !important;
+}
+
+/* 推理等級列容器與軌道：改為輕薄扁平溫潤紙槽，去除紫光與厚重白球 */
+html[data-ag-cs-style] .ces-ag-section .ces-ag-effort-row,
+html[data-ag-cs-style] .ces-ag-section .ces-ag-effort-row[data-ces-max="true"],
+html[data-ag-cs-style] [data-ces-effort-row="true"][data-ces-max="true"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+html[data-ag-cs-style] .ces-ag-section .ces-ag-effort-row:hover {
+  background: var(--muted) !important;
+}
+html[data-ag-cs-style] .ces-ag-section .ces-track,
+html[data-ag-cs-style] .ces-ag-section .ces-root[data-energy="1"] .ces-track,
+html[data-ag-cs-style] .ces-ag-section .ces-root[data-theme="claude"] .ces-track,
+html[data-ag-cs-style] .ces-ag-section .ces-root[data-theme="claude"][data-energy="1"] .ces-track {
+  height: 18px !important;
+  border-radius: 999px !important;
+  background: var(--secondary) !important;
+  box-shadow: inset 0 0 0 1px var(--border) !important;
+}
+html[data-ag-cs-style] .ces-ag-section .ces-fill {
+  background: color-mix(in srgb, var(--primary) 62%, transparent) !important;
+  border-radius: 999px !important;
+}
+html[data-ag-cs-style] .ces-ag-section .ces-tick {
+  width: 3px !important;
+  height: 3px !important;
+  background: color-mix(in srgb, var(--muted-foreground) 45%, transparent) !important;
+  box-shadow: none !important;
+}
+html[data-ag-cs-style] .ces-ag-section .ces-tick.is-on {
+  background: color-mix(in srgb, var(--primary-foreground) 72%, transparent) !important;
+}
+html[data-ag-cs-style] .ces-ag-section .ces-knob,
+html[data-ag-cs-style] .ces-ag-section .ces-root[data-theme="claude"] .ces-knob {
+  width: 18px !important;
+  height: 18px !important;
+  margin: -9px 0 0 -9px !important;
+  border-radius: 999px !important;
+  background: var(--card) !important;
+  border: 1.5px solid var(--primary) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24) !important;
+}
+html[data-ag-cs-style] .ces-ag-section .ces-knob-notch {
+  display: none !important;
+}
+html[data-ag-cs-style] [role="menuitem"][data-ces-model-selected="true"],
+html[data-ag-cs-style] [data-ces-orch-row="1"][data-ces-model-selected="true"] {
+  background: var(--secondary) !important;
+}
+
+/* ============================================================================
+ * E. 長按彈出「純 2D 扁平書卷元素週期表浮窗」([data-flat-2d="1"])
+ * 改為不推擠頁面的獨立懸浮 Popover＋流暢彈簧進出場動效＋淡淡立體紙影＋頂部絲滑替換＋86 元素化學圖鑑與水墨漣漪
+ * ============================================================================ */
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-flat-2d="1"],
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-flat-2d="1"][data-stage-mode="drawer"],
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-flat-2d="1"][data-stage-mode="drawer"][data-in-flow="0"] {
+  position: fixed !important;
+  inset: auto !important;
+  left: var(--ag-pp-pop-left, 50%) !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: var(--ag-pp-pop-bottom, 112px) !important;
+  width: var(--ag-pp-pop-width, min(688px, calc(100vw - 32px))) !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  overflow: visible !important;
+  z-index: 2147483640 !important;
+  transform-origin: 50% 100% !important;
+  opacity: 0 !important;
+  transform: translate3d(-50%, 10px, 0) scale(0.965) !important;
+  pointer-events: none !important;
+  transition: opacity 190ms cubic-bezier(0.22, 1, 0.36, 1), transform 230ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-flat-2d="1"][data-open="1"]:not([data-closing="1"]) {
+  opacity: 1 !important;
+  transform: translate3d(-50%, 0, 0) scale(1) !important;
+  pointer-events: auto !important;
+}
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-flat-2d="1"][data-closing="1"] {
+  opacity: 0 !important;
+  transform: translate3d(-50%, 8px, 0) scale(0.97) !important;
+  pointer-events: none !important;
+  transition: opacity 160ms cubic-bezier(0.32, 0, 0.67, 0), transform 180ms cubic-bezier(0.32, 0, 0.67, 0) !important;
+}
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-flat-2d="1"] :is(
+  .ag-pp-bento-grid,
+  .ag-pp-right-wing,
+  .ag-pp-compact-bar,
+  .ag-pp-gl-canvas,
+  .ag-pp-hit-layer,
+  .ag-pp-hud-pill,
+  .ag-pp-deskmat-stage,
+  .ag-pp-dock-top-rim,
+  .ag-pp-dock-grip,
+  .ag-pp-floor-shadow
+) {
+  display: none !important;
+}
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-flat-2d="1"] .ag-pp-spatial-dock {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+html[data-ag-cs-style] #ag-prism-periodic-picker-root[data-flat-2d="1"] .ag-pp-stage {
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+  min-height: 0 !important;
+  flex: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  overflow: visible !important;
+}
+
+/* 2D 書卷週期表浮窗卡片：溫潤紙感＋淡淡立體陰影 */
+html[data-ag-cs-style] .ag-pp-flat2d-root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px 12px;
+  border-radius: 13px;
+  box-sizing: border-box;
+  background: var(--card, #2B2A26);
+  border: 1px solid var(--card-border, rgba(243, 240, 228, 0.12));
+  box-shadow: 0 14px 36px -10px rgba(0, 0, 0, 0.38), 0 4px 12px -2px rgba(0, 0, 0, 0.20);
+  color: var(--foreground, #F3F0E4);
+  font-family: var(--font-sans);
+  user-select: none;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-pp-flat2d-root {
+  box-shadow: 0 12px 32px -8px rgba(54, 49, 43, 0.14), 0 3px 10px -2px rgba(54, 49, 43, 0.06);
+}
+
+/* 頂部極簡單行資訊列與絲滑替換動效 */
+@keyframes ag-pp-f2-meta-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+html[data-ag-cs-style] .ag-pp-flat2d-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 24px;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-meta.is-swapping,
+html[data-ag-cs-style] .ag-pp-flat2d-right.is-swapping {
+  animation: ag-pp-f2-meta-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-badge[data-kind="chem"] {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+html[data-ag-cs-style] .ag-pp-flat2d-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-sub {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--muted-foreground);
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-chem-note {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--muted-foreground);
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-efforts {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+}
+html[data-ag-cs-style] .ag-pp-f2-eff-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease, transform 120ms ease;
+}
+html[data-ag-cs-style] .ag-pp-f2-eff-btn:hover {
+  color: var(--foreground);
+}
+html[data-ag-cs-style] .ag-pp-f2-eff-btn[data-active="1"] {
+  background: var(--card);
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 36%, var(--border));
+  font-weight: 600;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-close {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+html[data-ag-cs-style] .ag-pp-flat2d-close:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+/* 18 欄 × 7 列標準元素週期表 2D 扁平網格 + 86 顆化學元素微互動與水墨漣漪 */
+@keyframes ag-pp-f2-ripple-wave {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  38% {
+    transform: translateY(-2px) scale(1.045);
+    border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+    background: color-mix(in srgb, var(--primary) 11%, var(--card));
+    color: var(--foreground);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+html[data-ag-cs-style] .ag-pp-flat2d-grid {
+  display: grid;
+  grid-template-columns: repeat(18, minmax(0, 1fr));
+  grid-auto-rows: 24px;
+  gap: 2.5px;
+  width: 100%;
+}
+html[data-ag-cs-style] .ag-pp-f2-cell {
+  position: relative;
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0;
+  border-radius: 4px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--foreground) 6.5%, transparent);
+  background: color-mix(in srgb, var(--foreground) 1.8%, transparent);
+  color: color-mix(in srgb, var(--muted-foreground) 48%, transparent);
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+html[data-ag-cs-style] .ag-pp-f2-cell.is-rippling {
+  animation: ag-pp-f2-ripple-wave 420ms cubic-bezier(0.22, 1, 0.36, 1) var(--ag-f2-delay, 0ms) both;
+}
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="0"]:hover,
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="0"][data-pinned="1"] {
+  background: color-mix(in srgb, var(--foreground) 7.5%, transparent);
+  border-color: color-mix(in srgb, var(--foreground) 22%, transparent);
+  color: var(--secondary-foreground);
+  transform: translateY(-1px);
+}
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="0"][data-group="noble"]:hover {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+}
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="0"][data-group="halogen"]:hover,
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="0"][data-group="nonmetal"]:hover {
+  border-color: color-mix(in srgb, var(--success) 42%, var(--border));
+  background: color-mix(in srgb, var(--success) 7%, transparent);
+}
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="0"][data-group="alkali"]:hover,
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="0"][data-group="alkaline"]:hover {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+}
+html[data-ag-cs-style] .ag-pp-f2-num {
+  position: absolute;
+  top: 1.5px;
+  left: 2.5px;
+  font-family: var(--font-mono);
+  font-size: 6.5px;
+  line-height: 1;
+  opacity: 0.72;
+  pointer-events: none;
+}
+html[data-ag-cs-style] .ag-pp-f2-sym {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  margin-top: 3px;
+  pointer-events: none;
+}
+
+/* 可用模型元素格：溫潤活字卡面，清楚高亮但不刺眼 */
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="1"] {
+  background: color-mix(in srgb, var(--primary) 11%, var(--background));
+  border-color: color-mix(in srgb, var(--primary) 44%, var(--border));
+  color: var(--foreground);
+  cursor: pointer;
+}
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="1"] .ag-pp-f2-sym {
+  font-weight: 700;
+}
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="1"]:hover {
+  background: color-mix(in srgb, var(--primary) 22%, var(--background));
+  border-color: var(--primary);
+  transform: translateY(-1.5px);
+}
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="1"][data-selected="1"] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+html[data-ag-cs-style] .ag-pp-f2-cell[data-avail="1"][data-selected="1"] .ag-pp-f2-num {
+  opacity: 0.88;
+}
+
+/* 底部其他非元素模型單排小膠囊列 */
+html[data-ag-cs-style] .ag-pp-flat2d-aux {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+html[data-ag-cs-style] .ag-pp-f2-aux-pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--secondary-foreground);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease, transform 120ms ease;
+}
+html[data-ag-cs-style] .ag-pp-f2-aux-pill:hover {
+  background: var(--secondary);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  color: var(--foreground);
+  transform: translateY(-1px);
+}
+html[data-ag-cs-style] .ag-pp-f2-aux-pill[data-selected="1"],
+html[data-ag-cs-style] .ag-pp-f2-aux-pill[data-latched="1"] {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  color: var(--foreground);
+}
+html[data-ag-cs-style] .ag-pp-f2-aux-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 11.5px;
+  height: 11.5px;
+  color: var(--muted-foreground);
+  opacity: 0.78;
+  flex-shrink: 0;
+  transition: color 130ms ease, opacity 130ms ease, transform 130ms ease;
+}
+html[data-ag-cs-style] .ag-pp-f2-aux-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+html[data-ag-cs-style] .ag-pp-f2-aux-pill:hover .ag-pp-f2-aux-icon,
+html[data-ag-cs-style] .ag-pp-f2-aux-pill[data-selected="1"] .ag-pp-f2-aux-icon,
+html[data-ag-cs-style] .ag-pp-f2-aux-pill[data-latched="1"] .ag-pp-f2-aux-icon {
+  color: var(--primary);
+  opacity: 1;
+}
+html[data-ag-cs-style] .ag-pp-f2-aux-name {
+  white-space: nowrap;
+}
+
+/* ============================================================================
+ * F. Sidebar Studio (Code / Chat 雙極工作台) 莫蘭迪／暖紙書卷統一層
+ * 1. 將 Chat 模式所有 --ag-sb-* 色票與字體 100% 綁定至宿主莫蘭迪宣紙／暖紙深色變數，消滅切換色差
+ * 2. 徹底關閉 Chat 首頁藍綠霓虹光球 (.ag-prism-chat-aura) 與旋轉彩虹光環 (.ag-prism-vessel::after)
+ * 3. 統一頂欄 [ Code | Chat ] 分段器、側邊欄列表項、問候語襯線字、等寬輸入框與暖陶火漆／煙嵐石青單線收口
+ * 4. 確保在 subtle / standard / ultra 下皆擁有絲滑的 Code <-> Chat 雙向彈簧空間切換動畫
+ * ============================================================================ */
+html[data-ag-cs-style],
+html[data-ag-cs-style][data-ag-cs-palette],
+html[data-ag-cs-style][data-ag-cs-theme],
+html[data-ag-cs-style] > body {
+  --ag-sb-font-display: var(--font-sans) !important;
+  --ag-sb-bg: var(--sidebar) !important;
+  --ag-sb-canvas: var(--background) !important;
+  --ag-sb-container: var(--card) !important;
+  --ag-sb-tray: var(--ag-cs-tonal-3, var(--card)) !important;
+  --ag-sb-high: var(--ag-cs-tonal-4, var(--card)) !important;
+  --ag-sb-popover: var(--ag-cs-popover-bg, var(--card)) !important;
+  --ag-sb-hairline: var(--border) !important;
+  --ag-sb-specular: transparent !important;
+  --ag-sb-hover: var(--secondary) !important;
+  --ag-sb-pill-track: var(--muted) !important;
+  --ag-sb-pill-thumb: var(--card) !important;
+  --ag-sb-active-pill: color-mix(in srgb, var(--primary) 13%, transparent) !important;
+  --ag-sb-active-anchor: var(--primary) !important;
+  --ag-sb-active-text: var(--foreground) !important;
+  --ag-sb-fg: var(--foreground) !important;
+  --ag-sb-muted: var(--secondary-foreground) !important;
+  --ag-sb-dim: var(--muted-foreground) !important;
+  --ag-sb-send-idle-bg: var(--secondary) !important;
+  --ag-sb-send-idle-fg: var(--muted-foreground) !important;
+  --ag-sb-send-ready-bg: var(--primary) !important;
+  --ag-sb-send-ready-fg: var(--primary-foreground) !important;
+  --ag-sb-shadow: var(--_cx, 0 8px 24px -8px rgba(0, 0, 0, 0.28)) !important;
+  --ag-sb-focus-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.36) !important;
+}
+
+/* 徹底移除 Chat 首頁突兀的藍綠霓虹大光斑與聚焦旋轉霓虹光環 */
+html[data-ag-cs-style] :is(.ag-prism-chat-aura, .ag-prism-aura-orb),
+html[data-ag-cs-style] .ag-prism-vessel::after {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  background: none !important;
+  animation: none !important;
+}
+
+/* 僅將品牌星芒 SVG (無 stroke="currentColor") 收斂為溫潤單色主題色，絕不污染空心線條圖示 (shield/folder/chevronDown) */
+html[data-ag-cs-style] :is(.ag-prism-hero-mark, .ag-prism-ghost-btn, .ag-prism-model-icon) svg:not([stroke="currentColor"]) path:first-of-type {
+  fill: var(--primary) !important;
+}
+html[data-ag-cs-style] :is(.ag-prism-hero-mark, .ag-prism-ghost-btn, .ag-prism-model-icon) svg:not([stroke="currentColor"]) path:not(:first-of-type) {
+  display: none !important;
+}
+html[data-ag-cs-style] :is(.ag-prism-hero-mark, .ag-prism-ghost-btn, .ag-prism-model-icon) svg[stroke="currentColor"] path {
+  fill: none !important;
+}
+
+/* 頂欄 [ </> Code | ○ Chat ] 切換膠囊：高對比內凹槽 + 溫潤浮起選中紙卡 */
+html[data-ag-cs-style] .ag-prism-mode-dock {
+  padding: 4px 8px 6px !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-seg {
+  padding: 2.5px !important;
+  border-radius: 8px !important;
+  background: #141311 !important;
+  border: 1px solid rgba(243, 240, 228, 0.11) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.28) !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-sb-seg,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) .ag-prism-sb-seg {
+  background: #DFD9CC !important;
+  border-color: rgba(54, 49, 43, 0.15) !important;
+  box-shadow: inset 0 1px 2px rgba(54, 49, 43, 0.06) !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-slider {
+  top: 2.5px !important;
+  bottom: 2.5px !important;
+  left: 2.5px !important;
+  width: calc(50% - 2.5px) !important;
+  border-radius: 6px !important;
+  background: color-mix(in srgb, var(--primary) 20%, #34312B) !important;
+  border: 1px solid color-mix(in srgb, var(--primary) 48%, rgba(243, 240, 228, 0.18)) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.34) !important;
+  box-sizing: border-box !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-sb-slider,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) .ag-prism-sb-slider {
+  background: #FFFFFF !important;
+  border: 1px solid color-mix(in srgb, var(--primary) 46%, rgba(54, 49, 43, 0.16)) !important;
+  box-shadow: 0 1px 3px rgba(45, 58, 62, 0.14) !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-mode-btn {
+  height: 24px !important;
+  border-radius: 6px !important;
+  font-family: var(--font-sans) !important;
+  font-size: 12px !important;
+  font-weight: 450 !important;
+  color: #8E897B !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-mode-btn:hover:not([data-active="1"]) {
+  color: var(--secondary-foreground) !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-mode-btn[data-active="1"] {
+  color: #FFFBF2 !important;
+  font-weight: 600 !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-sb-mode-btn,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) .ag-prism-sb-mode-btn {
+  color: #6E675C !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-sb-mode-btn[data-active="1"],
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) .ag-prism-sb-mode-btn[data-active="1"] {
+  color: #1E383F !important;
+  font-weight: 600 !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-beta-pill {
+  font-family: var(--font-mono) !important;
+  font-size: 8.5px !important;
+  padding: 1.5px 4px !important;
+  border-radius: 4px !important;
+  background: color-mix(in srgb, var(--primary) 16%, transparent) !important;
+  color: var(--primary) !important;
+  letter-spacing: 0.02em !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-mode-btn[data-active="1"] .ag-prism-sb-beta-pill {
+  background: color-mix(in srgb, var(--primary) 26%, rgba(0, 0, 0, 0.18)) !important;
+  color: #FFD7C6 !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-sb-mode-btn[data-active="1"] .ag-prism-sb-beta-pill,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) .ag-prism-sb-mode-btn[data-active="1"] .ag-prism-sb-beta-pill {
+  background: color-mix(in srgb, var(--primary) 14%, transparent) !important;
+  color: var(--primary) !important;
+}
+
+/* 左側邊欄 Chat 面板：按鈕、搜尋框、資料夾與對話列圓角與間距 100% 對齊 Code 原生側邊欄 */
+html[data-ag-cs-style] .ag-prism-sb-chat-head {
+  padding: 2px 8px 4px !important;
+}
+html[data-ag-cs-style] :is(.ag-prism-sb-new-btn, .ag-prism-sb-group-head, .ag-prism-sb-row, .ag-prism-sb-policy-btn) {
+  border-radius: 8px !important;
+  font-family: var(--font-sans) !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-icon-btn {
+  border-radius: 7px !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-search {
+  border-radius: 8px !important;
+  background: var(--sidebar-muted) !important;
+  border: 1px solid var(--sidebar-border, var(--border)) !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-row[data-active="1"] {
+  background: var(--sidebar-secondary) !important;
+  color: var(--foreground) !important;
+}
+html[data-ag-cs-style] .ag-prism-sb-row[data-active="1"]::before {
+  background: var(--primary) !important;
+  width: 2px !important;
+}
+
+/* Chat 首頁問候語：對齊 Code 首頁 Anthropic Serif × 霞鶩文楷 TC 圓潤書卷風格 */
+html[data-ag-cs-style] .ag-prism-chat-home {
+  background: var(--background) !important;
+}
+html[data-ag-cs-style] .ag-prism-hero-eyebrow {
+  font-family: var(--font-sans) !important;
+  font-size: 14px !important;
+  color: var(--muted-foreground) !important;
+}
+html[data-ag-cs-style] .ag-prism-hero-h1 {
+  font-family: 'Anthropic Serif', 'Anthropic Serif Web Display Light', 'Anthropic Serif Web', 'Anthropic Serif Web Text Light', 'anthropic-serif', 'Tiempos Text', 'Tiempos', 'AgWenKaiTC', 'LXGW WenKai TC', '霞鶩文楷 TC', 'Noto Serif TC', 'Source Han Serif TC', 'Songti TC', Georgia, Cambria, 'Times New Roman', serif !important;
+  font-size: 32px !important;
+  line-height: 1.3 !important;
+  font-weight: 540 !important;
+  letter-spacing: 0.005em !important;
+  color: var(--foreground) !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-hero-h1 {
+  text-shadow: var(--ag-ink-shadow-prose);
+}
+
+/* Chat 首頁與對話頁輸入框：對齊 Code 模式「暖陶火漆 (深色)／煙嵐石青 (淺色)」單線收口書卷卡片與等寬輸入字體 */
+html[data-ag-cs-style] .ag-prism-vessel,
+html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\.agentSidePanelInputBox .surface-composer-card {
+  border-radius: 14px !important;
+  background-color: var(--card) !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #6E4436 !important;
+  box-shadow: 0 10px 26px -10px rgba(0, 0, 0, 0.45) !important;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 200ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+html[data-ag-cs-style] .ag-prism-vessel:hover:not(:focus-within),
+html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\.agentSidePanelInputBox .surface-composer-card:hover:not(:focus-within) {
+  border-color: #965944 !important;
+}
+html[data-ag-cs-style] .ag-prism-vessel-wrap[data-focused="1"] .ag-prism-vessel,
+html[data-ag-cs-style] .ag-prism-vessel:focus-within,
+html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\.agentSidePanelInputBox .surface-composer-card:focus-within {
+  border-color: #D97757 !important;
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.55) !important;
+}
+
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-vessel,
+html[data-ag-cs-style][data-ag-cs-theme="light"][data-ag-prism-mode="chat"] #antigravity\.agentSidePanelInputBox .surface-composer-card,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) :is(.ag-prism-vessel, #antigravity\.agentSidePanelInputBox .surface-composer-card) {
+  background-color: #FAF8F3 !important;
+  border: 1px solid #A3B5BA !important;
+  box-shadow: 0 2px 8px -2px rgba(45, 58, 62, 0.06) !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] :is(.ag-prism-vessel, #antigravity\.agentSidePanelInputBox .surface-composer-card):hover:not(:focus-within),
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) :is(.ag-prism-vessel, #antigravity\.agentSidePanelInputBox .surface-composer-card):hover:not(:focus-within) {
+  border-color: #78949D !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-vessel-wrap[data-focused="1"] .ag-prism-vessel,
+html[data-ag-cs-style][data-ag-cs-theme="light"] :is(.ag-prism-vessel, #antigravity\.agentSidePanelInputBox .surface-composer-card):focus-within,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) :is(.ag-prism-vessel, #antigravity\.agentSidePanelInputBox .surface-composer-card):focus-within {
+  border-color: #3D6470 !important;
+  box-shadow: 0 6px 20px -4px rgba(61, 100, 112, 0.16) !important;
+}
+
+/* Chat 首頁輸入文字與佔位提示：對齊 Code 輸入框等距更紗黑體 Slab TC */
+html[data-ag-cs-style] .ag-prism-chat-input,
+html[data-ag-cs-style] .ag-prism-chat-input:empty::before {
+  font-family: 'Sarasa Mono Slab TC', '等距更紗黑體 Slab TC', 'Anthropic Mono', 'Anthropic Mono Web', ui-monospace, 'PingFang TC', 'Hiragino Sans TC', 'Microsoft JhengHei UI', monospace !important;
+  font-size: 14px !important;
+  line-height: 22px !important;
+  font-weight: 400 !important;
+}
+html[data-ag-cs-style] .ag-prism-chat-input {
+  min-height: 46px !important;
+  padding: 13px 16px 6px !important;
+}
+html[data-ag-cs-style] .ag-prism-chat-bar {
+  padding: 5px 10px 9px !important;
+}
+
+/* Chat 輸入框內 Pure / Spark 切換器：高對比內凹槽 + 暖陶/純白清晰選中滑塊 + 600 字重選中字色 */
+html[data-ag-cs-style] .ag-prism-subseg {
+  padding: 2.5px !important;
+  border-radius: 8px !important;
+  background: #1B1A17 !important;
+  border: 1px solid rgba(243, 240, 228, 0.12) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.30) !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-subseg,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) .ag-prism-subseg {
+  background: #E4DECFE8 !important;
+  border-color: rgba(54, 49, 43, 0.16) !important;
+  box-shadow: inset 0 1px 2px rgba(54, 49, 43, 0.06) !important;
+}
+html[data-ag-cs-style] .ag-prism-subslider {
+  top: 2.5px !important;
+  bottom: 2.5px !important;
+  left: 2.5px !important;
+  width: calc(50% - 2.5px) !important;
+  border-radius: 6px !important;
+  background: color-mix(in srgb, var(--primary) 24%, #3A3730) !important;
+  border: 1px solid color-mix(in srgb, var(--primary) 56%, rgba(243, 240, 228, 0.22)) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.38) !important;
+  box-sizing: border-box !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-subslider,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) .ag-prism-subslider {
+  background: #FFFFFF !important;
+  border: 1px solid color-mix(in srgb, var(--primary) 52%, rgba(54, 49, 43, 0.18)) !important;
+  box-shadow: 0 1px 3px rgba(45, 58, 62, 0.15) !important;
+}
+html[data-ag-cs-style] .ag-prism-subbtn {
+  height: 24px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  font-weight: 450 !important;
+  font-family: var(--font-sans) !important;
+  color: #8E897B !important;
+}
+html[data-ag-cs-style] .ag-prism-subbtn:hover:not([data-active="1"]) {
+  color: var(--secondary-foreground) !important;
+}
+html[data-ag-cs-style] .ag-prism-subbtn[data-active="1"] {
+  color: #FFFBF2 !important;
+  font-weight: 600 !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-subbtn,
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) .ag-prism-subbtn {
+  color: #6E675C !important;
+}
+html[data-ag-cs-style][data-ag-cs-theme="light"] .ag-prism-subbtn[data-active="1"],
+html[data-ag-cs-style] > body:is(.theme-light, .light-theme, .light) .ag-prism-subbtn[data-active="1"] {
+  color: #1E383F !important;
+  font-weight: 600 !important;
+}
+html[data-ag-cs-style] .ag-prism-ghost-btn {
+  height: 28px !important;
+  padding: 0 9px !important;
+  border-radius: 8px !important;
+  font-family: var(--font-sans) !important;
+  font-size: 12px !important;
+}
+html[data-ag-cs-style] .ag-prism-send-btn {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 999px !important;
+}
+html[data-ag-cs-style] .ag-prism-tray-over,
+html[data-ag-cs-style] .ag-prism-tray-bar {
+  border-radius: 0 0 13px 13px !important;
+}
+html[data-ag-cs-style] .ag-prism-starter-chip {
+  height: 28px !important;
+  padding: 0 12px !important;
+  border-radius: 8px !important;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--secondary-foreground) !important;
+  font-family: var(--font-sans) !important;
+}
+html[data-ag-cs-style] .ag-prism-starter-chip:hover {
+  background: var(--secondary) !important;
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border)) !important;
+  color: var(--foreground) !important;
+}
+
+/* Chat 對話頁氣泡、寬度與雙寵舞台：對齊 Code 模式版面寬度（消除切換 Reflow）與溫潤紙感氣泡 */
+html[data-ag-cs-style][data-ag-prism-mode="chat"] [data-testid="conversation-view"] [data-testid="autoscroll-viewport"] > div.mx-auto.w-full {
+  max-width: var(--agy-chat-max-w, 52rem) !important;
+}
+html[data-ag-cs-style][data-ag-prism-mode="chat"] :is([data-testid="user-message-bubble"], .agy-user-bubble) {
+  border-radius: 16px !important;
+  padding: 10px 15px !important;
+  background-color: var(--_k0) !important;
+  border: 1px solid var(--_kb) !important;
+}
+html[data-ag-cs-style][data-ag-prism-mode="chat"] :is(.ag-cs-dual-stage, .ag-cs-crab) {
+  display: block !important;
+}
+
+/* 確保在 subtle / standard / ultra 模式下，Code <-> Chat 切換滑塊與視圖空間動畫都不被全域 button transition 壓掉 */
+html[data-ag-cs-style]:not([data-ag-cs-motion="off"]) .ag-prism-sb-slider {
+  transition: transform 280ms cubic-bezier(0.32, 1.18, 0.56, 1), box-shadow 220ms ease !important;
+}
+html[data-ag-cs-style]:not([data-ag-cs-motion="off"]) .ag-prism-subslider {
+  transition: transform 280ms cubic-bezier(0.34, 1.24, 0.64, 1) !important;
+}
+html[data-ag-cs-style]:not([data-ag-cs-motion="off"]) :is(.ag-prism-sb-mode-btn, .ag-prism-subbtn) {
+  transition: color 160ms ease, transform 160ms cubic-bezier(0.34, 1.24, 0.64, 1) !important;
+}
+

@@ -66,6 +66,7 @@
       webSearch: true,
       imageAndFiles: true,
       keepUserRules: true,
+      inheritUserHooks: false,
       zeroTools: false,
       allowedPlugins: [],
       allowedMcps: [],
@@ -76,6 +77,7 @@
       webSearch: true,
       imageAndFiles: true,
       keepUserRules: true,
+      inheritUserHooks: false,
       sandbox: true,
       allowedPlugins: [],
       allowedMcps: [],
@@ -173,9 +175,9 @@
       heads: ['今天需要我为你做些什么？', '想从哪里开始探索？', '随时聊聊你的新想法。', '有什么我可以帮你的？'],
     },
     'zh-TW': {
-      eyeUser: ['你好，{user}', '嗨，{user}', '歡迎回來，{user}'],
-      eyeAnon: ['你好', '歡迎回來', '隨時開始'],
-      heads: ['今天需要我為你做些什麼？', '想從哪裡開始探索？', '隨時聊聊你的新想法。'],
+      eyeUser: ['嗨，{user}', '歡迎回來，{user}', '{user}，很高興見到妳'],
+      eyeAnon: ['嗨，歡迎回來', '隨時開始', '歡迎回來'],
+      heads: ['今天想一起做些什麼呢？', '我們從哪裡繼續？', '有什麼新想法隨時聊聊。'],
     },
     yue: {
       eyeUser: ['哈囉，{user}', '你好呀，{user}', '歡迎返嚟，{user}'],
@@ -205,9 +207,12 @@
     '.ag-prism-sb-native-hidden{display:none!important}',
     '.ag-prism-chat-row-hidden{display:none!important}',
     '.ag-prism-sb-seg{position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));flex:1 1 auto;min-width:0;padding:3px;border-radius:999px;background:var(--ag-sb-pill-track)}',
-    '.ag-prism-sb-slider{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:999px;background:var(--ag-sb-pill-thumb);box-shadow:inset 0 1px 0 var(--ag-sb-specular),0 2px 10px rgba(0,0,0,.18);transform:translate3d(0,0,0);transition:transform 300ms var(--ag-sb-spring-spatial);pointer-events:none;z-index:0;will-change:transform}',
+    '.ag-prism-sb-slider{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:999px;background:var(--ag-sb-pill-thumb);box-shadow:inset 0 1px 0 var(--ag-sb-specular),0 2px 10px rgba(0,0,0,.18);transform:translate3d(0,0,0);transition:transform 280ms cubic-bezier(0.32,1.18,0.56,1),box-shadow 220ms var(--ag-sb-spring-effect);pointer-events:none;z-index:0;will-change:transform}',
     '.ag-prism-sb-seg[data-mode="chat"] .ag-prism-sb-slider{transform:translate3d(100%,0,0)}',
     '.ag-prism-sb-mode-btn{position:relative;z-index:1;appearance:none;border:none;background:transparent;color:var(--ag-sb-dim);height:25px;padding:0 6px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:4px;font-size:11.5px;font-weight:500;font-family:inherit;cursor:pointer;white-space:nowrap;transition:color 180ms var(--ag-sb-spring-effect),transform 160ms var(--ag-sb-spring-spatial)}',
+    '.ag-prism-sb-mode-btn>svg{transition:transform 240ms var(--ag-sb-spring-spatial)}',
+    '.ag-prism-sb-seg[data-switching="to-chat"] .ag-prism-sb-mode-btn[data-mode-btn="chat"]>svg,.ag-prism-sb-seg[data-switching="to-code"] .ag-prism-sb-mode-btn[data-mode-btn="code"]>svg{animation:ag-sb-icon-bounce 280ms var(--ag-sb-spring-spatial) both}',
+    '@keyframes ag-sb-icon-bounce{0%{transform:scale(.86)}55%{transform:scale(1.08)}100%{transform:scale(1)}}',
     '.ag-prism-sb-mode-btn:hover,.ag-prism-sb-mode-btn[data-active="1"]{color:var(--ag-sb-fg)}',
     '.ag-prism-sb-mode-btn:active{transform:scale(.94)}',
     '.ag-prism-sb-beta-pill{font-size:9px;line-height:1;font-weight:600;letter-spacing:.03em;padding:2px 4.5px;border-radius:999px;background:var(--ag-sb-active-pill);color:var(--ag-sb-active-anchor);text-transform:uppercase;flex-shrink:0}',
@@ -216,9 +221,9 @@
     '.ag-prism-sb-dot[data-status="running"]{background:#4c8df6;box-shadow:0 0 8px rgba(76,141,246,.76);animation:ag-sb-dot-pulse 2s ease-in-out infinite}',
     '.ag-prism-sb-dot[data-status="blocked"]{background:#f2b84b;box-shadow:0 0 8px rgba(242,184,75,.88);animation:ag-sb-dot-pulse 1.5s ease-in-out infinite}',
     '@keyframes ag-sb-dot-pulse{0%,100%{opacity:.78;transform:scale(1)}50%{opacity:1;transform:scale(1.18)}}',
-    '.ag-prism-chat-pane{contain:style;flex:1 1 0;min-height:0;display:flex;flex-direction:column;color:var(--ag-sb-fg);font-family:var(--ag-sb-font-display);user-select:none;box-sizing:border-box;opacity:1;transform:translate3d(0,0,0);transition:opacity 240ms var(--ag-sb-spring-effect),transform 280ms var(--ag-sb-spring-spatial)}',
+    '.ag-prism-chat-pane{contain:style;flex:1 1 0;min-height:0;display:flex;flex-direction:column;color:var(--ag-sb-fg);font-family:var(--ag-sb-font-display);user-select:none;box-sizing:border-box;opacity:1;transform:translate3d(0,0,0)}',
     '.ag-prism-chat-pane[data-active="0"]{display:none;content-visibility:hidden}',
-    '.ag-prism-chat-pane[data-entering="1"]{animation:ag-sb-pane-in 300ms var(--ag-sb-spring-spatial) both}',
+    '.ag-prism-chat-pane[data-entering="1"]{animation:ag-sb-pane-in 240ms cubic-bezier(0.22,1,0.36,1) both}',
     '@keyframes ag-sb-pane-in{from{opacity:0;transform:translate3d(10px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
     '.ag-prism-sb-chat-head{display:flex;align-items:center;gap:4px;padding:2px 8px 4px;flex-shrink:0}',
     '.ag-prism-sb-icon-btn{appearance:none;border:none;background:transparent;color:var(--ag-sb-muted);width:26px;height:26px;padding:0;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:background-color 160ms var(--ag-sb-spring-effect),color 160ms var(--ag-sb-spring-effect),transform 160ms var(--ag-sb-spring-spatial)}',
@@ -269,16 +274,20 @@
     '.ag-prism-sb-empty{padding:6px 10px;font-size:11.5px;color:var(--ag-sb-dim)}',
     '.ag-prism-sb-inline-box{display:flex;align-items:center;gap:6px;margin:4px 6px;padding:5px 9px;border-radius:10px;background:var(--ag-sb-container);border:1px solid var(--ag-sb-hairline);animation:ag-sb-pop-in 200ms var(--ag-sb-spring-spatial) both}',
     '.ag-prism-sb-inline-input{flex:1 1 auto;min-width:0;border:none;outline:none;background:transparent;color:var(--ag-sb-fg);font-size:12px;font-family:inherit}',
-    '.ag-prism-chat-home{position:absolute;inset:0;z-index:32;display:flex;flex-direction:column;align-items:center;padding:24px;background:var(--ag-sb-canvas);color:var(--ag-sb-fg);overflow-y:auto;box-sizing:border-box;opacity:1;visibility:visible;transform:translate3d(0,0,0) scale(1);transition:opacity 260ms var(--ag-sb-spring-effect),transform 300ms var(--ag-sb-spring-spatial),visibility 260ms linear}',
+    '.ag-prism-chat-home{contain:style;position:absolute;inset:0;z-index:32;display:flex;flex-direction:column;align-items:center;padding:24px;background:var(--ag-sb-canvas);color:var(--ag-sb-fg);overflow-y:auto;box-sizing:border-box;opacity:1;visibility:visible;transform:translate3d(0,0,0);transition:opacity 180ms cubic-bezier(0.22,1,0.36,1),transform 200ms cubic-bezier(0.22,1,0.36,1),visibility 0s linear 0s;will-change:opacity,transform}',
     '.ag-prism-chat-home-inner{position:relative;z-index:2;margin:auto 0;width:100%;display:flex;flex-direction:column;align-items:center;padding:12px 0 clamp(32px,7vh,80px)}',
-    '.ag-prism-chat-home[data-visible="0"]{opacity:0;visibility:hidden;pointer-events:none;transform:translate3d(0,10px,0) scale(.99);content-visibility:hidden}',
-    '.ag-prism-chat-home[data-visible="1"] .ag-prism-hero-head{animation:ag-sb-hero-rise 320ms var(--ag-sb-spring-spatial) both}',
-    '.ag-prism-chat-home[data-visible="1"] .ag-prism-vessel-wrap{animation:ag-sb-hero-rise 360ms 45ms var(--ag-sb-spring-spatial) both}',
-    '@keyframes ag-sb-hero-rise{from{opacity:0;transform:translate3d(0,12px,0) scale(.99)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}',
-    '[data-ag-prism-canvas-fade="to-chat"],[data-ag-prism-canvas-fade="to-code"]{animation:ag-sb-canvas-fade 240ms var(--ag-sb-spring-effect) both}',
-    '@keyframes ag-sb-canvas-fade{from{opacity:.32;transform:translate3d(0,4px,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
-    '.ag-prism-code-returning{animation:ag-sb-code-pane-in 220ms var(--ag-sb-spring-effect) both}',
-    '@keyframes ag-sb-code-pane-in{from{opacity:.24;transform:translate3d(-6px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
+    '.ag-prism-chat-home[data-visible="1"]{animation:ag-sb-home-in 240ms cubic-bezier(0.22,1,0.36,1) both}',
+    '.ag-prism-chat-home[data-visible="0"]{opacity:0;visibility:hidden;pointer-events:none;transform:translate3d(12px,0,0);transition:opacity 180ms cubic-bezier(0.22,1,0.36,1),transform 200ms cubic-bezier(0.22,1,0.36,1),visibility 0s linear 200ms}',
+    '.ag-prism-chat-home[data-visible="0"][data-hibernated="1"]{content-visibility:hidden}',
+    '.ag-prism-chat-home[data-visible="1"] .ag-prism-vessel-wrap{animation:ag-sb-hero-rise 260ms 20ms cubic-bezier(0.22,1,0.36,1) both}',
+    '@keyframes ag-sb-home-in{from{opacity:0;transform:translate3d(14px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
+    '@keyframes ag-sb-hero-rise{from{opacity:.4;transform:translate3d(0,8px,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
+    '[data-ag-prism-canvas-fade="to-chat"]{animation:ag-sb-canvas-to-chat 230ms cubic-bezier(0.22,1,0.36,1) both}',
+    '[data-ag-prism-canvas-fade="to-code"]{animation:ag-sb-canvas-to-code 230ms cubic-bezier(0.22,1,0.36,1) both}',
+    '@keyframes ag-sb-canvas-to-chat{from{opacity:.42;transform:translate3d(10px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
+    '@keyframes ag-sb-canvas-to-code{from{opacity:.42;transform:translate3d(-10px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
+    '.ag-prism-code-returning{animation:ag-sb-code-pane-in 240ms cubic-bezier(0.22,1,0.36,1) both}',
+    '@keyframes ag-sb-code-pane-in{from{opacity:0;transform:translate3d(-10px,0,0)}to{opacity:1;transform:translate3d(0,0,0)}}',
     '.ag-prism-chat-aura{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0;transition:transform 480ms var(--ag-sb-spring-effect),filter 420ms var(--ag-sb-spring-effect)}',
     '.ag-prism-chat-aura[data-focused="1"]{transform:scale(.955);filter:brightness(1.14) saturate(1.08)}',
     '.ag-prism-aura-orb{position:absolute;border-radius:50%;filter:blur(24px);will-change:transform,opacity;transition:background 460ms var(--ag-sb-spring-effect)}',
@@ -408,7 +417,7 @@
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .agy-composer-footer{position:static!important;padding:6px 2px 2px!important;gap:8px!important;min-height:34px!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .agy-composer-footer>:is(#ag-prism-pulse-bar,[data-ag-prism-pulse-bar],#ag-pulse-status-bar):not([hidden]):not([data-ag-prism-hidden="1"]),html[data-ag-cs-style][data-ag-cs-composer="on"][data-ag-prism-mode="chat"]:not([data-ag-cs-telemetry="off"]) #antigravity\\.agentSidePanelInputBox .agy-composer-footer>:is(#ag-prism-pulse-bar,[data-ag-prism-pulse-bar],#ag-pulse-status-bar):not([hidden]):not([data-ag-prism-hidden="1"]){position:absolute!important;bottom:calc(100% + 7px)!important;left:50%!important;transform:translateX(-50%)!important;margin:0!important;display:inline-flex!important;align-items:center!important;height:22px!important;padding:0 10px!important;border-radius:999px!important;background:var(--ag-sb-container)!important;border:1px solid var(--ag-sb-hairline)!important;backdrop-filter:none!important;opacity:1!important;font-size:11px!important;white-space:nowrap!important;z-index:45!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"][data-ag-prism-chat-telemetry="off"] #antigravity\\.agentSidePanelInputBox .agy-composer-footer>:is(#ag-prism-pulse-bar,[data-ag-prism-pulse-bar],#ag-pulse-status-bar):not([hidden]):not([data-ag-prism-hidden="1"]),html[data-ag-cs-style][data-ag-cs-composer="on"][data-ag-prism-mode="chat"][data-ag-prism-chat-telemetry="off"] #antigravity\\.agentSidePanelInputBox .agy-composer-footer>:is(#ag-prism-pulse-bar,[data-ag-prism-pulse-bar],#ag-pulse-status-bar):not([hidden]):not([data-ag-prism-hidden="1"]){display:none!important}',
-    '.ag-prism-chat-topbar-acts{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding-right:4px;font-family:var(--ag-sb-font-display)}',
+    '.ag-prism-chat-topbar-acts{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding-right:4px;font-family:var(--ag-sb-font-display);animation:ag-sb-pop-in 240ms var(--ag-sb-spring-spatial) both}',
     '.ag-prism-chat-topbar-btn{appearance:none;border:none;background:transparent;color:var(--ag-sb-dim);width:28px;height:28px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:background-color 140ms ease,color 140ms ease,transform 140ms var(--ag-sb-spring-spatial)}',
     '.ag-prism-chat-topbar-btn:hover{background:var(--ag-sb-hover);color:var(--ag-sb-fg)}',
     '.ag-prism-chat-topbar-btn[data-active="1"]{color:var(--ag-sb-active-anchor)}',
@@ -451,7 +460,7 @@
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox [data-testid="model-selector-trigger"]:hover{background:var(--ag-sb-hover)!important;color:var(--ag-sb-fg)!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox [data-testid="send-button"]{width:34px!important;height:34px!important;border-radius:999px!important;background:var(--ag-sb-send-ready-bg)!important;color:var(--ag-sb-send-ready-fg)!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox [data-testid="send-button"]:disabled{background:var(--ag-sb-send-idle-bg)!important;color:var(--ag-sb-send-idle-fg)!important}',
-    '.ag-prism-chat-policy-chip{position:absolute;bottom:calc(100% + 7px);right:4px;z-index:29;appearance:none;border:1px solid var(--ag-sb-hairline);background:color-mix(in srgb,var(--ag-sb-container) 82%,transparent);backdrop-filter:blur(10px);color:var(--ag-sb-muted);height:22px;padding:0 9px;border-radius:999px;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;font-family:var(--ag-sb-font-display);cursor:pointer;opacity:.68;transition:opacity 160ms ease,background-color 160ms ease,color 160ms ease,border-color 160ms ease,transform 140ms var(--ag-sb-spring-spatial)}',
+    '.ag-prism-chat-policy-chip{position:absolute;bottom:calc(100% + 7px);right:4px;z-index:29;appearance:none;border:1px solid var(--ag-sb-hairline);background:color-mix(in srgb,var(--ag-sb-container) 82%,transparent);backdrop-filter:blur(10px);color:var(--ag-sb-muted);height:22px;padding:0 9px;border-radius:999px;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;font-family:var(--ag-sb-font-display);cursor:pointer;opacity:.68;animation:ag-sb-pop-in 240ms var(--ag-sb-spring-spatial) both;transition:opacity 160ms ease,background-color 160ms ease,color 160ms ease,border-color 160ms ease,transform 140ms var(--ag-sb-spring-spatial)}',
     '.ag-prism-chat-policy-chip:hover{opacity:1;background:var(--ag-sb-high);color:var(--ag-sb-fg);border-color:color-mix(in srgb,var(--ag-sb-active-anchor) 35%,transparent)}',
     '.ag-prism-chat-policy-chip:active{transform:scale(.95)}',
     '.ag-prism-chat-policy-dot{width:6px;height:6px;border-radius:999px;background:var(--ag-sb-active-anchor);flex-shrink:0}',
@@ -484,15 +493,105 @@
     '.ag-prism-switch[data-checked="1"]::after{transform:translate3d(16px,0,0);background:#0f172a}',
     ':is(html.light,html[data-theme="light"],html[data-ag-cs-theme="light"],body:is(.theme-light,.light-theme,.light)) .ag-prism-switch[data-checked="1"]::after{background:#ffffff}',
     '.ag-prism-policy-empty{font-size:11.5px;color:var(--ag-sb-dim);padding:4px}',
-    'html[data-ag-cs-motion="off"] .ag-prism-aura-orb,html[data-ag-cs-motion="off"] .ag-prism-vessel::after,html[data-ag-cs-motion="off"] .ag-prism-sb-spin,html[data-ag-cs-motion="off"] .ag-prism-sb-dot,html[data-ag-cs-motion="off"] .ag-prism-chat-pane,html[data-ag-cs-motion="off"] .ag-prism-hero-head,html[data-ag-cs-motion="off"] .ag-prism-vessel-wrap,html[data-ag-cs-motion="off"] [data-ag-prism-canvas-fade],html[data-ag-cs-motion="off"] .ag-prism-code-returning,html[data-ag-cs-motion="off"] .ag-prism-modal-backdrop,html[data-ag-cs-motion="off"] .ag-prism-modal{animation:none!important;transition:none!important}',
+    'html[data-ag-cs-motion="off"] .ag-prism-aura-orb,html[data-ag-cs-motion="off"] .ag-prism-vessel::after,html[data-ag-cs-motion="off"] .ag-prism-sb-spin,html[data-ag-cs-motion="off"] .ag-prism-sb-dot,html[data-ag-cs-motion="off"] .ag-prism-sb-slider,html[data-ag-cs-motion="off"] .ag-prism-sb-mode-btn>svg,html[data-ag-cs-motion="off"] .ag-prism-chat-pane,html[data-ag-cs-motion="off"] .ag-prism-sb-list,html[data-ag-cs-motion="off"] .ag-prism-chat-home,html[data-ag-cs-motion="off"] .ag-prism-hero-head,html[data-ag-cs-motion="off"] .ag-prism-vessel-wrap,html[data-ag-cs-motion="off"] .ag-prism-starter-chips,html[data-ag-cs-motion="off"] [data-ag-prism-canvas-fade],html[data-ag-cs-motion="off"] .ag-prism-code-returning,html[data-ag-cs-motion="off"] .ag-prism-chat-topbar-acts,html[data-ag-cs-motion="off"] .ag-prism-chat-policy-chip,html[data-ag-cs-motion="off"] .ag-prism-modal-backdrop,html[data-ag-cs-motion="off"] .ag-prism-modal{animation:none!important;transition:none!important}',
   ].join('');
 
   let brandUidSeq = 1;
+  let activeUiLang = 'zh-CN';
+
+  const ZH_TW_PHRASE_PAIRS = [
+    ['工作文件夹', '工作資料夾'],
+    ['子文件夹', '子資料夾'],
+    ['文件夹', '資料夾'],
+    ['新建对话', '新增對話'],
+    ['暂无对话', '尚無對話'],
+    ['润色文字', '潤飾文字'],
+    ['写作润色', '寫作潤飾'],
+    ['润色', '潤飾'],
+    ['联网查资料', '連網查資料'],
+    ['联网检索', '連網檢索'],
+    ['联网搜索', '連網搜尋'],
+    ['联网', '連網'],
+    ['能力与扩展', '能力與擴充'],
+    ['扩展插件', '擴充外掛'],
+    ['项插件', '項外掛'],
+    ['插件', '外掛'],
+    ['剪贴板', '剪貼簿'],
+    ['回车创建', '按 Enter 建立'],
+    ['重命名', '重新命名'],
+    ['默认', '預設'],
+    ['菜单', '選單'],
+    ['响应式', '響應式'],
+    ['响应', '回應'],
+    ['质量', '品質'],
+    ['信息', '資訊'],
+    ['代码', '程式碼'],
+    ['编程', '程式開發'],
+    ['项目', '專案'],
+    ['纯文本', '純文字'],
+    ['本地磁盘', '本機磁碟'],
+    ['本地文件', '本機檔案'],
+    ['本地目录', '本機目錄'],
+    ['本地', '本機'],
+    ['目录文件', '目錄檔案'],
+    ['文件整理', '檔案整理'],
+    ['文件与事务', '檔案與事務'],
+    ['文件内容', '檔案內容'],
+    ['文件名', '檔案名稱'],
+    ['图片和文件', '圖片與檔案'],
+    ['图片 / 文件', '圖片／檔案'],
+    ['个文件', '個檔案'],
+    ['里的文件', '裡的檔案'],
+    ['内的文件', '內的檔案'],
+    ['磁盘文件夹中的文件', '磁碟資料夾中的檔案'],
+    ['拖文件', '拖曳檔案'],
+    ['受控文件', '受控檔案'],
+    ['搜索', '搜尋'],
+    ['多选批量管理', '多選批次管理'],
+    ['批量', '批次'],
+    ['安全保护', '安全保護'],
+    ['共享目录 · 已保护', '共享目錄 · 已保護'],
+    ['已保护', '已保護'],
+    ['保护', '保護'],
+    ['设置', '設定'],
+    ['导出', '匯出'],
+    ['跳过', '略過'],
+    ['消息', '訊息'],
+    ['置顶', '置頂'],
+    ['已归档', '已封存'],
+    ['归档', '封存'],
+  ];
+  const ZH_CN_CHARS =
+    '与专业个为么义乐习书买乱争于云亚产亩亲仅从仑仓们价众优伙会伟传伤伦伪伯估伴伸似但位低住体何余佛作你佣佩佳使例供依侠侣侦侧侨侮侯侵便促俄俊俗保信俩俭修俯俱俸俺倍倒候借倡倦债值倾假偎偏做停健偶偷偿傅储催傲傻像僧儒儿允元兄充兆先光克免兑兔儿入全两八公六兰共关兴兵其具典兹养兼兽内冈册再冒写军农冠冬冰冲决况冻冷准凉凌减凑凛几凡凤凭凯击函凿刀分切刊刑划列刘则刚创初判利删别刮到制刷券刹刺刻刽剂剃削前剑剔剖剥剧剩剪副割剽剿力劝办功加务劣动助努劫励劲劳势勃勇勉勋勒动勘募勤勾勿包匆匈化北匙匝匠匡匣匪汇匹区医华协单卖南博占卡卢卫印危即却卵卷卸卿厂厄厅历厉压厌厕厘厚原厢厥厦厨厩去县参又叉及友双反发叔取受变叙叛叠口古句另只叫召叮可台史右叶号司叹叻叼叽吁吃各合吉同名后吏吐向吓吕吗君吝吞吟吠否吧吨吩含听吭吮启吱吴吵吸吹吻吼呀吕呃呆呈告呐呒员呖呗呕呙呛呜呢呤呦周味呵呶呷呸呼命咀咁咂咄咆咋和咎咏咐咒咔咕咖咙咚咛咝咣咤咦咧咨咩咪咫咬咯咱咳咸咽哀品哄哆哇哈哉哌响哎哏哐哑哒哓哔哕哗哙哚哜哝哟哥哦哩哪哭哮哲哳哺哼哽哿唁唆唇唉唏唐唑唔唛唠唢唣唤唧唪唬售唯唱唳唷唼唾唿啁啃啄商啉啊啐啕啖啜啡啤啥啦啧啪啬啭啮啰啸喷喽喾嗫呵嗔嗦嗨嗯嗳嗷嗽嗾嘀嘁嘈嘉嘌嘎嘏嘘嘛嘞嘟嘣嘤嘧嘬嘭嘱嘲嘴嘶嘹嘻嘿噌噍噎噔噗噘噙噜噢噤器噩噪噫噬噱噶噻噼嚅嚆嚎嚏擦嚣不断地显设设置对话选择进输入创建缓暂顶条项删复恢导败请帮把这段得清检总点讲通懂比喻张图画风求先看当里清录单类建汇总读主提炼核结办排程定起草结题适大多深思复难长写均稳综步快兼顾速答轻效料读欢回随始今需做什从哪探聊新想有可问或交件要处务纯零调任外挂或令按网页支生及解户动供附绑受控编整协创白名挂载服放行扩未开直作通专流知解梳讨运独净并码境除会显启用否声称仓执系终用能真诚虚构助指范严访敏配自高险操前须征同全认模意附切强享受护管重导出标取永彻底消记跳可改夹空选仅解关盘原系绑移剪贴板停请求回根拖此快回车天内早放预安全提示磁盘选定开启关闭隐藏重新开启大小限制跳过超过单条消息最多截图';
+  const ZH_TW_CHARS =
+    '與專業個為麼義樂習書買亂爭於雲亞產畝親僅從侖倉們價眾優夥會偉傳傷倫偽伯估伴伸似但位低住體何餘佛作你傭佩佳使例供依俠侶偵側僑侮侯侵便促俄俊俗保信倆儉修俯俱俸俺倍倒候借倡倦債值傾假偎偏做停健偶偷償傅儲催傲傻像僧儒兒允元兄充兆先光克免兌兔兒入全兩八公六蘭共關興兵其具典茲養兼獸內岡冊再冒寫軍農冠冬冰沖決況凍冷準涼凌減湊凜幾凡鳳憑凱擊函鑿刀分切刊刑劃列劉則剛創初判利刪別刮到制刷券剎刺刻劊劑剃削前劍剔剖剝劇剩剪副割剽剿力勸辦功加務劣動助努劫勵勁勞勢勃勇勉勳勒動勘募勤勾勿包匆匈化北匙匝匠匡匣匪匯匹區醫華協單賣南博佔卡盧衛印危即卻卵卷卸卿廠厄廳歷厲壓厭廁釐厚原廂厥廈廚廄去縣參又叉及友雙反發叔取受變敘叛疊口古句另只叫召叮可台史右葉號司嘆叻叼嘰籲吃各合吉同名後吏吐向嚇呂嗎君吝吞吟吠否吧噸吩含聽吭吮啟吱吳吵吸吹吻吼呀呂呃呆呈告吶嘸員嚦唄嘔咼嗆嗚呢呤呦周味呵呶呷呸呼命咀咁咂咄咆咋和咎詠咐咒咔咕咖嚨咚嚀噝咣吒咦咧咨咩咪咫咬咯咱咳鹹咽哀品哄哆哇哈哉哌響哎哏哐啞噠嘵嗶噦嘩噲哚嚌噥喲哥哦哩哪哭哮哲唓哺哼哽哿唁唆唇唉唏唐唑唔嘜嘮嗩唕喚唧唪唬售唯唱唳唷唼唾唿啁啃啄商啉啊啐啕啖啜啡啤啥啦嘖啪嗇囀嚙囉嘯噴嘍嚳囁呵嗔嗦嗨嗯噯嗷嗽嗾嘀嘁嘈嘉嘌嘎嘏噓嘛嘞嘟嘣嚶嘧嘬嘭囑嘲嘴嘶嘹嘻嘿噌噍噎噔噗噘噙嚕噢噤器噩噪噫噬噱噶噻噼嚅嚆嚎嚏擦囂不斷地顯設設置對話選擇進輸入創建緩暫頂條項刪復恢導敗請幫把這段得清檢總點講通懂比喻張圖畫風求先看當裡清錄單類建彙總讀主提煉核結辦排程定起草結題適大多深思複難長寫均穩綜步快兼顧速答輕效料讀歡回隨始今需做什從哪探聊新想有可問或交件要處務純零調任外掛或令按網頁支生及解戶動供附綁受控編整協創白名掛載服放行擴未開直作通專流知解梳討運獨淨並碼境除會顯啟用否聲稱倉執系終用能真誠虛構助指範嚴訪敏配自高險操前須徵同全認模意附切強享受護管重導出標取永徹底消記跳可改夾空選僅解關盤原系綁移剪貼板停請求回根拖此快回車天內早放預安全提示磁盤選定開啟關閉隱藏重新開啟大小限制跳過超過單條消息最多截圖';
+
+  const ZH_TW_CHAR_MAP = new Map();
+  for (let i = 0; i < Math.min(ZH_CN_CHARS.length, ZH_TW_CHARS.length); i++) {
+    if (ZH_CN_CHARS[i] !== ZH_TW_CHARS[i]) {
+      ZH_TW_CHAR_MAP.set(ZH_CN_CHARS[i], ZH_TW_CHARS[i]);
+    }
+  }
+
+  function toZhTwUi(input) {
+    if (typeof input !== 'string' || !input || activeUiLang !== 'zh-TW') return input;
+    let out = input;
+    for (let i = 0; i < ZH_TW_PHRASE_PAIRS.length; i++) {
+      const [cn, tw] = ZH_TW_PHRASE_PAIRS[i];
+      if (out.includes(cn)) out = out.split(cn).join(tw);
+    }
+    let res = '';
+    for (let i = 0; i < out.length; i++) {
+      const ch = out[i];
+      res += ZH_TW_CHAR_MAP.get(ch) || ch;
+    }
+    return res;
+  }
 
   function el(tag, cls, text) {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
-    if (text !== undefined && text !== null) node.textContent = String(text);
+    if (text !== undefined && text !== null) node.textContent = toZhTwUi(String(text));
     return node;
   }
 
@@ -620,6 +719,13 @@
     let activeModal = null;
     let toastTimer = null;
     let canvasFadeTimer = null;
+    let segSwitchTimer = null;
+    let sidebarEnterTimer = null;
+    let codeReturnTimer = null;
+    let chatHomeHibernateTimer = null;
+    let deferredPrismSyncTimer = null;
+    let deferredRouteTimer = null;
+    let modeTransitionUntil = 0;
     let composerChipTimer = null;
     let syncTimer = null;
     let probeTimer = null;
@@ -731,6 +837,16 @@
       });
     }
 
+    function scheduleDeferredPrismSync(delayMs = 300) {
+      if (destroyed) return;
+      if (deferredPrismSyncTimer) clearTimeout(deferredPrismSyncTimer);
+      deferredPrismSyncTimer = setTimeout(() => {
+        deferredPrismSyncTimer = null;
+        if (destroyed) return;
+        try { W.__agPrism?.sync?.(); } catch {}
+      }, Math.max(0, delayMs));
+    }
+
     function triggerCanvasModeFade(direction) {
       const mainHost = resolveMainCanvasHost();
       if (!mainHost || currentCfg.motionLevel === 'off') return;
@@ -741,8 +857,85 @@
         canvasFadeTimer = setTimeout(() => {
           runGuarded(() => { mainHost.removeAttribute('data-ag-prism-canvas-fade'); });
           canvasFadeTimer = null;
-        }, 280);
+        }, 250);
       });
+    }
+
+    function triggerSegSwitchMotion(targetMode) {
+      if (currentCfg.motionLevel === 'off') return;
+      const seg = host.modeDockRefs && host.modeDockRefs.seg;
+      if (!seg) return;
+      const dir = targetMode === 'chat' ? 'to-chat' : 'to-code';
+      runGuarded(() => {
+        seg.removeAttribute('data-switching');
+        seg.setAttribute('data-switching', dir);
+        if (segSwitchTimer) clearTimeout(segSwitchTimer);
+        segSwitchTimer = setTimeout(() => {
+          segSwitchTimer = null;
+          runGuarded(() => {
+            if (host.modeDockRefs && host.modeDockRefs.seg) {
+              host.modeDockRefs.seg.removeAttribute('data-switching');
+            }
+          });
+        }, 300);
+      });
+    }
+
+    function getRealHostPathname() {
+      try {
+        if (typeof W.location === 'object' && W.location && typeof W.location.pathname === 'string') {
+          return W.location.pathname;
+        }
+      } catch {}
+      return '';
+    }
+
+    function applyOptimisticModeSwitch(targetMode, viewOverride) {
+      if (!snapshot || snapshot.activeMode === targetMode) return '';
+      if (deferredRouteTimer) {
+        clearTimeout(deferredRouteTimer);
+        deferredRouteTimer = null;
+      }
+      const prevWasChatHome = Boolean(snapshot.activeMode === 'chat' && snapshot.currentView === '/');
+      const explicitRemembered =
+        snapshot.modeLastView && typeof snapshot.modeLastView[targetMode] === 'string' && snapshot.modeLastView[targetMode]
+          ? snapshot.modeLastView[targetMode]
+          : '';
+      const nextView =
+        typeof viewOverride === 'string' && viewOverride
+          ? viewOverride
+          : explicitRemembered || (targetMode === 'code' ? snapshot.currentView || '/' : '/');
+      const nextWillBeChatHome = Boolean(targetMode === 'chat' && nextView === '/');
+      modeTransitionUntil = Date.now() + 320;
+
+      // 仅在两端皆非 Chat 首页（例如 Code 会话 <-> Chat 会话）时对父容器 mainHost 播轻量位移动画；
+      // 涉及 Chat 首页进退场时全权交由 .ag-prism-chat-home 独立合成层，彻底避免父子动画互撞！
+      if (!prevWasChatHome && !nextWillBeChatHome) {
+        triggerCanvasModeFade(targetMode === 'chat' ? 'to-chat' : 'to-code');
+      }
+
+      // 有明确目标路由且不是覆盖层 Chat 首页 '/' 时，若宿主当前真实路径不同才 0ms 预切路由；
+      // 若宿主原本就停在该路径（例如刚从 Code 会话去过 Chat 首页未卸载，现在切回原 Code 会话），直接零跳转原地秒现！
+      let preNavigatedView = '';
+      const canPreNavigate = Boolean((viewOverride || explicitRemembered) && !nextWillBeChatHome);
+      if (canPreNavigate) {
+        const realPath = getRealHostPathname();
+        const curPath = realPath || lastNavigatedRoute || '';
+        if (curPath !== nextView) {
+          navigateHostRoute(nextView, { deferPrismSync: true });
+          preNavigatedView = nextView;
+        } else if (realPath === nextView) {
+          preNavigatedView = nextView;
+        }
+      }
+
+      snapshot = {
+        ...snapshot,
+        activeMode: targetMode,
+        currentView: nextView,
+      };
+      renderAll();
+      return preNavigatedView;
     }
 
     function mountPopover(pop, anchorEl, preferAbove) {
@@ -770,22 +963,42 @@
       });
     }
 
+    let cachedUserDisplayName = '';
     function getUserDisplayName() {
       try {
-        const greetEl = document.querySelector('[data-testid="home-greeting"]:not(.ag-prism-hero-h1)');
+        const stName = String(host.store?.getState?.()?.userStatus?.name || '').trim();
+        if (stName && !/^\d+$/.test(stName)) {
+          cachedUserDisplayName = stName.split(/\s+/)[0] || stName;
+          return cachedUserDisplayName;
+        }
+        const greetEl = document.querySelector(
+          '[data-testid="home-greeting"] h1:not(.ag-prism-hero-h1), [data-testid="home-greeting"]:not(.ag-prism-hero-h1)'
+        );
         const txt = greetEl && typeof greetEl.textContent === 'string' ? greetEl.textContent.trim() : '';
-        const mZh = txt.match(/[，,]\s*([^\s？?!！。]{1,32})[？?!！。]?$/);
-        if (mZh && mZh[1]) return mZh[1];
+        if (txt) {
+          const m = txt.match(/^[A-Za-z\u4e00-\u9fa5\s]{1,20}?[，,]\s*([A-Za-z\u4e00-\u9fa5][A-Za-z0-9_\-\u4e00-\u9fa5]{0,23})/);
+          if (m && m[1] && !/^(?:我們|我们|今天|想從|想从|有什|隨時|随时)/.test(m[1])) {
+            cachedUserDisplayName = m[1].trim();
+            return cachedUserDisplayName;
+          }
+        }
       } catch {}
-      return '';
+      return cachedUserDisplayName;
     }
 
     function getCurrentLang() {
       const cfgLang = currentCfg && (currentCfg.language || currentCfg.lang);
-      if (cfgLang && cfgLang !== 'auto') return normalizeLang(cfgLang);
+      if (cfgLang && cfgLang !== 'auto') {
+        activeUiLang = normalizeLang(cfgLang);
+        return activeUiLang;
+      }
       const htmlLang = document.documentElement && document.documentElement.getAttribute('data-ag-cs-lang');
-      if (htmlLang) return normalizeLang(htmlLang);
-      return normalizeLang((typeof navigator !== 'undefined' && navigator.language) || 'zh-CN');
+      if (htmlLang) {
+        activeUiLang = normalizeLang(htmlLang);
+        return activeUiLang;
+      }
+      activeUiLang = normalizeLang((typeof navigator !== 'undefined' && navigator.language) || 'zh-CN');
+      return activeUiLang;
     }
 
     // 动态读取宿主实时可见纯 Gemini 模型清单与真实模型枚举号（自动剔除 Orchestrator / Claude / GPT-OSS）
@@ -1059,6 +1272,7 @@
           webSearch: typeof rawPure.webSearch === 'boolean' ? rawPure.webSearch : DEFAULT_CHAT_POLICY.pure.webSearch,
           imageAndFiles: typeof rawPure.imageAndFiles === 'boolean' ? rawPure.imageAndFiles : DEFAULT_CHAT_POLICY.pure.imageAndFiles,
           keepUserRules: typeof rawPure.keepUserRules === 'boolean' ? rawPure.keepUserRules : DEFAULT_CHAT_POLICY.pure.keepUserRules,
+          inheritUserHooks: typeof rawPure.inheritUserHooks === 'boolean' ? rawPure.inheritUserHooks : DEFAULT_CHAT_POLICY.pure.inheritUserHooks,
           zeroTools: typeof rawPure.zeroTools === 'boolean' ? rawPure.zeroTools : DEFAULT_CHAT_POLICY.pure.zeroTools,
           allowedPlugins: Array.isArray(rawPure.allowedPlugins) ? rawPure.allowedPlugins.slice() : [],
           allowedMcps: Array.isArray(rawPure.allowedMcps) ? rawPure.allowedMcps.slice() : [],
@@ -1069,6 +1283,7 @@
           webSearch: typeof rawSpark.webSearch === 'boolean' ? rawSpark.webSearch : DEFAULT_CHAT_POLICY.spark.webSearch,
           imageAndFiles: typeof rawSpark.imageAndFiles === 'boolean' ? rawSpark.imageAndFiles : DEFAULT_CHAT_POLICY.spark.imageAndFiles,
           keepUserRules: typeof rawSpark.keepUserRules === 'boolean' ? rawSpark.keepUserRules : DEFAULT_CHAT_POLICY.spark.keepUserRules,
+          inheritUserHooks: typeof rawSpark.inheritUserHooks === 'boolean' ? rawSpark.inheritUserHooks : DEFAULT_CHAT_POLICY.spark.inheritUserHooks,
           sandbox: typeof rawSpark.sandbox === 'boolean' ? rawSpark.sandbox : DEFAULT_CHAT_POLICY.spark.sandbox,
           allowedPlugins: Array.isArray(rawSpark.allowedPlugins) ? rawSpark.allowedPlugins.slice() : [],
           allowedMcps: Array.isArray(rawSpark.allowedMcps) ? rawSpark.allowedMcps.slice() : [],
@@ -1214,22 +1429,19 @@
       }
 
       const allowedMcpSpecs = [];
-      const allowedMcpToolNames = [];
       for (let i = 0; i < hostCapabilities.mcps.length; i++) {
         const m = hostCapabilities.mcps[i];
         if (!allowedMcpSet.has(m.serverName.toLowerCase())) continue;
         if (m.spec) {
           allowedMcpSpecs.push(stripProtoMeta(m.spec));
-          for (let j = 0; j < m.toolNames.length; j++) {
-            allowedMcpToolNames.push(`mcp_${m.serverName}_${m.toolNames[j]}`);
-            allowedMcpToolNames.push(m.toolNames[j]);
-          }
         }
       }
       const allowMcp = !zeroTools && allowedMcpSpecs.length > 0;
 
+      const allowHooks = !zeroTools && Boolean(modePolicy.inheritUserHooks);
+
       const customizationDiscoveryConfig = {
-        hooks: { inheritUser: false, hooksPaths: [] },
+        hooks: { inheritUser: allowHooks, hooksPaths: [] },
         mcp: { inheritUser: false, servers: allowedMcpSpecs },
         plugins: {
           inheritUser: false,
@@ -1247,7 +1459,7 @@
       };
 
       const customizationConfig = {
-        enableJsonHooks: false,
+        enableJsonHooks: allowHooks,
         enableTeamworkSubagent: false,
         mcpServers: allowedMcpSpecs,
         preInvocationHookNames: [],
@@ -1261,7 +1473,7 @@
       const toolNames = [];
       if (!zeroTools) {
         if (allowWeb) {
-          toolNames.push('search_web', 'read_url_content');
+          toolNames.push('search_web');
         }
         if (allowImage) {
           toolNames.push('generate_image');
@@ -1271,9 +1483,6 @@
         }
         if (allowSchedule) {
           toolNames.push('schedule');
-        }
-        if (allowMcp) {
-          toolNames.push('call_mcp_tool', 'list_resources', 'read_resource', ...allowedMcpToolNames);
         }
       }
 
@@ -2297,7 +2506,9 @@
     function scheduleCatalogSync() {
       if (destroyed || (typeof document !== 'undefined' && document.hidden)) return;
       if (syncTimer) return;
-      const delay = !lastSyncCatalogSig || host.circuitTripped ? 60 : 280;
+      const baseDelay = !lastSyncCatalogSig || host.circuitTripped ? 60 : 280;
+      const transitionRemain = modeTransitionUntil > Date.now() ? modeTransitionUntil - Date.now() + 60 : 0;
+      const delay = Math.max(baseDelay, transitionRemain);
       syncTimer = setTimeout(() => {
         syncTimer = null;
         if (destroyed || (typeof document !== 'undefined' && document.hidden)) return;
@@ -2306,7 +2517,7 @@
     }
 
     // TanStack Router 对象参数路由（严格修复字符串 navigate 无效问题）+ 原生行激活兜底
-    function navigateHostRoute(viewPath) {
+    function navigateHostRoute(viewPath, opts) {
       if (!viewPath || typeof viewPath !== 'string') return;
       lastNavigatedRoute = viewPath;
       const cidMatch = viewPath.match(/^\/c\/([^/?#]+)/);
@@ -2342,9 +2553,13 @@
           } catch {}
         }
       }
-      try {
-        W.__agPrism?.sync?.();
-      } catch {}
+      if (opts && opts.deferPrismSync) {
+        scheduleDeferredPrismSync(300);
+      } else {
+        try {
+          W.__agPrism?.sync?.();
+        } catch {}
+      }
     }
 
     let cachedSidebarSlots = null;
@@ -2890,6 +3105,12 @@
         const mCid = curView.match(/^\/c\/([^/?#]+)/);
         const activeCid = mCid ? decodeURIComponent(mCid[1]) : '';
         const onRunningChat = isChat && Boolean(activeCid);
+        if (document.documentElement && host.engaged && snapshot) {
+          const domMode = isChat ? (onRunningChat ? 'chat' : 'chat-home') : 'code';
+          if (document.documentElement.getAttribute('data-ag-prism-mode') !== domMode) {
+            document.documentElement.setAttribute('data-ag-prism-mode', domMode);
+          }
+        }
         syncChatPulseMinimalStyle(onRunningChat);
         syncChatTopbarActs(onRunningChat, activeCid);
 
@@ -2936,14 +3157,15 @@
         chip.setAttribute('data-kind', chatKind);
         const mp = chatKind === 'spark' ? policy.spark : policy.pure;
         const wlCount = (mp.allowedPlugins || []).length + (mp.allowedMcps || []).length;
-        const labelText =
+        const labelText = toZhTwUi(
           chatKind === 'spark'
             ? wlCount > 0 ? `Spark · +${wlCount}` : 'Spark'
             : mp.zeroTools
               ? 'Pure · 纯文本'
-              : wlCount > 0 ? `Pure · +${wlCount}` : 'Pure';
+              : wlCount > 0 ? `Pure · +${wlCount}` : 'Pure'
+        );
         if (chip._lbl.textContent !== labelText) chip._lbl.textContent = labelText;
-        chip.title = formatPolicySummary(chatKind);
+        chip.title = toZhTwUi(formatPolicySummary(chatKind));
       });
     }
 
@@ -3077,6 +3299,16 @@
             );
             secCore.appendChild(
               makeSwitchRow(
+                '同步跨端记忆与对话接力 Hooks',
+                '允许运行用户级 SessionStart / Stop 钩子以自动加载记忆并同步会话',
+                Boolean(cur.inheritUserHooks),
+                (v) => { cur.inheritUserHooks = v; renderBody(); },
+                null,
+                zeroLocked
+              )
+            );
+            secCore.appendChild(
+              makeSwitchRow(
                 '纯文字对话模式',
                 '关闭所有外部工具与扩展，仅进行纯粹的文字聊天问答',
                 cur.zeroTools,
@@ -3122,6 +3354,14 @@
                 '沿用你的交流风格偏好，同时屏蔽无关开发扩展',
                 cur.keepUserRules,
                 (v) => { cur.keepUserRules = v; renderBody(); }
+              )
+            );
+            secCore.appendChild(
+              makeSwitchRow(
+                '同步跨端记忆与对话接力 Hooks',
+                '允许运行用户级 SessionStart / Stop 钩子以自动加载记忆并同步会话',
+                Boolean(cur.inheritUserHooks),
+                (v) => { cur.inheritUserHooks = v; renderBody(); }
               )
             );
             secCore.appendChild(
@@ -3642,24 +3882,43 @@
             const badge = snapshot && snapshot.backgroundBadge;
             const first = badge && badge.targetMode === mode && badge.items && badge.items[0];
             if (first && first.cascadeId) {
+              const baseNavRev = snapshot.navRev;
+              const targetView = `/c/${encodeURIComponent(first.cascadeId)}`;
               try { W.__agPrism?.suppressEntryMotion?.(1100); } catch {}
-              triggerCanvasModeFade(mode === 'chat' ? 'to-chat' : 'to-code');
+              const preNav = applyOptimisticModeSwitch(mode, targetView);
               void callDaemonRpc('open-background-task', {
                 targetMode: mode,
                 cascadeId: first.cascadeId,
-                navRev: snapshot.navRev,
+                navRev: baseNavRev,
               }).then((r) => {
-                if (r && r.ok && r.result && r.result.view) navigateHostRoute(r.result.view);
+                if (r && r.ok && r.result && r.result.view) {
+                  const realPath = getRealHostPathname();
+                  if ((preNav && preNav === r.result.view) || (realPath && realPath === r.result.view)) return;
+                  navigateHostRoute(r.result.view, { deferPrismSync: true });
+                }
               });
             }
           });
           b.appendChild(dot);
           b.addEventListener('click', () => {
             if (snapshot && snapshot.activeMode !== mode) {
+              const baseNavRev = snapshot.navRev;
               try { W.__agPrism?.suppressEntryMotion?.(1100); } catch {}
-              triggerCanvasModeFade(mode === 'chat' ? 'to-chat' : 'to-code');
-              void callDaemonRpc('switch-mode', { to: mode, navRev: snapshot.navRev }).then((r) => {
-                if (r && r.ok && r.result && r.result.view) navigateHostRoute(r.result.view);
+              const preNav = applyOptimisticModeSwitch(mode);
+              void callDaemonRpc('switch-mode', { to: mode, navRev: baseNavRev }).then((r) => {
+                if (r && r.ok && r.result && r.result.view) {
+                  const targetView = r.result.view;
+                  const realPath = getRealHostPathname();
+                  // 1) 切往 Chat 首页 '/' 时，真实浏览器保持底层宿主页面原地不动（由全屏 .ag-prism-chat-home 遮罩覆盖），彻底零 React 卸载卡顿！
+                  if (mode === 'chat' && targetView === '/' && realPath) {
+                    return;
+                  }
+                  // 2) 若已经预切到位，或底层真实路由本来就停在目标页面（例如刚从 Chat 首页切回原 Code 长对话），零跳转原地秒现！
+                  if ((preNav && preNav === targetView) || (realPath && realPath === targetView)) {
+                    return;
+                  }
+                  navigateHostRoute(targetView, { deferPrismSync: true });
+                }
               });
             }
           });
@@ -3760,7 +4019,7 @@
         searchBox.appendChild(makeMonoSvg('search', 12.5));
         const searchInput = el('input', 'ag-prism-sb-search-input');
         searchInput.type = 'text';
-        searchInput.placeholder = '搜索 Chat 对话…';
+        searchInput.placeholder = toZhTwUi('搜索 Chat 对话…');
         searchInput.addEventListener('compositionstart', () => { searchComposing = true; });
         searchInput.addEventListener('compositionend', () => {
           searchComposing = false;
@@ -4568,7 +4827,7 @@
           const box = el('div', 'ag-prism-sb-inline-box');
           const inp = el('input', 'ag-prism-sb-inline-input');
           inp.type = 'text';
-          inp.placeholder = '输入文件夹名回车创建…';
+          inp.placeholder = toZhTwUi('输入文件夹名回车创建…');
           inp.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && inp.value.trim()) {
               inlineFolderOpen = false;
@@ -4717,7 +4976,7 @@
           const box = el('div', 'ag-prism-sb-inline-box');
           const inp = el('input', 'ag-prism-sb-inline-input');
           inp.type = 'text';
-          inp.placeholder = '输入工作文件夹名回车创建…';
+          inp.placeholder = toZhTwUi('输入工作文件夹名回车创建…');
           inp.addEventListener('keydown', async (e) => {
             if (e.key === 'Enter' && inp.value.trim()) {
               const nm = inp.value.trim();
@@ -4882,6 +5141,7 @@
           const container = markOwnedRoot(el('div', 'ag-prism-chat-home'));
           container.setAttribute('data-testid', 'prism-live-chat-home');
           container.setAttribute('data-visible', '0');
+          container.setAttribute('data-hibernated', '1');
 
           const aura = el('div', 'ag-prism-chat-aura');
           aura.appendChild(el('div', 'ag-prism-aura-orb ag-prism-orb-a'));
@@ -5140,12 +5400,30 @@
 
         const refs = host.chatHomeEl._refs;
         if (!shouldShow) {
+          const wasVisible = host.chatHomeEl.getAttribute('data-visible') === '1';
           host.chatHomeEl.setAttribute('data-visible', '0');
           refs.aura.setAttribute('data-paused', '1');
+          if (currentCfg.motionLevel === 'off' || !wasVisible) {
+            host.chatHomeEl.setAttribute('data-hibernated', '1');
+          } else if (!chatHomeHibernateTimer) {
+            chatHomeHibernateTimer = setTimeout(() => {
+              chatHomeHibernateTimer = null;
+              runGuarded(() => {
+                if (host.chatHomeEl && host.chatHomeEl.getAttribute('data-visible') === '0') {
+                  host.chatHomeEl.setAttribute('data-hibernated', '1');
+                }
+              });
+            }, 260);
+          }
           return;
         }
 
         // 原地增量热更（保证 Knowledge <-> Spark 切换 0px 跳动且所有 CSS 过渡自然执行）
+        if (chatHomeHibernateTimer) {
+          clearTimeout(chatHomeHibernateTimer);
+          chatHomeHibernateTimer = null;
+        }
+        host.chatHomeEl.removeAttribute('data-hibernated');
         const isSpark = snapshot.chatDraft && snapshot.chatDraft.kind === 'spark';
         const paused = document.hidden || currentCfg.motionLevel === 'off';
         host.chatHomeEl.setAttribute('data-visible', '1');
@@ -5157,7 +5435,7 @@
         const wantBrand = isSpark ? 'antigravity' : 'gemini';
         if (refs.mark.getAttribute('data-brand') !== wantBrand) {
           clearNode(refs.mark);
-          refs.mark.appendChild(makeBrandSvg(isSpark ? OFFICIAL_ANTIGRAVITY_COLOR_SVG : OFFICIAL_GEMINI_COLOR_SVG, 22));
+          refs.mark.appendChild(makeBrandSvg(OFFICIAL_GEMINI_COLOR_SVG, 18));
           refs.mark.setAttribute('data-brand', wantBrand);
           refs.mark.setAttribute('data-pop', '0');
           if (typeof requestAnimationFrame === 'function') {
@@ -5171,7 +5449,7 @@
         if (refs.eyeTxt.textContent !== hero.eyebrow) refs.eyeTxt.textContent = hero.eyebrow;
         if (refs.h1.textContent !== hero.headline) refs.h1.textContent = hero.headline;
 
-        refs.input.setAttribute('data-placeholder', isSpark ? '交给我一件要处理的事务…' : '问点什么，或整理一份想法…');
+        refs.input.setAttribute('data-placeholder', toZhTwUi(isSpark ? '交给我一件要处理的事务…' : '问点什么，或整理一份想法…'));
         if (document.activeElement !== refs.input && refs.input.textContent !== composerText) {
           refs.input.textContent = composerText;
         }
@@ -5179,23 +5457,23 @@
         refs.kBtn.setAttribute('data-active', isSpark ? '0' : '1');
         refs.sBtn.setAttribute('data-active', isSpark ? '1' : '0');
 
-        const effShort = (CHAT_EFFORT_TIERS.find((t) => t.id === selectedEffort) || CHAT_EFFORT_TIERS[2]).label;
+        const effShort = toZhTwUi((CHAT_EFFORT_TIERS.find((t) => t.id === selectedEffort) || CHAT_EFFORT_TIERS[2]).label);
         refs.modelLbl.textContent = `${selectedModel} · ${effShort}`;
         const ready = Boolean(composerText.trim() || pendingAttachments.length > 0);
         refs.sendBtn.setAttribute('data-ready', ready ? '1' : '0');
         refs.sendBtn.disabled = !ready;
 
         const proj = (snapshot.sparkProjects || []).find((p) => p.id === snapshot.chatDraft?.sparkProjectId) || null;
-        refs.projLbl.textContent = proj ? proj.name : '工作文件夹';
-        refs.fenceLbl.textContent = proj && proj.sharedWithCode ? '共享目录 · 已保护' : '安全保护';
+        refs.projLbl.textContent = proj ? proj.name : toZhTwUi('工作文件夹');
+        refs.fenceLbl.textContent = toZhTwUi(proj && proj.sharedWithCode ? '共享目录 · 已保护' : '安全保护');
 
         // 淡雅起手灵感胶囊（按 Pure / Spark 切换，可一键关闭持久化）
         const policy = getEffectiveChatPolicy();
         const showChips = Boolean(policy.showStarterChips && !composerText.trim() && pendingAttachments.length === 0);
         refs.starterRow.setAttribute('data-hidden', showChips ? '0' : '1');
         const chipsKind = isSpark ? 'spark' : 'pure';
-        if (refs.starterRow.getAttribute('data-chips-kind') !== chipsKind) {
-          refs.starterRow.setAttribute('data-chips-kind', chipsKind);
+        if (refs.starterRow.getAttribute('data-chips-kind') !== `${chipsKind}:${activeUiLang}`) {
+          refs.starterRow.setAttribute('data-chips-kind', `${chipsKind}:${activeUiLang}`);
           clearNode(refs.starterRow);
           const preset = CHAT_STARTER_CHIPS[chipsKind] || CHAT_STARTER_CHIPS.pure;
           for (let i = 0; i < preset.length; i++) {
@@ -5203,8 +5481,9 @@
             const cb = el('button', 'ag-prism-starter-chip', item.label);
             cb.type = 'button';
             cb.addEventListener('click', () => {
-              composerText = item.prompt;
-              refs.input.textContent = item.prompt;
+              const promptTxt = toZhTwUi(item.prompt);
+              composerText = promptTxt;
+              refs.input.textContent = promptTxt;
               renderChatHome();
               try {
                 refs.input.focus();
@@ -5222,7 +5501,7 @@
           }
           const dismissBtn = el('button', 'ag-prism-starter-dismiss');
           dismissBtn.type = 'button';
-          dismissBtn.title = '隐藏快捷建议（可在「能力与扩展」中重新开启）';
+          dismissBtn.title = toZhTwUi('隐藏快捷建议（可在「能力与扩展」中重新开启）');
           dismissBtn.appendChild(makeMonoSvg('x', 11.5));
           dismissBtn.addEventListener('click', () => {
             void callDaemonRpc('set-prefs', { patch: { chatPolicy: { showStarterChips: false } } });
@@ -5255,6 +5534,7 @@
       }
 
       runGuarded(() => {
+        getCurrentLang();
         ensureStyleSheet();
         ensureModeDock(slots);
         ensureChatPane(slots);
@@ -5265,10 +5545,22 @@
         lastRenderedMode = mode;
 
         if (document.documentElement) {
-          document.documentElement.setAttribute('data-ag-prism-mode', mode);
+          const onChatConv = Boolean(mode === 'chat' && snapshot.currentView && snapshot.currentView !== '/');
+          const domMode = mode === 'chat' ? (onChatConv ? 'chat' : 'chat-home') : 'code';
+          if (document.documentElement.getAttribute('data-ag-prism-mode') !== domMode) {
+            document.documentElement.setAttribute('data-ag-prism-mode', domMode);
+          }
+        }
+
+        if (modeJustChanged && currentCfg.motionLevel !== 'off') {
+          triggerSegSwitchMotion(mode);
         }
 
         if (mode === 'code') {
+          if (sidebarEnterTimer) {
+            clearTimeout(sidebarEnterTimer);
+            sidebarEnterTimer = null;
+          }
           if (modeJustChanged) {
             try { W.__agPrism?.suppressEntryMotion?.(950); } catch {}
           }
@@ -5276,18 +5568,23 @@
           const returningNodes = host.parkedNativeNodes.slice();
           restoreNativeSidebarVisibility();
           if (modeJustChanged && currentCfg.motionLevel !== 'off') {
+            if (codeReturnTimer) {
+              clearTimeout(codeReturnTimer);
+              codeReturnTimer = null;
+            }
             for (let i = 0; i < returningNodes.length; i++) {
               const n = returningNodes[i];
               if (n && n.classList) n.classList.add('ag-prism-code-returning');
             }
-            setTimeout(() => {
+            codeReturnTimer = setTimeout(() => {
+              codeReturnTimer = null;
               runGuarded(() => {
                 for (let i = 0; i < returningNodes.length; i++) {
                   const n = returningNodes[i];
                   if (n && n.classList) n.classList.remove('ag-prism-code-returning');
                 }
               });
-            }, 240);
+            }, 260);
           }
           applyCodeModeChatRowFilter();
           if (host.chatPaneEl) {
@@ -5295,11 +5592,16 @@
             host.chatPaneEl.setAttribute('data-entering', '0');
           }
         } else {
+          if (codeReturnTimer) {
+            clearTimeout(codeReturnTimer);
+            codeReturnTimer = null;
+          }
           // Chat 模式：仅柔和收起原生列表区（保留原生顶栏与底栏），平滑展开 Chat 面板
           const nextParked = [];
           for (let i = 0; i < slots.codeBodySlots.length; i++) {
             const node = slots.codeBodySlots[i];
             if (node && node.classList) {
+              node.classList.remove('ag-prism-code-returning');
               node.classList.add('ag-prism-sb-native-hidden');
               nextParked.push(node);
             }
@@ -5307,12 +5609,23 @@
           host.parkedNativeNodes = nextParked;
           if (host.chatPaneEl) {
             host.chatPaneEl.setAttribute('data-active', '1');
-            host.chatPaneEl.setAttribute('data-entering', modeJustChanged ? '1' : '0');
+            if (modeJustChanged && currentCfg.motionLevel !== 'off') {
+              host.chatPaneEl.setAttribute('data-entering', '1');
+              if (sidebarEnterTimer) clearTimeout(sidebarEnterTimer);
+              sidebarEnterTimer = setTimeout(() => {
+                sidebarEnterTimer = null;
+                runGuarded(() => {
+                  if (host.chatPaneEl) host.chatPaneEl.setAttribute('data-entering', '0');
+                });
+              }, 260);
+            } else if (!sidebarEnterTimer) {
+              host.chatPaneEl.setAttribute('data-entering', '0');
+            }
           }
           renderChatSidebarList();
         }
         if (modeJustChanged) {
-          try { W.__agPrism?.sync?.(); } catch {}
+          scheduleDeferredPrismSync(300);
         }
       });
     }
@@ -5467,6 +5780,31 @@
         clearTimeout(canvasFadeTimer);
         canvasFadeTimer = null;
       }
+      if (segSwitchTimer) {
+        clearTimeout(segSwitchTimer);
+        segSwitchTimer = null;
+      }
+      if (sidebarEnterTimer) {
+        clearTimeout(sidebarEnterTimer);
+        sidebarEnterTimer = null;
+      }
+      if (codeReturnTimer) {
+        clearTimeout(codeReturnTimer);
+        codeReturnTimer = null;
+      }
+      if (chatHomeHibernateTimer) {
+        clearTimeout(chatHomeHibernateTimer);
+        chatHomeHibernateTimer = null;
+      }
+      if (deferredPrismSyncTimer) {
+        clearTimeout(deferredPrismSyncTimer);
+        deferredPrismSyncTimer = null;
+      }
+      if (deferredRouteTimer) {
+        clearTimeout(deferredRouteTimer);
+        deferredRouteTimer = null;
+      }
+      modeTransitionUntil = 0;
       if (composerChipTimer) {
         clearTimeout(composerChipTimer);
         composerChipTimer = null;

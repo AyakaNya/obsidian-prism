@@ -31,12 +31,12 @@ const PID_FILE = path.join(__dirname, '.watch.pid');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
 const DEFAULT_CONFIG = {
-  language: 'auto',
-  lang: 'auto',
-  palette: 'obsidian',
-  lightPreset: 'crystal',
+  language: 'zh-TW',
+  lang: 'zh-TW',
+  palette: 'warm',
+  lightPreset: 'alabaster',
   darkAuraStyle: 'prism',
-  motionLevel: 'ultra',
+  motionLevel: 'subtle',
   targetFps: '180',
   telemetryModule: 'auto',
   effortSliderModule: 'auto',
@@ -44,11 +44,11 @@ const DEFAULT_CONFIG = {
   periodicModelPicker: 'on',
   thoughtTranslate: 'off',
   thoughtTrigger: 'preload',
-  homeLayout: 'studio',
-  homeMode: 'studio',
-  homeRipple: true,
+  homeLayout: 'classic',
+  homeMode: 'classic',
+  homeRipple: false,
   convRipple: 'off',
-  ripple: 'on',
+  ripple: 'off',
   composerRestyle: true,
   composer: 'on',
   placeholderStyle: 'studio',
@@ -63,16 +63,16 @@ const DEFAULT_CONFIG = {
   scrollBottomMotion: 'smooth',
   contextMenu: true,
   accentTone: 'follow',
-  cornerStyle: 'balanced',
+  cornerStyle: 'soft',
   codeFont: 'default',
   codeLigatures: false,
-  ambientIntensity: '100',
-  darkAura: 'balanced',
+  ambientIntensity: '0',
+  darkAura: 'subtle',
   thoughtView: 'immersive',
   omniModule: 'on',
   linkTarget: 'builtin',
   sidebarStudio: 'off',
-  hostLocalization: 'auto',
+  hostLocalization: 'on',
   autoUpdate: 'off',
   updateChannel: 'stable',
   autoArchiveOnExit: false,
@@ -132,9 +132,9 @@ function normalizeMascotConfigValue(raw) {
   if (raw === 'dual') return 'crab';
   if (raw === 'off' || raw === 'crab' || raw === 'minis' || raw === 'quad' || raw === 'quad-minis') return raw;
   if (!raw.startsWith('r:') || raw.length <= 2) return null;
-  const m = /^r:(?:([ckdw][0-4](?:,[ckdw][0-4])*)?(\+m)?)$/.exec(raw);
+  const m = /^r:(?:([ckdwl][0-4](?:,[ckdwl][0-4])*)?(\+m)?)$/.exec(raw);
   if (!m) return null;
-  const counts = { c: 0, k: 0, d: 0, w: 0 };
+  const counts = { c: 0, k: 0, d: 0, w: 0, l: 0 };
   const seen = new Set();
   let rawTotal = 0;
   let total = 0;
@@ -150,13 +150,13 @@ function normalizeMascotConfigValue(raw) {
       total += clamped;
     }
   }
-  if (rawTotal > 6 || total > 4) return null;
+  if (rawTotal > 6 || total > 5) return null;
   const minis = Boolean(m[2]);
   if (total === 0 && !minis) return 'off';
-  if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0) return minis ? 'minis' : 'crab';
-  if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1) return minis ? 'quad-minis' : 'quad';
+  if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0 && counts.l === 0) return minis ? 'minis' : 'crab';
+  if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1 && counts.l === 0) return minis ? 'quad-minis' : 'quad';
   const parts = [];
-  for (const sp of ['c', 'k', 'd', 'w']) {
+  for (const sp of ['c', 'k', 'd', 'w', 'l']) {
     if (counts[sp] > 0) parts.push(sp + counts[sp]);
   }
   return 'r:' + parts.join(',') + (minis ? '+m' : '');
@@ -8101,7 +8101,7 @@ function getConfigRefreshTemplate() {
         const navL = String((typeof navigator !== 'undefined' && ((navigator.languages && navigator.languages[0]) || navigator.language)) || '').trim();
         if (hiMode === 'off') window.__agPrismHostI18n?.setMode?.('off');
         else if (hiMode === 'on') window.__agPrismHostI18n?.setMode?.('on');
-        else if ((hiLang && hiLang !== 'zh-CN' && hiLang !== 'auto') || ((!hiLang || hiLang === 'auto') && navL && !/^zh(?:$|-(?:cn|hans|sg)(?:-|$))/i.test(navL))) window.__agPrismHostI18n?.destroy?.();
+        else if ((hiLang && hiLang !== 'zh-CN' && hiLang !== 'zh-TW' && hiLang !== 'auto') || ((!hiLang || hiLang === 'auto') && navL && !/^zh/i.test(navL))) window.__agPrismHostI18n?.destroy?.();
         else window.__agPrismHostI18n?.setMode?.('auto');
       } catch {}
       if (effectiveCfg?.mascot === 'off' || effectiveCfg?.mascot === false) {
@@ -9933,12 +9933,12 @@ function shouldEnableHostI18n(config, hostLocaleHint = null) {
   if (mode === 'off') return true;
   if (mode === 'on') return true;
   const lang = cfg.language || cfg.lang || 'auto';
-  if (lang === 'zh-CN') return true;
+  if (lang === 'zh-CN' || lang === 'zh-TW') return true;
   if (lang === 'auto') {
     const sysLocale = hostLocaleHint || detectSystemUiLocale();
     const stripped = String(sysLocale || '').trim().split(/[.@]/)[0];
     const norm = stripped.toLowerCase().replace(/_/g, '-');
-    return norm === 'zh' || /^zh-(?:cn|hans|sg)(?:-|$)/.test(norm);
+    return norm === 'zh' || /^zh-/i.test(norm);
   }
   return false;
 }

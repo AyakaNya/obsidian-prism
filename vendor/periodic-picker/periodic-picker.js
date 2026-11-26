@@ -3595,6 +3595,10 @@
         if (activeRenderer && typeof activeRenderer.setHardwareState === 'function') {
           try { activeRenderer.setHardwareState(hardwareStatePayload); } catch (e) {}
         }
+        if (FLAT_PAPER_2D_MODE) {
+          syncFlatPaper2D(dInfo);
+        }
+
         if (activeRenderer && typeof activeRenderer.setState === 'function') {
           try {
             var nextRendererState = {
@@ -3649,7 +3653,9 @@
       /* ── Clean Close / Confirm Actions (NO Host Model Rollback on Esc!) ── */
 
       function shouldAnimateDrawerCollapse() {
-        if (isDestroyed || !overlayEl || stageMode !== 'drawer' || bentoUi.isReducedMotion(doc, root)) return false;
+        if (isDestroyed || !overlayEl) return false;
+        if (FLAT_PAPER_2D_MODE) return true;
+        if (stageMode !== 'drawer' || bentoUi.isReducedMotion(doc, root)) return false;
         return Boolean(root && typeof root.HTMLElement === 'function');
       }
 
@@ -3929,6 +3935,466 @@
         }
         if (lastPointerClient.active) forwardPointerToRenderer(lastPointerClient.x, lastPointerClient.y, true);
         scheduleSettledRectSync();
+      }
+
+      /* ── Pure 2D Flat Paper Periodic Table Mode (lightweight stationery aesthetic) ── */
+      var FLAT_PAPER_2D_MODE = true;
+      var flat2dRefs = null;
+      var flatHoveredGlobalAux = null;
+      var flatHoveredChemZ = null;
+      var flatPinnedChemZ = null;
+      var flatRippleTimers = [];
+
+      var ZH_TW_ELEMENT_NAMES = {
+        1:'氫',2:'氦',3:'鋰',4:'鈹',5:'硼',6:'碳',7:'氮',8:'氧',9:'氟',10:'氖',
+        11:'鈉',12:'鎂',13:'鋁',14:'矽',15:'磷',16:'硫',17:'氯',18:'氬',
+        19:'鉀',20:'鈣',21:'鈧',22:'鈦',23:'釩',24:'鉻',25:'錳',26:'鐵',27:'鈷',28:'鎳',29:'銅',30:'鋅',31:'鎵',32:'鍺',33:'砷',34:'硒',35:'溴',36:'氪',
+        37:'銣',38:'鍶',39:'釔',40:'鋯',41:'鈮',42:'鉬',43:'鎝',44:'釕',45:'銠',46:'鈀',47:'銀',48:'鎘',49:'銦',50:'錫',51:'銻',52:'碲',53:'碘',54:'氙',
+        55:'銫',56:'鋇',57:'鑭系',72:'鉿',73:'鉭',74:'鎢',75:'錸',76:'鋨',77:'銥',78:'鉑',79:'金',80:'汞',81:'鉈',82:'鉛',83:'鉍',84:'釙',85:'砹',86:'氡',
+        87:'鍅',88:'鐳',89:'錒系',104:'鑪',105:'𨧀',106:'𨭎',107:'𨨏',108:'𨭆',109:'䥑',110:'鐽',111:'錀',112:'鎶',113:'鉨',114:'鈇',115:'鏌',116:'鉝',117:'鿬',118:'鿫'
+      };
+
+      var ZH_TW_GROUP_NAMES = {
+        'nonmetal': '非金屬',
+        'noble': '惰性氣體',
+        'alkali': '鹼金屬',
+        'alkaline': '鹼土金屬',
+        'metalloid': '類金屬',
+        'halogen': '鹵素',
+        'transition': '過渡金屬',
+        'post-transition': '貧金屬',
+        'lanthanoid': '鑭系元素',
+        'actinoid': '錒系元素'
+      };
+
+      function positionFlatPopover(anchorHint) {
+        if (!FLAT_PAPER_2D_MODE || !overlayEl) return;
+        var winW = (root && Number(root.innerWidth)) || 1280;
+        var winH = (root && Number(root.innerHeight)) || 800;
+        var trig =
+          (anchorHint && isNodeConnectedToDoc(doc, anchorHint) ? anchorHint : null) ||
+          (activeAnchorBtn && isNodeConnectedToDoc(doc, activeAnchorBtn) ? activeAnchorBtn : null) ||
+          (doc && typeof doc.querySelector === 'function' ? doc.querySelector('[data-testid="model-selector-trigger"]') : null);
+        var comp =
+          (trig && typeof trig.closest === 'function'
+            ? trig.closest('.surface-composer-card, #antigravity\\.agentSidePanelInputBox, [data-testid="agent-input-box"]')
+            : null) ||
+          (doc && typeof doc.querySelector === 'function'
+            ? doc.querySelector('.surface-composer-card, #antigravity\\.agentSidePanelInputBox')
+            : null) ||
+          trig;
+        var popW = Math.min(688, Math.max(320, winW - 32));
+        var cx = Math.round(winW / 2);
+        var bottomPx = 112;
+        if (comp && typeof comp.getBoundingClientRect === 'function') {
+          var cr = comp.getBoundingClientRect();
+          if (cr && cr.width > 0 && cr.height > 0) {
+            cx = Math.round(cr.left + cr.width / 2);
+            bottomPx = Math.round(Math.max(16, Math.min(winH - 310, winH - cr.top + 10)));
+          }
+        }
+        var halfW = Math.round(popW / 2);
+        cx = Math.max(halfW + 16, Math.min(winW - halfW - 16, cx));
+        overlayEl.style.setProperty('--ag-pp-pop-left', cx + 'px');
+        overlayEl.style.setProperty('--ag-pp-pop-bottom', bottomPx + 'px');
+        overlayEl.style.setProperty('--ag-pp-pop-width', popW + 'px');
+      }
+
+      function triggerFlatElementRipple(centerSlot) {
+        if (!flat2dRefs || !flat2dRefs.cellMap || !centerSlot) return;
+        for (var ti = 0; ti < flatRippleTimers.length; ti += 1) {
+          clearTimeout(flatRippleTimers[ti]);
+        }
+        flatRippleTimers.length = 0;
+        flat2dRefs.cellMap.forEach(function (cell, z) {
+          var s = SLOT_BY_Z.get(z);
+          if (!s) return;
+          cell.classList.remove('is-rippling', 'is-pulse-origin');
+          var dist = Math.hypot((s.col || 1) - (centerSlot.col || 1), (s.row || 1) - (centerSlot.row || 1));
+          if (dist <= 6.2) {
+            var delayMs = Math.round(dist * 26);
+            cell.style.setProperty('--ag-f2-delay', delayMs + 'ms');
+            void cell.offsetWidth;
+            if (z === centerSlot.z) cell.classList.add('is-pulse-origin');
+            cell.classList.add('is-rippling');
+            var tid = setTimeout(function () {
+              cell.classList.remove('is-rippling', 'is-pulse-origin');
+            }, delayMs + 460);
+            flatRippleTimers.push(tid);
+          }
+        });
+      }
+
+      function animateFlatHeaderSwap(refs, nextSwapKey) {
+        if (!refs || !refs.meta || refs.lastSwapKey === nextSwapKey) return;
+        refs.lastSwapKey = nextSwapKey;
+        refs.meta.classList.remove('is-swapping');
+        if (refs.right) refs.right.classList.remove('is-swapping');
+        void refs.meta.offsetWidth;
+        refs.meta.classList.add('is-swapping');
+        if (refs.right) refs.right.classList.add('is-swapping');
+      }
+
+      function handleFlatAuxClick(globalIdx) {
+        if (isConfirmClosing || isDrawerClosing) return;
+        flatPinnedChemZ = null;
+        var slot = effectiveAuxAll[globalIdx];
+        if (!slot) return;
+        if (isGlobalOrchToggleSlot(globalIdx, slot)) {
+          if (!slot.available) return;
+          cancelBlindDwellTimer();
+          cancelBlindFlashTimer();
+          blindFlashZ = null;
+          inspectedBlindZ = null;
+          inspectedBlindAuxIndex = null;
+          orchLatched = !orchLatched;
+          recomputeEffectiveAvailability();
+          if (orchLatched) ensureValidPlannerSelectedForOrch();
+          syncHostWithActiveState();
+          syncSceneAndDom(true);
+          return;
+        }
+        if (!slot.available || globalIdx < 0) return;
+        if (selectedGlobalAuxIndex === globalIdx && selectedZ === null) {
+          confirmAndClose();
+          return;
+        }
+        cancelBlindDwellTimer();
+        cancelBlindFlashTimer();
+        inspectedBlindZ = null;
+        inspectedBlindAuxIndex = null;
+        blindFlashZ = null;
+        extNearRendererActive = false;
+        selectedZ = null;
+        confirmSlamZ = null;
+        selectedGlobalAuxIndex = globalIdx;
+        var chosenAux = resolveLevelForAuxWithMemory(slot, globalIdx, '');
+        if (chosenAux) activeEffortByGlobalAux.set(globalIdx, chosenAux.effort);
+        syncHostWithActiveState();
+        syncSceneAndDom(true);
+      }
+
+      function ensureFlatPaper2DDom(stageHost) {
+        if (!stageHost) return null;
+        if (flat2dRefs && flat2dRefs.root && flat2dRefs.root.parentElement === stageHost) {
+          return flat2dRefs;
+        }
+        var existing = stageHost.querySelector('.ag-pp-flat2d-root');
+        if (existing) safeRemove(existing);
+
+        var wrap = mkEl(doc, 'div', 'ag-pp-flat2d-root');
+        wrap.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+        wrap.addEventListener('click', function (ev) { ev.stopPropagation(); });
+
+        /* Top minimal header: badge + model/element title + subtitle + effort pills / chem tag + close button */
+        var head = mkEl(doc, 'div', 'ag-pp-flat2d-head');
+        var meta = mkEl(doc, 'div', 'ag-pp-flat2d-meta');
+        var badge = mkEl(doc, 'span', 'ag-pp-flat2d-badge', '');
+        var title = mkEl(doc, 'span', 'ag-pp-flat2d-title', '');
+        var sub = mkEl(doc, 'span', 'ag-pp-flat2d-sub', '');
+        meta.appendChild(badge);
+        meta.appendChild(title);
+        meta.appendChild(sub);
+
+        var right = mkEl(doc, 'div', 'ag-pp-flat2d-right');
+        var efforts = mkEl(doc, 'div', 'ag-pp-flat2d-efforts');
+        var chemNote = mkEl(doc, 'span', 'ag-pp-flat2d-chem-note', '');
+        chemNote.style.display = 'none';
+        var closeBtn = mkEl(doc, 'button', 'ag-pp-flat2d-close', '×');
+        closeBtn.type = 'button';
+        closeBtn.setAttribute('aria-label', 'Close');
+        closeBtn.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          confirmAndClose();
+        });
+        right.appendChild(efforts);
+        right.appendChild(chemNote);
+        right.appendChild(closeBtn);
+        head.appendChild(meta);
+        head.appendChild(right);
+
+        /* Center 18x7 Flat Periodic Table Grid */
+        var grid = mkEl(doc, 'div', 'ag-pp-flat2d-grid');
+        var cellMap = new Map();
+        for (var gi = 0; gi < ELEMENTS_90.length; gi += 1) {
+          (function (slot) {
+            var cell = mkEl(doc, 'button', 'ag-pp-f2-cell');
+            cell.type = 'button';
+            cell.style.gridRow = String(slot.row);
+            cell.style.gridColumn = String(slot.col);
+            cell.setAttribute('data-z', String(slot.z));
+            cell.setAttribute('data-symbol', slot.symbol);
+            cell.setAttribute('data-group', slot.group || 'transition');
+            var numEl = mkEl(doc, 'span', 'ag-pp-f2-num', slot.numLabel);
+            var symEl = mkEl(doc, 'span', 'ag-pp-f2-sym', slot.symbol);
+            cell.appendChild(numEl);
+            cell.appendChild(symEl);
+            cell.addEventListener('pointerenter', function () {
+              flatHoveredGlobalAux = null;
+              if (availableByZ.has(slot.z)) {
+                flatHoveredChemZ = null;
+                if (hoveredZ !== slot.z) {
+                  hoveredZ = slot.z;
+                  hoveredAuxIndex = null;
+                  syncSceneAndDom(true, { hoverOnly: true, deferRender: true });
+                }
+              } else {
+                if (hoveredZ !== null) hoveredZ = null;
+                if (flatHoveredChemZ !== slot.z) {
+                  flatHoveredChemZ = slot.z;
+                  syncFlatPaper2D(null);
+                }
+              }
+            });
+            cell.addEventListener('pointerleave', function () {
+              if (hoveredZ === slot.z) {
+                hoveredZ = null;
+                syncSceneAndDom(true, { hoverOnly: true, deferRender: true });
+              }
+              if (flatHoveredChemZ === slot.z) {
+                flatHoveredChemZ = null;
+                syncFlatPaper2D(null);
+              }
+            });
+            cell.addEventListener('click', function (ev) {
+              ev.stopPropagation();
+              if (availableByZ.has(slot.z)) {
+                flatPinnedChemZ = null;
+                triggerFlatElementRipple(slot);
+                handleAvailableKeyClick(slot.z);
+              } else {
+                flatPinnedChemZ = flatPinnedChemZ === slot.z ? null : slot.z;
+                triggerFlatElementRipple(slot);
+                playSound('step', 1);
+                syncFlatPaper2D(null);
+              }
+            });
+            cellMap.set(slot.z, cell);
+            grid.appendChild(cell);
+          })(ELEMENTS_90[gi]);
+        }
+
+        /* Bottom Aux Models Bar */
+        var auxBar = mkEl(doc, 'div', 'ag-pp-flat2d-aux');
+
+        wrap.appendChild(head);
+        wrap.appendChild(grid);
+        wrap.appendChild(auxBar);
+        stageHost.appendChild(wrap);
+
+        flat2dRefs = {
+          root: wrap,
+          meta: meta,
+          right: right,
+          badge: badge,
+          title: title,
+          sub: sub,
+          efforts: efforts,
+          chemNote: chemNote,
+          auxBar: auxBar,
+          cellMap: cellMap,
+          lastAuxSig: '',
+          lastEffSig: '',
+          lastSwapKey: '',
+          lastDInfo: null,
+        };
+        return flat2dRefs;
+      }
+
+      function syncFlatPaper2D(dInfo) {
+        if (!FLAT_PAPER_2D_MODE || !stageEl) return;
+        var refs = ensureFlatPaper2DDom(stageEl);
+        if (!refs) return;
+        if (dInfo) refs.lastDInfo = dInfo;
+        else dInfo = refs.lastDInfo;
+
+        /* Check if inspecting an unbound real chemical element */
+        var activeChemZ =
+          flatHoveredGlobalAux === null && hoveredZ === null
+            ? (flatHoveredChemZ !== null ? flatHoveredChemZ : flatPinnedChemZ)
+            : null;
+        var chemSlot = activeChemZ !== null && !availableByZ.has(activeChemZ) ? SLOT_BY_Z.get(activeChemZ) : null;
+
+        if (chemSlot) {
+          var zhName = ZH_TW_ELEMENT_NAMES[chemSlot.z] || chemSlot.zh || chemSlot.name;
+          var grpName = ZH_TW_GROUP_NAMES[chemSlot.group] || '化學元素';
+          var chemBadge = chemSlot.numLabel + ' ' + chemSlot.symbol;
+          var chemTitle = zhName + ' · ' + chemSlot.name;
+          var chemSub = grpName + ' · ' + chemSlot.mass + ' u';
+          var chemCoord = '第 ' + chemSlot.row + ' 週期 · 第 ' + chemSlot.col + ' 族';
+
+          animateFlatHeaderSwap(refs, 'chem:' + chemSlot.z);
+          refs.badge.setAttribute('data-kind', 'chem');
+          if (refs.badge.textContent !== chemBadge) refs.badge.textContent = chemBadge;
+          refs.badge.style.display = '';
+          if (refs.title.textContent !== chemTitle) refs.title.textContent = chemTitle;
+          if (refs.sub.textContent !== chemSub) refs.sub.textContent = chemSub;
+          refs.sub.style.display = '';
+          refs.efforts.style.display = 'none';
+          if (refs.chemNote.textContent !== chemCoord) refs.chemNote.textContent = chemCoord;
+          refs.chemNote.style.display = '';
+        } else {
+          refs.badge.removeAttribute('data-kind');
+          refs.chemNote.style.display = 'none';
+
+          var hovAuxSlot =
+            flatHoveredGlobalAux !== null && effectiveAuxAll[flatHoveredGlobalAux]
+              ? effectiveAuxAll[flatHoveredGlobalAux]
+              : null;
+          var activeAuxSlot =
+            !hovAuxSlot && selectedGlobalAuxIndex !== null && effectiveAuxAll[selectedGlobalAuxIndex]
+              ? effectiveAuxAll[selectedGlobalAuxIndex]
+              : null;
+          var displayAux = hovAuxSlot || (dInfo && dInfo.isAuxModel ? effectiveAuxAll[dInfo.globalAuxIndex] : null) || (hoveredZ === null ? activeAuxSlot : null);
+
+          var badgeText = '';
+          var titleText = '';
+          var subText = '';
+          var effLevels = (dInfo && dInfo.levels) || [];
+          var effIsAux = Boolean(dInfo && dInfo.isAuxModel);
+          var effGlobalAux = dInfo ? dInfo.globalAuxIndex : null;
+          var effZ = dInfo ? dInfo.z : null;
+          var swapKey = '';
+
+          if (displayAux && displayAux.available) {
+            badgeText = displayAux.badgeCode || 'AUX';
+            titleText = displayAux.title || displayAux.shortLabel || '';
+            var isOrchD = isGlobalOrchToggleSlot(displayAux._globalAuxIndex, displayAux);
+            subText = isOrchD ? (orchLatched ? '雙模型編排已啟用' : '點擊啟用雙模型編排') : '';
+            swapKey = 'aux:' + displayAux._globalAuxIndex + ':' + (orchLatched ? '1' : '0');
+            if (Array.isArray(displayAux.levels) && displayAux.levels.length > 0) {
+              var chA = resolveLevelForAuxWithMemory(displayAux, displayAux._globalAuxIndex, '');
+              var actE = chA ? chA.effort : displayAux.levels[0].effort;
+              effLevels = displayAux.levels.map(function (lv) {
+                return { effort: lv.effort, label: lv.label, active: lv.effort === actE };
+              });
+              effIsAux = true;
+              effGlobalAux = displayAux._globalAuxIndex;
+              effZ = null;
+            }
+          } else if (dInfo) {
+            var slotMeta = dInfo.slot || (dInfo.z != null ? SLOT_BY_Z.get(dInfo.z) : null);
+            var zhEl = slotMeta ? (ZH_TW_ELEMENT_NAMES[slotMeta.z] || slotMeta.zh || '') : '';
+            badgeText = slotMeta ? slotMeta.numLabel + ' ' + slotMeta.symbol : '';
+            titleText = dInfo.title || (slotMeta ? slotMeta.name : '');
+            subText = orchLatched
+              ? 'Orchestrator 編排中'
+              : (slotMeta && zhEl ? zhEl + ' · ' + (ZH_TW_GROUP_NAMES[slotMeta.group] || slotMeta.group) + ' · ' + slotMeta.mass + ' u' : '');
+            swapKey = 'el:' + (slotMeta ? slotMeta.z : titleText) + ':' + (orchLatched ? '1' : '0');
+          }
+
+          if (swapKey) animateFlatHeaderSwap(refs, swapKey);
+          if (refs.badge.textContent !== badgeText) refs.badge.textContent = badgeText;
+          refs.badge.style.display = badgeText ? '' : 'none';
+          if (refs.title.textContent !== titleText) refs.title.textContent = titleText;
+          if (refs.sub.textContent !== subText) refs.sub.textContent = subText;
+          refs.sub.style.display = subText ? '' : 'none';
+
+          /* Effort segmented pills */
+          var effSig =
+            (effIsAux ? 'a:' + effGlobalAux : 'z:' + effZ) +
+            '|' + effLevels.map(function (l) { return l.effort + ':' + (l.active ? '1' : '0'); }).join(',');
+          if (refs.lastEffSig !== effSig) {
+            refs.lastEffSig = effSig;
+            refs.efforts.textContent = '';
+            for (var ei = 0; ei < effLevels.length; ei += 1) {
+              (function (lv) {
+                var eb = mkEl(doc, 'button', 'ag-pp-f2-eff-btn', lv.label);
+                eb.type = 'button';
+                eb.setAttribute('data-active', lv.active ? '1' : '0');
+                eb.addEventListener('click', function (ev) {
+                  ev.stopPropagation();
+                  if (effIsAux && effGlobalAux !== null && effGlobalAux !== undefined) {
+                    handleAuxEffortSelect(effGlobalAux, lv.effort);
+                  } else {
+                    handleEffortSelect(lv.effort, effZ);
+                  }
+                });
+                refs.efforts.appendChild(eb);
+              })(effLevels[ei]);
+            }
+          }
+          refs.efforts.style.display = effLevels.length > 0 ? '' : 'none';
+        }
+
+        /* Sync 90 periodic cells */
+        refs.cellMap.forEach(function (cell, z) {
+          var isAvail = availableByZ.has(z);
+          var isSel = selectedGlobalAuxIndex === null && selectedZ === z;
+          var isPin = !isAvail && flatPinnedChemZ === z;
+          var avStr = isAvail ? '1' : '0';
+          var selStr = isSel ? '1' : '0';
+          var pinStr = isPin ? '1' : '0';
+          if (cell.getAttribute('data-avail') !== avStr) {
+            cell.setAttribute('data-avail', avStr);
+          }
+          if (cell.getAttribute('data-selected') !== selStr) {
+            cell.setAttribute('data-selected', selStr);
+          }
+          if (cell.getAttribute('data-pinned') !== pinStr) {
+            cell.setAttribute('data-pinned', pinStr);
+          }
+        });
+
+        /* Sync bottom aux pills (show all available non-element models in one clean row) */
+        var auxItems = [];
+        for (var ai = 0; ai < effectiveAuxAll.length; ai += 1) {
+          var as = effectiveAuxAll[ai];
+          if (!as || (!as.available && !isGlobalOrchToggleSlot(ai, as))) continue;
+          if (!as.available && isGlobalOrchToggleSlot(ai, as)) continue;
+          auxItems.push({ idx: ai, slot: as });
+        }
+        var auxSig =
+          (orchLatched ? 'O1' : 'O0') + '|S' + String(selectedGlobalAuxIndex) + '|' +
+          auxItems.map(function (it) { return it.idx + ':' + it.slot.title + ':' + (it.slot.available ? '1' : '0'); }).join(',');
+        if (refs.lastAuxSig !== auxSig) {
+          refs.lastAuxSig = auxSig;
+          refs.auxBar.textContent = '';
+          for (var k = 0; k < auxItems.length; k += 1) {
+            (function (item) {
+              var as = item.slot;
+              var isOrch = isGlobalOrchToggleSlot(item.idx, as);
+              var isSelAux = !isOrch && selectedGlobalAuxIndex === item.idx;
+              var pill = mkEl(doc, 'button', 'ag-pp-f2-aux-pill');
+              pill.type = 'button';
+              pill.setAttribute('data-selected', isSelAux ? '1' : '0');
+              if (isOrch) pill.setAttribute('data-latched', orchLatched ? '1' : '0');
+              var iconSpan = mkEl(doc, 'span', 'ag-pp-f2-aux-icon');
+              iconSpan.setAttribute('aria-hidden', 'true');
+              var rawKey = ((as.id || '') + ' ' + (as.title || '')).toLowerCase();
+              if (isOrch || rawKey.indexOf('orch') !== -1) {
+                iconSpan.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><circle cx="6.2" cy="8" r="3.6" stroke="currentColor" stroke-width="1.45"/><circle cx="9.8" cy="8" r="3.6" stroke="currentColor" stroke-width="1.45" stroke-opacity=".72"/></svg>';
+              } else if (rawKey.indexOf('claude') !== -1 || rawKey.indexOf('opus') !== -1 || rawKey.indexOf('sonnet') !== -1) {
+                iconSpan.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><path d="M8 1.8v12.4M1.8 8h12.4M3.6 3.6l8.8 8.8M12.4 3.6l-8.8 8.8" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>';
+              } else if (rawKey.indexOf('gpt') !== -1 || rawKey.indexOf('openai') !== -1) {
+                iconSpan.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><polygon points="8,1.8 13.4,4.9 13.4,11.1 8,14.2 2.6,11.1 2.6,4.9" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="8" cy="8" r="1.7" fill="currentColor"/></svg>';
+              } else {
+                iconSpan.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><path d="M8 1.2C8.25 5.4 10.6 7.75 14.8 8C10.6 8.25 8.25 10.6 8 14.8C7.75 10.6 5.4 8.25 1.2 8C5.4 7.75 7.75 5.4 8 1.2Z" fill="currentColor"/></svg>';
+              }
+              var nameSpan = mkEl(doc, 'span', 'ag-pp-f2-aux-name', as.title || as.shortLabel || '');
+              pill.appendChild(iconSpan);
+              pill.appendChild(nameSpan);
+              pill.addEventListener('pointerenter', function () {
+                flatHoveredGlobalAux = item.idx;
+                flatHoveredChemZ = null;
+                hoveredZ = null;
+                syncSceneAndDom(true, { hoverOnly: true, deferRender: true });
+              });
+              pill.addEventListener('pointerleave', function () {
+                if (flatHoveredGlobalAux === item.idx) {
+                  flatHoveredGlobalAux = null;
+                  syncSceneAndDom(true, { hoverOnly: true, deferRender: true });
+                }
+              });
+              pill.addEventListener('click', function (ev) {
+                ev.stopPropagation();
+                handleFlatAuxClick(item.idx);
+              });
+              refs.auxBar.appendChild(pill);
+            })(auxItems[k]);
+          }
+          refs.auxBar.style.display = auxItems.length > 0 ? '' : 'none';
+        }
       }
 
       function triggerBlindKeyFeedback(slotZ) {
@@ -4438,12 +4904,22 @@
         var onOpenExternalClick = function (ev) {
           if (!overlayEl || isDestroyed || isDrawerClosing || isConfirmClosing || currentMode === 'off') return;
           if (ev && isTargetWithinNode(overlayEl, ev.target)) return;
+          if (FLAT_PAPER_2D_MODE) {
+            collapseDrawerAndClose();
+            return;
+          }
           scheduleSessionSync(SESSION_SYNC_DEBOUNCE_MS);
           scheduleSessionSyncFollowup(SESSION_SYNC_CLICK_FOLLOWUP_MS);
         };
+        var onOpenExternalPointerDown = function (ev) {
+          if (!FLAT_PAPER_2D_MODE || !overlayEl || isDestroyed || isDrawerClosing || isConfirmClosing || currentMode === 'off') return;
+          if (ev && isTargetWithinNode(overlayEl, ev.target)) return;
+          collapseDrawerAndClose();
+        };
         if (doc && typeof doc.addEventListener === 'function') {
+          doc.addEventListener('pointerdown', onOpenExternalPointerDown, true);
           doc.addEventListener('click', onOpenExternalClick, true);
-          openSessionDocListeners.push(['click', onOpenExternalClick, true]);
+          openSessionDocListeners.push(['pointerdown', onOpenExternalPointerDown, true], ['click', onOpenExternalClick, true]);
         }
         if (root && typeof root.addEventListener === 'function') {
           root.addEventListener('popstate', onRouteSignal, false);
@@ -5376,7 +5852,12 @@
         }
 
         var pinnedScrollEl = null;
-        if (stageMode === 'drawer') {
+        if (FLAT_PAPER_2D_MODE) {
+          overlayEl.setAttribute('data-in-flow', '0');
+          overlayEl.setAttribute('data-flat-2d', '1');
+          doc.body.appendChild(overlayEl);
+          positionFlatPopover(triggerEl);
+        } else if (stageMode === 'drawer') {
           var drawerMount = resolveDrawerMountHost(doc, triggerEl);
           overlayEl.setAttribute('data-in-flow', drawerMount.inFlow ? '1' : '0');
           if (drawerMount.inFlow) pinnedScrollEl = findNearBottomScrollContainer(drawerMount.host);
@@ -5409,20 +5890,31 @@
           }
         }
 
-        var kbFactory = resolveKeyboard3DFactory(root);
-        if (kbFactory) {
-          try {
-            activeRenderer = kbFactory.createKeyboard3DRenderer({
-              canvas: canvasEl,
-              doc: doc,
-              root: root,
-              slots: ELEMENTS_90,
-              auxModels: auxSlots,
-              auxPage: activeAuxPage,
-              auxPageCount: auxPageCount,
-            });
-          } catch (e) {
-            activeRenderer = null;
+        if (FLAT_PAPER_2D_MODE) {
+          activeRenderer = null;
+          flatHoveredGlobalAux = null;
+          flatHoveredChemZ = null;
+          flatPinnedChemZ = null;
+          if (overlayEl) overlayEl.setAttribute('data-flat-2d', '1');
+          positionFlatPopover(triggerEl);
+          ensureFlatPaper2DDom(stageEl);
+        } else {
+          if (overlayEl) overlayEl.removeAttribute('data-flat-2d');
+          var kbFactory = resolveKeyboard3DFactory(root);
+          if (kbFactory) {
+            try {
+              activeRenderer = kbFactory.createKeyboard3DRenderer({
+                canvas: canvasEl,
+                doc: doc,
+                root: root,
+                slots: ELEMENTS_90,
+                auxModels: auxSlots,
+                auxPage: activeAuxPage,
+                auxPageCount: auxPageCount,
+              });
+            } catch (e) {
+              activeRenderer = null;
+            }
           }
         }
 

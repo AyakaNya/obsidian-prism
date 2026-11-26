@@ -50,6 +50,7 @@
   const RE_CL = /\b(claude|anthropic|sonnet|opus|haiku)\b/;
   const RE_GPT = /\b(gpt|openai|o[134]|codex)\b/;
   const RE_DS = /\bdeepseek\b/;
+  const RE_MS = /\b(mistral|mixtral|codestral|pixtral|ministral)\b/;
 
   const parseModelLabelInfo = (rawText) => {
     const norm = normalizeModelEffortLabel(rawText).toLowerCase();
@@ -71,7 +72,7 @@
 
   const resolveMascotCamp = (rawText) => {
     const b = stripTranslatedEffortSuffix(rawText).toLowerCase();
-    return RE_CL.test(b) ? 'claude' : RE_DS.test(b) || b.includes('深度求索') ? 'deepseek' : RE_GPT.test(b) ? 'gpt' : 'gemini';
+    return RE_CL.test(b) ? 'claude' : RE_DS.test(b) || b.includes('深度求索') ? 'deepseek' : RE_MS.test(b) ? 'mistral' : RE_GPT.test(b) ? 'gpt' : 'gemini';
   };
 
   const createModelGlyphCrystalController = ({

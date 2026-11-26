@@ -76,6 +76,7 @@ export const DEFAULT_CHAT_POLICY = Object.freeze({
     webSearch: true,
     imageAndFiles: true,
     keepUserRules: true,
+    inheritUserHooks: false,
     zeroTools: false,
     allowedPlugins: Object.freeze([]),
     allowedMcps: Object.freeze([]),
@@ -86,6 +87,7 @@ export const DEFAULT_CHAT_POLICY = Object.freeze({
     webSearch: true,
     imageAndFiles: true,
     keepUserRules: true,
+    inheritUserHooks: false,
     sandbox: true,
     allowedPlugins: Object.freeze([]),
     allowedMcps: Object.freeze([]),
@@ -410,6 +412,7 @@ export function sanitizeChatPolicy(raw, fallback = DEFAULT_CHAT_POLICY) {
       webSearch: resolveStrictBoolean(srcPure.webSearch, fbPure.webSearch, DEFAULT_CHAT_POLICY.pure.webSearch),
       imageAndFiles: resolveStrictBoolean(srcPure.imageAndFiles, fbPure.imageAndFiles, DEFAULT_CHAT_POLICY.pure.imageAndFiles),
       keepUserRules: resolveStrictBoolean(srcPure.keepUserRules, fbPure.keepUserRules, DEFAULT_CHAT_POLICY.pure.keepUserRules),
+      inheritUserHooks: resolveStrictBoolean(srcPure.inheritUserHooks, fbPure.inheritUserHooks, DEFAULT_CHAT_POLICY.pure.inheritUserHooks),
       zeroTools: resolveStrictBoolean(srcPure.zeroTools, fbPure.zeroTools, DEFAULT_CHAT_POLICY.pure.zeroTools),
       allowedPlugins: sanitizePolicyNameList(
         Array.isArray(srcPure.allowedPlugins) ? srcPure.allowedPlugins : fbPure.allowedPlugins
@@ -424,6 +427,7 @@ export function sanitizeChatPolicy(raw, fallback = DEFAULT_CHAT_POLICY) {
       webSearch: resolveStrictBoolean(srcSpark.webSearch, fbSpark.webSearch, DEFAULT_CHAT_POLICY.spark.webSearch),
       imageAndFiles: resolveStrictBoolean(srcSpark.imageAndFiles, fbSpark.imageAndFiles, DEFAULT_CHAT_POLICY.spark.imageAndFiles),
       keepUserRules: resolveStrictBoolean(srcSpark.keepUserRules, fbSpark.keepUserRules, DEFAULT_CHAT_POLICY.spark.keepUserRules),
+      inheritUserHooks: resolveStrictBoolean(srcSpark.inheritUserHooks, fbSpark.inheritUserHooks, DEFAULT_CHAT_POLICY.spark.inheritUserHooks),
       sandbox: resolveStrictBoolean(srcSpark.sandbox, fbSpark.sandbox, DEFAULT_CHAT_POLICY.spark.sandbox),
       allowedPlugins: sanitizePolicyNameList(
         Array.isArray(srcSpark.allowedPlugins) ? srcSpark.allowedPlugins : fbSpark.allowedPlugins

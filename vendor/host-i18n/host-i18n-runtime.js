@@ -144,7 +144,6 @@
       'conversation-row-sidebar': 1,
       'project-header': 1,
       'workspace-switcher': 1,
-      'home-greeting': 1,
       'conversation-navigator': 1,
       'editor-tabs': 1,
       'file-tabs': 1,
@@ -3127,7 +3126,7 @@
             var alertChild = alertSpan.firstChild;
             while (alertChild) {
               if (alertChild.nodeType === 3 && alertChild.nodeValue && alertChild.nodeValue.trim() === 'Type') {
-                applyTextWrite(alertChild, alertChild.nodeValue, alertChild.nodeValue.replace('Type', '输入'));
+                applyTextWrite(alertChild, alertChild.nodeValue, alertChild.nodeValue.replace('Type', '輸入'));
               }
               alertChild = alertChild.nextSibling;
             }
@@ -3165,7 +3164,7 @@
               scanCur = scanCur.nextSibling;
             }
             if (alsoNode && whenNode && !exemptNodes.has(alsoNode) && !exemptNodes.has(whenNode)) {
-              applyTextWrite(alsoNode, alsoNode.nodeValue, '在此项目中工作时，也包含');
+              applyTextWrite(alsoNode, alsoNode.nodeValue, '在此專案中工作時，也包含');
               var between = alsoNode.nextSibling;
               while (between && between !== whenNode) {
                 if (between.nodeType === 3 && !(between.nodeValue || '').trim()) {

@@ -209,24 +209,24 @@
       .replace(/\b(?:sk|rk|pk|ak|AIza)[A-Za-z0-9_\-]{10,}\b/g, '[REDACTED]')
       .replace(/\bBearer\s+[A-Za-z0-9._\-]{10,}\b/gi, 'Bearer [REDACTED]');
 
-  const MASCOT_SPECIES = O.freeze(['c', 'k', 'd', 'w']);
+  const MASCOT_SPECIES = O.freeze(['c', 'k', 'd', 'w', 'l']);
   const MASCOT_PRESETS = O.freeze({
-    off: O.freeze({ c: 0, k: 0, d: 0, w: 0, minis: false }),
-    crab: O.freeze({ c: 1, k: 1, d: 0, w: 0, minis: false }),
-    dual: O.freeze({ c: 1, k: 1, d: 0, w: 0, minis: false }),
-    minis: O.freeze({ c: 1, k: 1, d: 0, w: 0, minis: true }),
-    quad: O.freeze({ c: 1, k: 1, d: 1, w: 1, minis: false }),
-    'quad-minis': O.freeze({ c: 1, k: 1, d: 1, w: 1, minis: true }),
+    off: O.freeze({ c: 0, k: 0, d: 0, w: 0, l: 0, minis: false }),
+    crab: O.freeze({ c: 1, k: 1, d: 0, w: 0, l: 0, minis: false }),
+    dual: O.freeze({ c: 1, k: 1, d: 0, w: 0, l: 0, minis: false }),
+    minis: O.freeze({ c: 1, k: 1, d: 0, w: 0, l: 0, minis: true }),
+    quad: O.freeze({ c: 1, k: 1, d: 1, w: 1, l: 0, minis: false }),
+    'quad-minis': O.freeze({ c: 1, k: 1, d: 1, w: 1, l: 0, minis: true }),
   });
 
   const parseMascotSpec = (raw) => {
-    if (raw === false) return { c: 0, k: 0, d: 0, w: 0, minis: false };
+    if (raw === false) return { c: 0, k: 0, d: 0, w: 0, l: 0, minis: false };
     if (typeof raw !== 'string') return null;
     if (hasOwn(MASCOT_PRESETS, raw)) return { ...MASCOT_PRESETS[raw] };
     if (!raw.startsWith('r:') || raw.length <= 2) return null;
-    const m = /^r:(?:([ckdw][0-4](?:,[ckdw][0-4])*)?(\+m)?)$/.exec(raw);
+    const m = /^r:(?:([ckdwl][0-4](?:,[ckdwl][0-4])*)?(\+m)?)$/.exec(raw);
     if (!m) return null;
-    const out = { c: 0, k: 0, d: 0, w: 0, minis: Boolean(m[2]) };
+    const out = { c: 0, k: 0, d: 0, w: 0, l: 0, minis: Boolean(m[2]) };
     const seen = new Set();
     let rawTotal = 0;
     let total = 0;
@@ -242,23 +242,23 @@
         total += clamped;
       }
     }
-    return rawTotal > 6 || total > 4 ? null : out;
+    return rawTotal > 6 || total > 5 ? null : out;
   };
 
   const encodeMascotSpec = (spec) => {
     const src = isObj(spec) ? spec : {};
-    const counts = { c: 0, k: 0, d: 0, w: 0 };
-    let rem = 4;
+    const counts = { c: 0, k: 0, d: 0, w: 0, l: 0 };
+    let rem = 5;
     for (const sp of MASCOT_SPECIES) {
       const n = Math.max(0, Math.min(1, Math.min(rem, Number(src[sp]) > 0 ? 1 : 0)));
       counts[sp] = n;
       rem -= n;
     }
     const minis = Boolean(src.minis);
-    const total = counts.c + counts.k + counts.d + counts.w;
+    const total = counts.c + counts.k + counts.d + counts.w + counts.l;
     if (total === 0 && !minis) return 'off';
-    if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0) return minis ? 'minis' : 'crab';
-    if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1) return minis ? 'quad-minis' : 'quad';
+    if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0 && counts.l === 0) return minis ? 'minis' : 'crab';
+    if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1 && counts.l === 0) return minis ? 'quad-minis' : 'quad';
     const parts = [];
     for (const sp of MASCOT_SPECIES) if (counts[sp] > 0) parts.push(sp + counts[sp]);
     return 'r:' + parts.join(',') + (minis ? '+m' : '');
@@ -271,12 +271,13 @@
       for (const p of s.split(';')) o[p[0]] = p[1] === 'r' ? p.slice(1) : '#' + p.slice(1);
       return o;
     };
-    const SH = decPal('k9c958c;B5b8fb9;rcc4f45;ye8b64a;hrgba(20, 20, 19, 0.22);F9e3324;fc9642a;Ye0a23c;Vfff1dc;A3d8bff;Ed6e8ff;a93c5fd');
+    const SH = decPal('k9c958c;B5b8fb9;rcc4f45;ye8b64a;hrgba(20, 20, 19, 0.22);F9e3324;fc9642a;Ye0a23c;Vfff1dc;n8b5e3c;A3d8bff;Ed6e8ff;a93c5fd');
     const PALS = {
       clawd: decPal('#d97757;sbf684c;o141413;Od97757;qe8a88e;Qf1cbbb', SH),
       cat: decPal('#947fd6;s735eb5;o141413;ka89fc4;B6a8fd6;O947fd6;qb6a7e6;Qd9cff6', SH),
       dragon: decPal('#d7dfef;s95a1c2;o1e1936;Oc6cce6;qbfbde6;Qe2e1f7;Uedf1fc;Ta3a5d6;X818ab2', SH),
       whale: decPal('#4e6fff;s3450cf;o141413;O4e6fff;q86a2ff;Qc7d6ff;Ue5f0ff;Ta8cbff;X38bdf8', SH),
+      lechat: decPal('#ff7a1a;sd94e14;o141413;Off7a1a;qff9824;Qffe49e;Uffb82e;T241c19;X3d2b24', SH),
       cowboy: decPal('#d97757;sbf684c;o141413;H8b5e3c;Ra6744e;hrgba(20, 20, 19, 0.18)'),
       shades: decPal('#e0896b;sc16f53;o141413;G141413;g6d778a;wffffff;hrgba(20, 20, 19, 0.18)'),
       wizard: decPal('#8a74cf;s6a56aa;o141413;M5c4b9e;ye8b64a;bcfe3ee;hrgba(20, 20, 19, 0.18)'),
@@ -331,9 +332,15 @@
       paws: decGrp('none=0,6:.s/ss;flap=0,5:ss/.s;cheer=0,4:ss12.ss/.s12.s.;up=0,2:ss12.ss/.s12.s.;tuck=1,7:s;upR=14,4:ss/.s'),
       tail: decGrp('up=13,1:..#..#/..4#/3.##./..3#./.3#../##s3.;sway=13,2:3.#..#/..4#./..3#../.3#3./##s4.;loaf=13,5:..#.#./.3#../##s3.;puff=13,0:..#..#/..4#/..3#./.3#../3#3./##s3.'),
     };
+    const L = {
+      ears: decGrp('stand=2,-1:T10.T/#U8.U#;nod=2,0:T10.T/#U8.U#;loaf=2,2:T10.T/#U8.U#;airplane=0,0:TT12.TT/T#U10.U#T'),
+      body: decGrp('stand=2,1:2#2Us2Us2U2#/12#*2/s10#s/4#4U4#/2s2#4U2#2s/12#;loaf=1,4:.2#2U4s2U2#./14#/s12#s/5#4U5#/2s3#4U3#2s/14#;squash=1,2:.2#2U4s2U2#./14#*2/s12#s/5#4U5#/2s3#4U3#2s/14#;turnL=2,1:2#2Us2Us2U#s/11#s*2/s10#s/3#4U3#s/2s#4U2#2s/11#s'),
+      tail: decGrp('up=14,3:.T/.#*2/s#;sway=14,3:.#*2/sT/#.;loaf=14,6:.#T/s#;puff=14,2:.T/##/s#/##/#.'),
+    };
     const FX = decGrp(
       'dragonFlame0=14,4:.f./YVf/.f.;dragonFlame1=14,3:..fF./.YVfF/VYYfF/.fF..;dragonFlame2=14,3:3.fF./.fYVfF/VYYfF./..fF..;' +
       'whaleSpout0=5,-3:.B..B./..AA../..BA../..AA..;whaleSpout1=4,-5:.B4.B./B.A..A.B/..AB.BA./3.AA3./3.BA3./3.AA3.;whaleSpout2=3,-5:..B4.B../.A6.A./B3.BB3.B/4.AA4./.B..BA..B./4.AA4.;' +
+      'croissant0=11,4:.f3Yf./fY3VYf/fn.n.nf;croissant1=11,4:..2Yf./.Y2VYf/..n..nf;' +
       'z1=10,-6:4k/..k./.k../4k;z2=12,-9:3k/.k./3k;spark=5,-8:..y..*2/5y/..y..*2;heart=5,-7:.r.r./5r/.3r./..r..;' +
       'fireSpark0=5,-8:..Y../f3.V/..f..;fireSpark1=5,-9:.V..f/..Y../f4.;fireSpark2=5,-8:f..Y./4.V/.f3.'
     );
@@ -390,6 +397,13 @@
           else if (poseKey === 'happy') layers.push(m ? D.tail.puff : D.tail.up, D.legs.stand, D.body.stand, m ? D.ears.nod : D.ears.stand, K.eyes.happy, m ? D.paws.up : D.paws.cheer);
           else if (poseKey === 'wave') layers.push(D.tail.up, D.legs.stand, D.body.stand, D.ears.nod, K.eyes.happy, m ? D.paws.upR : D.paws.none);
           else layers.push(m ? D.tail.sway : D.tail.up, D.legs.stand, D.body.stand, D.ears.stand, opts.blink ? K.eyes.half : K.eyes.open, D.paws.none);
+        } else if (kind === 'lechat') {
+          if (poseKey === 'sleep') layers.push(L.tail.loaf, L.body.loaf, L.ears.loaf, K.eyes.loafShut);
+          else if (poseKey === 'tilt') layers.push(L.tail.up, C.legs.stand, L.body.turnL, L.ears.nod, K.eyes.half);
+          else if (poseKey === 'eatCroissant') layers.push(m ? L.tail.puff : L.tail.sway, C.legs.stand, m ? L.body.squash : L.body.stand, m ? L.ears.nod : L.ears.stand, K.eyes.happy, K.paws.cheer, FX['croissant' + (m ? 1 : 0)]);
+          else if (poseKey === 'happy') layers.push(m ? L.tail.puff : L.tail.up, C.legs.stand, L.body.stand, m ? L.ears.nod : L.ears.stand, K.eyes.happy, K.paws.cheer);
+          else if (poseKey === 'wave') layers.push(L.tail.up, C.legs.stand, L.body.stand, L.ears.nod, K.eyes.happy, m ? K.paws.upR : K.paws.none);
+          else layers.push(m ? L.tail.sway : L.tail.up, C.legs.stand, L.body.stand, L.ears.stand, opts.blink ? K.eyes.half : K.eyes.open);
         } else {
           if (poseKey === 'sleep') layers.push(W.tail.loaf, W.body.loaf, { ...K.eyes.loafShut, oy: 5 }, W.paws.tuck);
           else if (poseKey === 'tilt') layers.push(W.tail.up, W.body.turnL, K.eyes.half, W.paws.flap);
@@ -428,10 +442,11 @@
 
   // ── 《八方旅人》黑曜石星辰酒馆 HD-2D WebGL2 3D 视差选角子面板（仅打开且可见时渲染，关闭/隐藏/脱离 DOM 立即停帧并 0×0 + WEBGL_lose_context 回收显存）──
   const STAGE_SLOTS = O.freeze([
-    { key: 'c', toggleId: 'c', kind: 'clawd', cx: 72, i18nKey: 'mascotSpeciesCrab', fb: 'Claude Crab', hex: '#d97757', rayA: '249,115,22', rayB: '251,146,60', cheerPose: 'happy', cheerSym: 'spark' },
-    { key: 'k', toggleId: 'k', kind: 'cat', cx: 196, i18nKey: 'mascotSpeciesCat', fb: 'Gemini Cat', hex: '#947fd6', rayA: '139,92,246', rayB: '56,189,248', cheerPose: 'happy', cheerSym: 'heart' },
-    { key: 'd', toggleId: 'd', kind: 'dragon', cx: 320, i18nKey: 'mascotSpeciesDragon', fb: 'GPT Dragon', hex: '#d7dfef', rayA: '226,232,240', rayB: '45,212,191', cheerPose: 'dragonFlame', cheerSym: 'spark' },
-    { key: 'w', toggleId: 'w', kind: 'whale', cx: 444, i18nKey: 'mascotSpeciesWhale', fb: 'DeepSeek Whale', hex: '#4e6fff', rayA: '59,130,246', rayB: '56,189,248', cheerPose: 'whaleSpout', cheerSym: 'spark' },
+    { key: 'c', toggleId: 'c', kind: 'clawd', cx: 56, i18nKey: 'mascotSpeciesCrab', fb: 'Claude Crab', hex: '#d97757', rayA: '249,115,22', rayB: '251,146,60', cheerPose: 'happy', cheerSym: 'spark' },
+    { key: 'k', toggleId: 'k', kind: 'cat', cx: 148, i18nKey: 'mascotSpeciesCat', fb: 'Gemini Cat', hex: '#947fd6', rayA: '139,92,246', rayB: '56,189,248', cheerPose: 'happy', cheerSym: 'heart' },
+    { key: 'd', toggleId: 'd', kind: 'dragon', cx: 240, i18nKey: 'mascotSpeciesDragon', fb: 'GPT Dragon', hex: '#d7dfef', rayA: '226,232,240', rayB: '45,212,191', cheerPose: 'dragonFlame', cheerSym: 'spark' },
+    { key: 'w', toggleId: 'w', kind: 'whale', cx: 332, i18nKey: 'mascotSpeciesWhale', fb: 'DeepSeek Whale', hex: '#4e6fff', rayA: '59,130,246', rayB: '56,189,248', cheerPose: 'whaleSpout', cheerSym: 'spark' },
+    { key: 'l', toggleId: 'l', kind: 'lechat', cx: 424, i18nKey: 'mascotSpeciesLechat', fb: 'Mistral Le Chat', hex: '#ff7a1a', rayA: '255,122,26', rayB: '251,191,36', cheerPose: 'eatCroissant', cheerSym: 'heart' },
     { key: 'm', toggleId: 'minis', kind: 'minis', cx: 566, i18nKey: 'mascotStageMinisSlot', fb: 'Mini Crab Corner', hex: '#fb923c', rayA: '251,146,60', rayB: '245,158,11', cheerPose: 'trick', cheerSym: 'spark' },
   ]);
 
@@ -585,13 +600,13 @@
     let canvas = createStageCanvas();
     ap(stageFrame, canvas);
 
-    // 3. 与 5 站位严格垂直对齐的 5 张精致像素阵营名牌开关按钮
+    // 3. 与 6 站位严格垂直对齐的 6 张精致像素阵营名牌开关按钮
     const dockGrid = mk('div');
     sa(dockGrid, 'data-ag-stage-dock', '1');
     if (dockGrid.style) {
       O.assign(dockGrid.style, {
         display: 'grid',
-        gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
         gap: '6px',
       });
     }
@@ -815,12 +830,12 @@
       const u = uiText(l) || {};
       const r = readRoster();
       const encoded = encodeMascotSpec(r);
-      const total = r.c + r.k + r.d + r.w;
+      const total = r.c + r.k + r.d + r.w + (r.l || 0);
       sa(view, 'data-mascot-val', encoded);
       backBtn.textContent = `← ${u.mascotStageBackBtn || 'Back to Settings'}`;
       titleEl.textContent = u.mascotStageTitle || 'Mascot Casting Stage';
       hintEl.textContent = u.mascotStageHint || 'Click mascots in the tavern or badges below to toggle spotlights; move pointer for 3D parallax';
-      countPill.textContent = String(u.mascotRosterCount || 'Main {n}/4').replace('{n}', String(total));
+      countPill.textContent = String(u.mascotRosterCount || 'Main {n}/5').replace('{n}', String(total));
       sa(countPill, 'data-total', total);
       if (countPill.style) countPill.style.borderColor = total >= 4 ? 'var(--ag-cs-accent, #60a5fa)' : 'var(--ag-cs-border, rgba(148,163,184,0.26))';
       minisPill.textContent = `${u.mascotRosterMinis || '+3 Mini Crabs'}: ${r.minis ? (u.mascotStageActiveOn || 'On Stage') : (u.mascotStageActiveOff || 'Resting')}`;
@@ -883,7 +898,7 @@
         if (hit3d >= 0) return hit3d;
       }
       if (pt.v < 0.08) return -1;
-      return Math.max(0, Math.min(4, Math.floor(pt.u * 5)));
+      return Math.max(0, Math.min(STAGE_SLOTS.length - 1, Math.floor(pt.u * STAGE_SLOTS.length)));
     };
     const onCanvasPointerMove = (ev) => {
       if (!isOpen) return;
@@ -1898,7 +1913,7 @@
     if (isFn(syncChrome)) syncChrome(doc, runGuardedMut);
     const lang = getLang();
     const ui = uiText(lang);
-    const targetTitles = ['Appearance', '外观', '外觀', '外観', '외관', '모양', 'Apariencia', 'Apparence', 'Darstellung', 'Erscheinungsbild'];
+    const targetTitles = ['Appearance', '外观', '外觀', '外觀介面', '外观界面', '外観', '외관', '모양', 'Apariencia', 'Apparence', 'Darstellung', 'Erscheinungsbild'];
     let panel = null;
     for (const h2 of doc.querySelectorAll('[role="dialog"] h2')) {
       if (targetTitles.includes((h2.textContent || '').trim())) {
@@ -2082,12 +2097,12 @@
       const mRosterEl = qs(rootEl, '[data-ag-mascot-roster="1"]');
       if (mRosterEl) {
         const mCur = effVal('mascot', l);
-        const r = parseMascotSpec(mCur) || { c: 1, k: 1, d: 0, w: 0, minis: false };
-        const total = r.c + r.k + r.d + r.w;
+        const r = parseMascotSpec(mCur) || { c: 1, k: 1, d: 0, w: 0, l: 0, minis: false };
+        const total = r.c + r.k + r.d + r.w + (r.l || 0);
         sa(mRosterEl, 'data-mascot-val', encodeMascotSpec(r));
         const rCntEl = qs(mRosterEl, '[data-ag-mascot-summary-count]');
         if (rCntEl) {
-          const ct = String(u.mascotRosterCount || 'Main {n}/4').replace('{n}', String(total));
+          const ct = String(u.mascotRosterCount || 'Main {n}/5').replace('{n}', String(total));
           if (rCntEl[K_TC] !== ct) rCntEl[K_TC] = ct;
           sa(rCntEl, 'data-total', total);
         }
@@ -2103,6 +2118,7 @@
             ['k', '#947fd6', u.mascotSpeciesCat || 'Gemini Cat', r.k],
             ['d', '#d7dfef', u.mascotSpeciesDragon || 'GPT Dragon', r.d],
             ['w', '#4e6fff', u.mascotSpeciesWhale || 'DeepSeek Whale', r.w],
+            ['l', '#ff7a1a', u.mascotSpeciesLechat || 'Mistral Le Chat', r.l],
           ].filter((x) => x[3] > 0);
           const chipSig = `${spInfo.map((x) => x[0] + x[3]).join(',')}|${r.minis ? 1 : 0}|${l}`;
           if (chipsEl.__agChipSig !== chipSig) {

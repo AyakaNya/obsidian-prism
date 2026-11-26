@@ -614,23 +614,23 @@ body {
   50% { opacity: 0.62; transform: scale(0.86); }
 }
 
-/* 侧栏定向水平交叉淡变（Code -> Chat -8px / Chat -> Code +8px） */
+/* 侧栏定向水平交叉淡变（Code -> Chat +14px / Chat -> Code -14px） */
 .st-sidebar-transition-to-chat {
-  animation: st-sb-enter-chat 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: st-sb-enter-chat 300ms var(--st-spring-spatial) both;
 }
 
 .st-sidebar-transition-to-code {
-  animation: st-sb-enter-code 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: st-sb-enter-code 300ms var(--st-spring-spatial) both;
 }
 
 @keyframes st-sb-enter-chat {
-  from { opacity: 0; transform: translate3d(8px, 0, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  from { opacity: 0; transform: translate3d(14px, 0, 0) scale(0.99); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 
 @keyframes st-sb-enter-code {
-  from { opacity: 0; transform: translate3d(-8px, 0, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  from { opacity: 0; transform: translate3d(-14px, 0, 0) scale(0.99); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 
 /* 侧栏三阶极简排印：一级分区(最轻) -> 二级文件夹/项目(次清晰) -> 三级对话名(最清晰) */
