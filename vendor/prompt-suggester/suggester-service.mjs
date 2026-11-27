@@ -299,7 +299,7 @@ export function sanitizeConversationTurns(rawTurns = [], explicitKeys = '') {
     if (text.length > MAX_TURN_CHARS) {
       text =
         role === 'assistant'
-          ? `${text.slice(0, 700)}\n...\n${text.slice(-1400)}`
+          ? `${text.slice(0, 260)}\n...\n${text.slice(-1900)}`
           : text.slice(-MAX_TURN_CHARS);
     }
     const prev = cleaned[cleaned.length - 1];
@@ -392,19 +392,21 @@ function buildSamplingInstruction(lang = 'en') {
 
   return [
     '[SUGGESTION MODE: Predict what the user might naturally type next into the coding agent.]',
-    'FIRST: Look at the user\'s recent messages and original goal. Your job is to help the user save time and phrase their next prompt cleanly ALONG THEIR EXISTING DIRECTION — NEVER invent new tasks or change their direction.',
+    'FIRST: Look at the user\'s recent messages and the assistant\'s LATEST completed reply. Your job is to help the user save time and phrase their next prompt cleanly ALONG THEIR EXISTING DIRECTION — NEVER invent new tasks or change their direction.',
+    'CRITICAL COMPLETION RULE: Everything reported as done, exported, saved, tested, or updated in the assistant\'s latest reply is ALREADY FINISHED. Even if the assistant earlier announced "I will do X then Y", by the end of the assistant turn those actions have already been executed unless the assistant explicitly stopped mid-way asking for confirmation or reporting a blocker.',
     'THE TEST: Would the user see it and think "I was just about to type that"?',
     '',
     'WHEN TO SUGGEST (be specific, crisp, and natural):',
     '- Assistant asked a confirmation/choice question at the end -> phrase the natural decision aligned with the user\'s prior intent (e.g., "按这个方案改", "好，把这部分补齐").',
-    '- User asked for a multi-step goal and an earlier step just finished -> prompt the remaining step they already asked for (e.g., user asked "fix bug and run tests", bug is fixed -> "跑一下测试验证"; diagnosis finished -> "按这个原因修复").',
-    '- Code was just written/modified but not yet verified or committed -> suggest the immediate verification or commit only if clearly expected in this workflow.',
+    '- User asked for a multi-stage workflow and the assistant explicitly paused at a checkpoint waiting for confirmation before the next stage -> prompt the next stage (e.g., checkpoint 1 confirmed -> "确认素材，开始制作详情页").',
+    '- Code was just written/modified without running tests or deploying when the user\'s workflow clearly expects it -> suggest the immediate verification or commit.',
     '',
     'WHEN TO STAY SILENT (reply with NOTHING):',
-    '- The task is already implemented, tested, and deployed/verified with NO open question or unfinished step -> reply NOTHING.',
+    '- The requested task is already implemented, tested, exported, or verified with NO open question or unfinished stage -> reply NOTHING.',
     '- After an ambiguous error or open-ended design trade-off where the user needs to think or inspect -> reply NOTHING.',
     '',
     'NEVER SUGGEST:',
+    '- Any action, step, fix, check, or export that the assistant JUST COMPLETED in its latest turn (NEVER repeat or re-command work that was already done!).',
     '- New feature ideas, extra audits, or tangential checks the user never asked about (e.g., do NOT invent "检查不同分辨率适配" or "优化性能").',
     '- Self-action monologues ("我去设置里看下", "我先试试", "Let me check").',
     '- Evaluative/flattery filler ("太棒了", "好的谢谢", "looks good", "thanks").',
@@ -415,10 +417,15 @@ function buildSamplingInstruction(lang = 'en') {
 }
 
 function buildLowEffortParams(model, baseUrl = '') {
-  const base = buildNoThinkingParams(model, baseUrl);
-  if (base) return base;
   const m = String(model || '').trim().toLowerCase();
-  if (/^gemini-(?:2\.5|3)/i.test(m)) {
+  const base = buildNoThinkingParams(model, baseUrl);
+  if (base) {
+    if (base.thinking && !base.reasoning_effort && /glm|zhipu|deepseek|doubao|kimi|moonshot|mistral-vibe/i.test(m)) {
+      return { ...base, reasoning_effort: 'low' };
+    }
+    return base;
+  }
+  if (/^gemini-(?:2\.5|3)|mistral-vibe/i.test(m)) {
     return { reasoning_effort: 'low' };
   }
   return null;
@@ -820,7 +827,7 @@ export class PromptSuggesterService {
     const detectedLang = detectConversationLang(turns, input?.lang || 'en');
     const forceRefresh = Boolean(input?.forceRefresh);
     const cacheSeed = JSON.stringify({
-      v: 8,
+      v: 9,
       turns,
       lang: detectedLang,
       engine: `${ai.baseUrl}|${ai.model}`,
@@ -886,7 +893,7 @@ export class PromptSuggesterService {
           model: targetModel,
           stream: false,
           temperature: forceRefresh ? 0.4 : 0.2,
-          max_tokens: 400,
+          max_tokens: 800,
           messages: chatMessages,
         };
         if (includeLowEffort && lowEffort) {

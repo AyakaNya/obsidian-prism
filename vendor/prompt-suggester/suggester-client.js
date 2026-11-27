@@ -249,22 +249,64 @@
   function extractCleanNodeText(node) {
     if (!node) return '';
     const SKIP_SEL =
-      '[data-testid="worked-for-collapsible"], [data-testid="tool-group-collapsible"], [data-testid="changed-files-card"], [data-testid="user-message-actions"], [data-testid="step-plan"], .ag-prism-thought-overlay, .ag-prism-thought-raw-toggle, button, script, style, svg, [aria-hidden="true"]';
+      '[data-testid="worked-for-collapsible"], [data-testid="tool-group-collapsible"], [data-testid="changed-files-card"], [data-testid="turn-cards-container"], [data-testid="user-message-actions"], [data-testid="step-plan"], [data-testid="step-plan-chip"], [data-testid="thinking-collapsible-trigger"], [data-testid="thought-fallback-badge"], [data-testid="thought-truncated-badge"], [data-testid="thought-retranslate-btn"], [data-op-thought], .ag-prism-thought-overlay, .ag-prism-thought-raw-toggle, .sr-only, button, script, style, svg, [aria-hidden="true"]';
 
-    const walk = (n) => {
+    const hasProseDescendant = (el) => {
+      if (!el || typeof el.querySelectorAll !== 'function') return false;
+      if (el.querySelector?.('[data-testid="planner-response-text"], [data-testid="worked-for-collapsible"]')) {
+        return true;
+      }
+      const divs = el.querySelectorAll('div');
+      for (let i = 0; i < divs.length; i++) {
+        const cls = String(divs[i].className || '');
+        if (/\bpx-2\b/.test(cls) && /\bpy-1\b/.test(cls)) return true;
+      }
+      return false;
+    };
+
+    const isThoughtContainer = (n) => {
+      if (!n || n.nodeType !== 1 || typeof n.querySelector !== 'function') return false;
+      const tid = String(n.getAttribute?.('data-testid') || '');
+      if (tid === 'agent-response' || tid === 'conversation-view' || tid === 'planner-response-text') return false;
+      if (!n.querySelector('[data-testid="thinking-collapsible-trigger"]')) return false;
+      return !hasProseDescendant(n);
+    };
+
+    const cleanOut = (raw) =>
+      String(raw || '')
+        .replace(/^(?:Agent said|You said)\s*\n+/i, '')
+        .replace(/^Worked for [^\n]+\n+/i, '')
+        .replace(/^(?:Agent working|Running[^\n]*)\s*\n*/gim, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+    const walk = (n, afterNode = null, state = { passed: !afterNode }) => {
       if (!n) return '';
-      if (n.nodeType === 3) return n.nodeValue || '';
+      if (afterNode && n === afterNode) {
+        state.passed = true;
+        return '';
+      }
+      if (n.nodeType === 3) return state.passed ? n.nodeValue || '' : '';
       if (n.nodeType !== 1) return '';
+      if (afterNode && !state.passed && typeof n.contains === 'function' && n.contains(afterNode)) {
+        let acc = '';
+        for (let c = n.firstChild; c; c = c.nextSibling) {
+          acc += walk(c, afterNode, state);
+        }
+        return acc;
+      }
+      if (!state.passed) return '';
       if (typeof n.matches === 'function') {
         try {
           if (n.matches(SKIP_SEL)) return '';
         } catch {}
       }
+      if (isThoughtContainer(n)) return '';
       const tag = String(n.tagName || '').toUpperCase();
       if (tag === 'BR') return '\n';
       let acc = '';
       for (let c = n.firstChild; c; c = c.nextSibling) {
-        acc += walk(c);
+        acc += walk(c, afterNode, state);
       }
       if (/^(?:P|DIV|LI|PRE|H[1-6]|BLOCKQUOTE|SECTION|ARTICLE)$/.test(tag)) {
         return acc + '\n';
@@ -272,12 +314,20 @@
       return acc;
     };
 
-    return walk(node)
-      .replace(/^(?:Agent said|You said)\s*\n+/i, '')
-      .replace(/^Worked for [^\n]+\n+/i, '')
-      .replace(/^(?:Agent working|Running[^\n]*)\s*\n*/gim, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    // 当 agent-response 内存在 Worked for 折叠区且其后已有最终完成回复时，优先提取折叠区之后的最终结论，避免开头“我先去做X”的开工报备误导补全模型把已完成工作当待办
+    if (
+      String(node.getAttribute?.('data-testid') || '') === 'agent-response' &&
+      typeof node.querySelectorAll === 'function'
+    ) {
+      const wfNodes = node.querySelectorAll('[data-testid="worked-for-collapsible"]');
+      const lastWf = wfNodes.length > 0 ? wfNodes[wfNodes.length - 1] : null;
+      if (lastWf) {
+        const postWorkText = cleanOut(walk(node, lastWf, { passed: false }));
+        if (postWorkText) return postWorkText;
+      }
+    }
+
+    return cleanOut(walk(node, null, { passed: true }));
   }
 
   function extractTurnsFromView(viewEl) {
@@ -289,10 +339,30 @@
     ).filter((el) => !isExcludedPaneNode(el));
     if (rawNodes.length === 0) return [];
 
+    // 保留外层 agent-response（以完整涵盖 Worked for 折叠区下方无 planner-response-text 标签的最终完成回复），仅剔除已被 agent-response 包含的内部 planner-response-text
     const filtered = rawNodes.filter((node) => {
+      const tid = String(node.getAttribute?.('data-testid') || '');
       for (let i = 0; i < rawNodes.length; i++) {
         const other = rawNodes[i];
-        if (other !== node && typeof node.contains === 'function' && node.contains(other)) {
+        if (other === node) continue;
+        const otherTid = String(other.getAttribute?.('data-testid') || '');
+        if (
+          tid === 'planner-response-text' &&
+          otherTid === 'agent-response' &&
+          typeof other.contains === 'function' &&
+          other.contains(node)
+        ) {
+          return false;
+        }
+        if (
+          tid === 'user-message-bubble' &&
+          otherTid === 'user-message-content' &&
+          typeof node.contains === 'function' &&
+          node.contains(other)
+        ) {
+          return false;
+        }
+        if (tid === otherTid && typeof node.contains === 'function' && node.contains(other)) {
           return false;
         }
       }

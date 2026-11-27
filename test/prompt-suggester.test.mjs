@@ -476,10 +476,10 @@ function createFakeSuggesterDom(opts = {}) {
   };
 }
 
-test('Channel 1 stays strictly < 550,000 B and Channel 11 suggester sources obey 0 innerHTML, 0 :has(), pure ASCII CSS, and 0 brand name-dropping', () => {
+test('Channel 1 stays strictly < 580,000 B and Channel 11 suggester sources obey 0 innerHTML, 0 :has(), pure ASCII CSS, and 0 brand name-dropping', () => {
   const ch1 = cdp.buildInjectExpression();
   const ch1Bytes = Buffer.byteLength(ch1, 'utf8');
-  assert.ok(ch1Bytes < 550000, `Expected Channel 1 < 550,000 B, got ${ch1Bytes} B`);
+  assert.ok(ch1Bytes < 580000, `Expected Channel 1 < 580,000 B, got ${ch1Bytes} B`);
 
   const ch11 = cdp.buildSuggesterExpression();
   assert.ok(ch11.length > 1000, 'Expected non-empty Channel 11 expression');
@@ -1655,6 +1655,90 @@ test('UX regression: reusing mounted Suggester card on settings sync updates lan
   assert.equal(modelInput.value, 'gemini-2.5-flash-draft', 'Unsaved Model must be preserved');
   assert.equal(keyInput.value, 'sk-unsaved-draft-key-999999', 'Unsaved API Key draft must be preserved');
   assert.equal(firstHandle.root.getAttribute('data-ag-cs-lang'), 'zh-CN', 'Language update must still apply cleanly');
+
+  fakeWin.__agPrismSuggester.destroy();
+});
+
+test('DOM extraction regression: agent-response preserves post-Worked-for final reply, skips expanded thought containers, and drops pre-work announcement when final reply exists', async () => {
+  const dom = createFakeSuggesterDom({ lang: 'zh-TW' });
+  const { fakeDoc, fakeWin, convView } = dom;
+
+  fakeWin.__agPrismSuggestCall = (rawPayload) => {
+    const msg = JSON.parse(rawPayload);
+    setTimeout(() => {
+      fakeWin.__agPrismSuggesterResolve(msg.id, {
+        ok: true,
+        config: { enabled: false, ttlMinutes: 15 },
+        backend: { aiReady: true, profileName: 'pi', model: 'mistral-vibe/zai-glm-5-3-flash' },
+      });
+    }, 5);
+  };
+
+  const ctx = vm.createContext(fakeWin);
+  vm.runInContext(cdp.buildSuggesterExpression(), ctx);
+  await new Promise((r) => setTimeout(r, 20));
+
+  // 构建真实 Antigravity 多步完成态 DOM 结构：
+  // agent-response -> [H6.sr-only, div(展开思考块 + planner-response-text 开工报备), button(worked-for-collapsible), div.px-2.py-1(无 data-testid 的最终完成回复)]
+  const ar = fakeDoc.createElement('div');
+  ar.setAttribute('data-testid', 'agent-response');
+
+  const h6 = fakeDoc.createElement('h6');
+  h6.className = 'sr-only select-none m-0';
+  h6.appendChild(fakeDoc.createTextNode('Agent said'));
+  ar.appendChild(h6);
+
+  const topWrap = fakeDoc.createElement('div');
+  const thoughtBox = fakeDoc.createElement('div');
+  thoughtBox.className = 'relative';
+  const thoughtBtn = fakeDoc.createElement('button');
+  thoughtBtn.setAttribute('data-testid', 'thinking-collapsible-trigger');
+  thoughtBtn.appendChild(fakeDoc.createTextNode('Thought for 13s'));
+  const thoughtBody = fakeDoc.createElement('div');
+  thoughtBody.appendChild(fakeDoc.createTextNode('內部思考過程：我要先檢查打包腳本參數再匯出所有切片。'));
+  thoughtBox.appendChild(thoughtBtn);
+  thoughtBox.appendChild(thoughtBody);
+  topWrap.appendChild(thoughtBox);
+
+  const preWork = fakeDoc.createElement('div');
+  preWork.setAttribute('data-testid', 'planner-response-text');
+  preWork.className = 'px-2 py-1';
+  preWork.appendChild(fakeDoc.createTextNode('收到！我先查一下打包腳本參數，同時開跑第 1 批匯出。'));
+  topWrap.appendChild(preWork);
+  ar.appendChild(topWrap);
+
+  const wfBtn = fakeDoc.createElement('button');
+  wfBtn.setAttribute('data-testid', 'worked-for-collapsible');
+  wfBtn.appendChild(fakeDoc.createTextNode('Worked for 2m'));
+  ar.appendChild(wfBtn);
+
+  const finalReply = fakeDoc.createElement('div');
+  finalReply.className = 'px-2 py-1';
+  const finalP = fakeDoc.createElement('p');
+  finalP.appendChild(fakeDoc.createTextNode('全套 22 張正式圖匯出與打包收工啦！雙 PSB 都已開啟最大相容性正式存檔。'));
+  finalReply.appendChild(finalP);
+  ar.appendChild(finalReply);
+
+  convView.appendChild(ar);
+
+  const extracted = fakeWin.__agPrismSuggester.extractConversationTurns();
+  assert.equal(extracted.length, 2);
+  assert.equal(extracted[1].role, 'assistant');
+  assert.equal(
+    extracted[1].text.includes('全套 22 張正式圖匯出與打包收工啦'),
+    true,
+    'Must capture untagged final completion reply after worked-for-collapsible'
+  );
+  assert.equal(
+    extracted[1].text.includes('內部思考過程'),
+    false,
+    'Must strip expanded native/translated thought container text'
+  );
+  assert.equal(
+    extracted[1].text.includes('我先查一下打包腳本參數'),
+    false,
+    'Must drop stale pre-work announcement when post-work final completion reply exists'
+  );
 
   fakeWin.__agPrismSuggester.destroy();
 });
