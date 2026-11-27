@@ -52,6 +52,7 @@
     isMotionStandardOrUltra,
     isMotionUltra,
     isConvRunning,
+    getThoughtCollapseMode,
     isThoughtIsolatedNode,
     isThoughtMutationRecord,
     isManagedThoughtPanel,
@@ -386,9 +387,12 @@
       hydrateRaf = 0;
       cAF(unfoldRaf);
       unfoldRaf = 0;
+      cAF(thoughtCollapseRaf);
+      thoughtCollapseRaf = 0;
       sparkQueue = [];
       iconQueue = [];
       unfoldQueue = [];
+      thoughtCollapseQueue = [];
     };
 
     const applySingleSpark = (trig, brand, st) => {
@@ -442,7 +446,7 @@
       if (!isDestroyed() && !hydrateRaf) hydrateRaf = rAF(stepHydration);
     };
 
-    const STREAM_THOUGHT_RE = /(?:\.\.\.|…)\s*$|正在思考|思考中/i;
+    const STREAM_THOUGHT_RE = /(?:\.\.\.|…)\s*$|\bstill\s+thinking\b|正在思考|仍在思考|思考中/i;
     const isStreamingThoughtTrigger = (trig, isLast) => {
       if (ga(trig, 'data-op-thought-state') === 'streaming') return true;
       if (!isLast) return false;
@@ -656,6 +660,261 @@
         wfClickTimer = 0;
         if (!isDestroyed()) syncWorkedForAutoUnfold();
       }, 28);
+    };
+
+    // ── Thought Block Auto-Collapse / Keep-Expanded Controller ──
+    let lastThoughtCollapseMode = '';
+    let thoughtCollapseRaf = 0;
+    let thoughtCollapseQueue = [];
+    let programmaticThoughtClick = false;
+    const userThoughtIntent = new WeakMap(); // btn -> 'expanded' | 'collapsed'
+    const autoCollapsedTriggers = new WeakSet();
+    const autoCollapseAttempts = new WeakMap(); // btn -> { winStart, count }
+    const thoughtStreamWatchers = new Map(); // btn -> { obs }
+    const thoughtKeepWatchers = new Map(); // btn -> { obs, timer, winStart, winCount, coolUntil }
+
+    const resolveThoughtCollapseMode = () => (typeof getThoughtCollapseMode === 'function' ? getThoughtCollapseMode() : 'auto');
+
+    const clickThoughtTrigger = (btn) => {
+      if (!btn || !isConn(btn) || typeof btn.click !== 'function') return false;
+      programmaticThoughtClick = true;
+      try {
+        btn.click();
+        return true;
+      } catch {
+        return false;
+      } finally {
+        programmaticThoughtClick = false;
+      }
+    };
+
+    const canAttemptAutoCollapse = (btn) => {
+      const now = nowOf();
+      const rec = autoCollapseAttempts.get(btn);
+      if (rec && now - rec.winStart < 2000 && rec.count >= 2) return false;
+      if (!rec || now - rec.winStart >= 2000) autoCollapseAttempts.set(btn, { winStart: now, count: 1 });
+      else rec.count++;
+      return true;
+    };
+
+    const unwatchThoughtStream = (btn) => {
+      const rec = thoughtStreamWatchers.get(btn);
+      if (!rec) return;
+      try {
+        rec.obs?.disconnect?.();
+      } catch {}
+      thoughtStreamWatchers.delete(btn);
+    };
+
+    const unwatchThoughtKeep = (btn) => {
+      const rec = thoughtKeepWatchers.get(btn);
+      if (!rec) return;
+      if (rec.timer) CT(rec.timer);
+      try {
+        rec.obs?.disconnect?.();
+      } catch {}
+      thoughtKeepWatchers.delete(btn);
+    };
+
+    const clearThoughtCollapseWatchers = () => {
+      cAF(thoughtCollapseRaf);
+      thoughtCollapseRaf = 0;
+      thoughtCollapseQueue = [];
+      for (const btn of Array.from(thoughtStreamWatchers.keys())) unwatchThoughtStream(btn);
+      for (const btn of Array.from(thoughtKeepWatchers.keys())) unwatchThoughtKeep(btn);
+    };
+
+    const scheduleKeepReopen = (btn) => {
+      if (isDestroyed() || !btn || !isConn(btn) || resolveThoughtCollapseMode() !== 'keep') return;
+      if (userThoughtIntent.get(btn) === 'collapsed') return;
+      if (ga(btn, 'aria-expanded') !== 'false') return;
+      const rec = thoughtKeepWatchers.get(btn);
+      if (!rec || rec.timer) return;
+      const now = nowOf();
+      if (rec.coolUntil > now) return;
+      rec.timer = ST(() => {
+        rec.timer = 0;
+        if (isDestroyed() || !isConn(btn) || resolveThoughtCollapseMode() !== 'keep') return;
+        if (userThoughtIntent.get(btn) === 'collapsed') return;
+        if (ga(btn, 'aria-expanded') !== 'false') return;
+        const tNow = nowOf();
+        if (tNow - rec.winStart > 2000) {
+          rec.winStart = tNow;
+          rec.winCount = 0;
+        }
+        if (rec.winCount >= 4) {
+          rec.coolUntil = tNow + 4000;
+          return;
+        }
+        rec.winCount++;
+        clickThoughtTrigger(btn);
+      }, 40);
+    };
+
+    const watchThoughtKeep = (btn) => {
+      if (!btn || !isConn(btn) || resolveThoughtCollapseMode() !== 'keep') return;
+      if (userThoughtIntent.get(btn) === 'collapsed') return;
+      if (thoughtKeepWatchers.has(btn)) return;
+      const rec = { obs: null, timer: 0, winStart: 0, winCount: 0, coolUntil: 0 };
+      thoughtKeepWatchers.set(btn, rec);
+      if (typeof MutationObserver === 'function') {
+        try {
+          const obs = new MutationObserver(() => {
+            if (isDestroyed() || !isConn(btn) || resolveThoughtCollapseMode() !== 'keep' || userThoughtIntent.get(btn) === 'collapsed') {
+              unwatchThoughtKeep(btn);
+              return;
+            }
+            if (ga(btn, 'aria-expanded') === 'false') scheduleKeepReopen(btn);
+          });
+          obs.observe(btn, { attributes: true, attributeFilter: ['aria-expanded'] });
+          rec.obs = obs;
+        } catch {}
+      }
+    };
+
+    const watchThoughtStreamEnd = (btn) => {
+      if (!btn || !isConn(btn) || thoughtStreamWatchers.has(btn)) return;
+      if (typeof MutationObserver !== 'function') return;
+      try {
+        const obs = new MutationObserver(() => {
+          if (isDestroyed() || !isConn(btn)) {
+            unwatchThoughtStream(btn);
+            return;
+          }
+          if (!isStreamingThoughtTrigger(btn, true)) {
+            unwatchThoughtStream(btn);
+            if (resolveThoughtCollapseMode() === 'auto') {
+              if (ga(btn, 'aria-expanded') === 'true' && userThoughtIntent.get(btn) !== 'expanded' && canAttemptAutoCollapse(btn)) {
+                autoCollapsedTriggers.add(btn);
+                clickThoughtTrigger(btn);
+              }
+            } else {
+              watchThoughtKeep(btn);
+              if (ga(btn, 'aria-expanded') === 'false' && userThoughtIntent.get(btn) !== 'collapsed') {
+                scheduleKeepReopen(btn);
+              }
+            }
+          }
+        });
+        obs.observe(btn, {
+          attributes: true,
+          attributeFilter: ['aria-expanded', 'data-op-thought-state', 'data-ag-cs-spark-streaming'],
+          characterData: true,
+          childList: true,
+          subtree: true,
+        });
+        thoughtStreamWatchers.set(btn, { obs });
+      } catch {}
+    };
+
+    const applyThoughtCollapseAction = (btn, mode) => {
+      if (!isConn(btn)) return false;
+      if (mode === 'auto') {
+        if (userThoughtIntent.get(btn) === 'expanded' || ga(btn, 'aria-expanded') !== 'true') return false;
+        if (!canAttemptAutoCollapse(btn)) return false;
+        autoCollapsedTriggers.add(btn);
+        return clickThoughtTrigger(btn);
+      }
+      if (userThoughtIntent.get(btn) === 'collapsed' || ga(btn, 'aria-expanded') !== 'false') return false;
+      autoCollapsedTriggers.delete(btn);
+      watchThoughtKeep(btn);
+      return clickThoughtTrigger(btn);
+    };
+
+    const pumpThoughtCollapseQueue = () => {
+      thoughtCollapseRaf = 0;
+      if (isDestroyed() || thoughtCollapseQueue.length === 0) {
+        thoughtCollapseQueue = [];
+        return;
+      }
+      const mode = resolveThoughtCollapseMode();
+      let budget = 4;
+      while (thoughtCollapseQueue.length > 0 && budget > 0) {
+        const item = thoughtCollapseQueue.pop();
+        if (!item || item.mode !== mode) continue;
+        if (applyThoughtCollapseAction(item.btn, mode)) budget--;
+      }
+      if (thoughtCollapseQueue.length > 0 && !isDestroyed()) {
+        thoughtCollapseRaf = rAF(pumpThoughtCollapseQueue);
+      }
+    };
+
+    const flushThoughtCollapseClicks = (pending, mode) => {
+      if (!pending.length) return;
+      if (pending.length <= 4 || typeof requestAnimationFrame !== 'function') {
+        for (let i = 0; i < pending.length; i++) applyThoughtCollapseAction(pending[i], mode);
+        return;
+      }
+      for (let k = 0; k < 4 && pending.length > 0; k++) applyThoughtCollapseAction(pending.pop(), mode);
+      for (let i = 0; i < pending.length; i++) thoughtCollapseQueue.push({ btn: pending[i], mode });
+      if (!thoughtCollapseRaf && thoughtCollapseQueue.length > 0) thoughtCollapseRaf = rAF(pumpThoughtCollapseQueue);
+    };
+
+    const onUserToggleThoughtTrigger = (btn, ev = null) => {
+      if (!btn || programmaticThoughtClick) return;
+      if (ev && ev.isTrusted === false) return;
+      if (ga(btn, 'aria-expanded') === 'true') {
+        userThoughtIntent.set(btn, 'collapsed');
+        autoCollapsedTriggers.delete(btn);
+        unwatchThoughtKeep(btn);
+      } else {
+        userThoughtIntent.set(btn, 'expanded');
+        autoCollapsedTriggers.delete(btn);
+        if (resolveThoughtCollapseMode() === 'keep') watchThoughtKeep(btn);
+      }
+    };
+
+    const syncThoughtCollapse = (scopeOverride = null) => {
+      const d = docOf();
+      if (isDestroyed() || !d) return;
+      const mode = resolveThoughtCollapseMode();
+      const modeChanged = lastThoughtCollapseMode !== '' && lastThoughtCollapseMode !== mode;
+      lastThoughtCollapseMode = mode;
+
+      for (const btn of Array.from(thoughtStreamWatchers.keys())) {
+        if (!isConn(btn)) unwatchThoughtStream(btn);
+      }
+      for (const btn of Array.from(thoughtKeepWatchers.keys())) {
+        if (!isConn(btn) || mode !== 'keep') unwatchThoughtKeep(btn);
+      }
+
+      const views = scopeOverride ? [scopeOverride] : findFormalConvViews();
+      const scopes = views.length > 0 ? views : [d];
+      const pending = [];
+
+      for (let s = 0; s < scopes.length; s++) {
+        const triggers = qsa(scopes[s], '[data-testid="thinking-collapsible-trigger"]');
+        const len = triggers.length;
+        for (let i = 0; i < len; i++) {
+          const trig = triggers[i];
+          if (!isConn(trig)) continue;
+          const isLast = i === len - 1;
+          const streaming = isStreamingThoughtTrigger(trig, isLast);
+          const expanded = ga(trig, 'aria-expanded') === 'true';
+          const intent = userThoughtIntent.get(trig);
+
+          if (streaming) {
+            watchThoughtStreamEnd(trig);
+            if (mode === 'keep' && expanded && intent !== 'collapsed') watchThoughtKeep(trig);
+            continue;
+          }
+
+          unwatchThoughtStream(trig);
+
+          if (mode === 'auto') {
+            if (modeChanged && intent !== 'expanded') autoCollapseAttempts.delete(trig);
+            if (expanded && intent !== 'expanded') pending.push(trig);
+          } else {
+            if (expanded && intent !== 'collapsed') {
+              watchThoughtKeep(trig);
+            } else if (!expanded && intent !== 'collapsed' && autoCollapsedTriggers.has(trig)) {
+              pending.push(trig);
+            }
+          }
+        }
+      }
+
+      flushThoughtCollapseClicks(pending, mode);
     };
 
     function findFormalConvViews() {
@@ -1727,6 +1986,9 @@
       clearWorkedForAutoUnfoldAttrs,
       syncWorkedForAutoUnfold,
       scheduleWorkedForClickSync,
+      onUserToggleThoughtTrigger,
+      syncThoughtCollapse,
+      clearThoughtCollapseWatchers,
       findFormalConvView,
       findFormalConvViews,
       sampleHomeComposerRect,

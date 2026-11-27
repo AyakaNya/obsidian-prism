@@ -12,6 +12,7 @@
   "effortSliderModule": "auto",
   "effortMemory": "on",
   "periodicModelPicker": "on",
+  "thoughtCollapse": "auto",
   "thoughtTranslate": "off",
   "thoughtTrigger": "preload",
   "homeLayout": "studio",
@@ -45,5 +46,6 @@
   "hostLocalization": "auto",
   "autoUpdate": "off",
   "updateChannel": "stable",
-  "autoArchiveOnExit": false
+  "autoArchiveOnExit": false,
+  "themeChatCloudSync": true
 }

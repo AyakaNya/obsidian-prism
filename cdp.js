@@ -44,6 +44,7 @@ const DEFAULT_CONFIG = {
   effortSliderModule: 'auto',
   effortMemory: 'on',
   periodicModelPicker: 'on',
+  thoughtCollapse: 'auto',
   thoughtTranslate: 'off',
   thoughtTrigger: 'preload',
   homeLayout: 'studio',
@@ -78,6 +79,7 @@ const DEFAULT_CONFIG = {
   autoUpdate: 'off',
   updateChannel: 'stable',
   autoArchiveOnExit: false,
+  themeChatCloudSync: true,
   pollIntervalMs: 2500,
 };
 
@@ -95,6 +97,7 @@ const VALIDATORS = {
   effortSliderModule: ['auto', 'on', 'off'],
   effortMemory: ['on', 'off'],
   periodicModelPicker: ['on', 'off'],
+  thoughtCollapse: ['auto', 'keep'],
   thoughtTranslate: ['off', 'machine', 'ai'],
   thoughtTrigger: ['preload', 'expand'],
   homeLayout: ['studio', 'classic', 'off'],
@@ -129,6 +132,7 @@ const VALIDATORS = {
   autoUpdate: ['on', 'off'],
   updateChannel: ['stable', 'beta'],
   autoArchiveOnExit: 'boolean',
+  themeChatCloudSync: 'boolean',
 };
 
 function normalizeMascotConfigValue(raw) {
@@ -136,9 +140,9 @@ function normalizeMascotConfigValue(raw) {
   if (raw === 'dual') return 'crab';
   if (raw === 'off' || raw === 'crab' || raw === 'minis' || raw === 'quad' || raw === 'quad-minis') return raw;
   if (!raw.startsWith('r:') || raw.length <= 2) return null;
-  const m = /^r:(?:([ckdwl][0-4](?:,[ckdwl][0-4])*)?(\+m)?)$/.exec(raw);
+  const m = /^r:(?:([ckdwlz][0-4](?:,[ckdwlz][0-4])*)?(\+m)?)$/.exec(raw);
   if (!m) return null;
-  const counts = { c: 0, k: 0, d: 0, w: 0, l: 0 };
+  const counts = { c: 0, k: 0, d: 0, w: 0, l: 0, z: 0 };
   const seen = new Set();
   let rawTotal = 0;
   let total = 0;
@@ -154,13 +158,13 @@ function normalizeMascotConfigValue(raw) {
       total += clamped;
     }
   }
-  if (rawTotal > 6 || total > 5) return null;
+  if (rawTotal > 6 || total > 6) return null;
   const minis = Boolean(m[2]);
   if (total === 0 && !minis) return 'off';
-  if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0 && counts.l === 0) return minis ? 'minis' : 'crab';
-  if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1 && counts.l === 0) return minis ? 'quad-minis' : 'quad';
+  if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0 && counts.l === 0 && counts.z === 0) return minis ? 'minis' : 'crab';
+  if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1 && counts.l === 0 && counts.z === 0) return minis ? 'quad-minis' : 'quad';
   const parts = [];
-  for (const sp of ['c', 'k', 'd', 'w', 'l']) {
+  for (const sp of ['c', 'k', 'd', 'w', 'l', 'z']) {
     if (counts[sp] > 0) parts.push(sp + counts[sp]);
   }
   return 'r:' + parts.join(',') + (minis ? '+m' : '');
@@ -274,6 +278,9 @@ function reconcileConfigAliases(raw) {
   }
   if (has('autoArchiveOnExit') && typeof out.autoArchiveOnExit === 'string') {
     out.autoArchiveOnExit = out.autoArchiveOnExit === 'on' || out.autoArchiveOnExit === 'true';
+  }
+  if (has('themeChatCloudSync') && typeof out.themeChatCloudSync === 'string') {
+    out.themeChatCloudSync = out.themeChatCloudSync !== 'off' && out.themeChatCloudSync !== 'false';
   }
   for (const k of ['telemetryModule', 'effortSliderModule', 'effortMemory', 'periodicModelPicker', 'omniModule', 'sidebarStudio', 'autoUpdate', 'sidebarNavFold', 'chuanbanPaper', 'bookTypography']) {
     if (has(k) && typeof out[k] === 'boolean') {
@@ -10214,7 +10221,7 @@ function buildHostI18nExpression(config = null, hostLocaleHint = null, opts = nu
         } else {
           targetMode = 'auto';
           const liveLang = liveCfg.language || liveCfg.lang || '';
-          if (liveLang && liveLang !== 'zh-CN' && liveLang !== 'auto') {
+          if (liveLang && liveLang !== 'zh-CN' && liveLang !== 'zh-TW' && liveLang !== 'auto') {
             try { window.__agPrismHostI18n?.destroy?.(); document.documentElement?.removeAttribute?.('data-ag-prism-host-i18n'); } catch {}
             return { ok: true, status: 'off', skippedByLiveCfg: true };
           }
@@ -10226,7 +10233,7 @@ function buildHostI18nExpression(config = null, hostLocaleHint = null, opts = nu
               .split(/[.@]/)[0]
               .toLowerCase()
               .replace(/_/g, '-');
-            if (navLang && navLang !== 'zh' && !/^zh-(?:cn|hans|sg)(?:-|$)/.test(navLang)) {
+            if (navLang && navLang !== 'zh' && !/^zh-/i.test(navLang)) {
               try { window.__agPrismHostI18n?.destroy?.(); document.documentElement?.removeAttribute?.('data-ag-prism-host-i18n'); } catch {}
               return { ok: true, status: 'off', skippedByLiveCfg: true };
             }

@@ -3124,6 +3124,66 @@ export class PrismDaemon {
     return { ok: true, action: 'storage-snooze', hours, snoozeUntilMs };
   }
 
+  async _runHakimiCloudSyncCli(subcmd, timeoutMs = 20000) {
+    const scriptPath = path.join(os.homedir(), '.gemini', 'config', 'skills', 'hakimi-cloud-sync', 'scripts', 'cloud_sync.py');
+    if (!fs.existsSync(scriptPath)) {
+      return { ok: false, error: 'cloud_sync.py not found' };
+    }
+    const pyBin = process.platform === 'win32' ? 'python' : '/usr/bin/python3';
+    return new Promise((resolve) => {
+      execFile(pyBin, [scriptPath, subcmd], { timeout: timeoutMs, windowsHide: true }, (err, stdout, stderr) => {
+        if (err) {
+          resolve({ ok: false, error: String(stderr || err.message || err).trim().slice(0, 180) });
+          return;
+        }
+        const out = String(stdout || '').trim();
+        if (!out) {
+          resolve({ ok: true });
+          return;
+        }
+        try {
+          resolve(JSON.parse(out));
+        } catch {
+          resolve({ ok: true, raw: out.slice(0, 200) });
+        }
+      });
+    });
+  }
+
+  async _handleThemeChatSyncAction(action, rawInput = {}) {
+    if (action === 'theme-chat-sync-toggle') {
+      const enabled =
+        rawInput?.themeChatCloudSync !== false &&
+        rawInput?.value !== false &&
+        rawInput?.value !== 'off';
+      const updated = this.updateConfigSetting('themeChatCloudSync', enabled);
+      if (updated) {
+        await this.broadcastConfigRefresh().catch(() => {});
+      }
+      if (enabled) {
+        await this._runHakimiCloudSyncCli('push', 25000);
+      }
+      const st = await this._runHakimiCloudSyncCli('status', 10000);
+      return {
+        ...st,
+        ok: Boolean(updated) && st.ok !== false,
+        action,
+        themeChatCloudSync: enabled,
+        theme_chat_sync_enabled: enabled,
+      };
+    }
+    if (action === 'theme-chat-sync-now') {
+      const pushRes = await this._runHakimiCloudSyncCli('push', 30000);
+      if (pushRes && pushRes.ok === false) {
+        return { ...pushRes, action };
+      }
+      const st = await this._runHakimiCloudSyncCli('status', 10000);
+      return { ...st, action };
+    }
+    const st = await this._runHakimiCloudSyncCli('status', 10000);
+    return { ...st, action: 'theme-chat-sync-status' };
+  }
+
   async _handleGoMemLimitAction(action, rawInput = {}) {
     const testOpts = rawInput?._testOverrides && typeof rawInput._testOverrides === 'object' ? rawInput._testOverrides : {};
     if (action === 'gomemlimit-set') {
@@ -3907,6 +3967,13 @@ export class PrismDaemon {
         await this.broadcastConfigRefresh().catch(() => {});
       }
       return { ok: Boolean(updated), action: 'storage-auto-exit', autoArchiveOnExit: enabled };
+    }
+    if (
+      rawInput?.action === 'theme-chat-sync-status' ||
+      rawInput?.action === 'theme-chat-sync-toggle' ||
+      rawInput?.action === 'theme-chat-sync-now'
+    ) {
+      return this._handleThemeChatSyncAction(rawInput.action, rawInput);
     }
     if (
       rawInput?.action === 'gomemlimit-status' ||
@@ -8772,6 +8839,9 @@ export class PrismDaemon {
       if (inputPayload.listOnly === undefined && parsed?.listOnly !== undefined) inputPayload.listOnly = parsed.listOnly;
       if (inputPayload.autoArchiveOnExit === undefined && parsed?.autoArchiveOnExit !== undefined) {
         inputPayload.autoArchiveOnExit = parsed.autoArchiveOnExit;
+      }
+      if (inputPayload.themeChatCloudSync === undefined && parsed?.themeChatCloudSync !== undefined) {
+        inputPayload.themeChatCloudSync = parsed.themeChatCloudSync;
       }
       if (inputPayload.addonId === undefined && parsed?.addonId !== undefined) inputPayload.addonId = parsed.addonId;
       if (inputPayload.manifestUrl === undefined && parsed?.manifestUrl !== undefined) {

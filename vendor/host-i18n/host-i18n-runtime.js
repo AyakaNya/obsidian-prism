@@ -118,7 +118,6 @@
   var CHAT_PROSE_TESTIDS = {
     'user-message': 1,
     'assistant-message': 1,
-    'agent-input-box': 1,
     'user-message-bubble': 1,
     'user-message-content': 1,
     'user-input-step': 1,
@@ -349,6 +348,10 @@
     if (!skipDirectCheck && isDirectIgnoredSelf(el)) return false;
     var tag = el.tagName ? String(el.tagName).toUpperCase() : '';
     if (tag === 'BUTTON') return true;
+    if (tag === 'P') {
+      var pCls = typeof el.className === 'string' ? el.className : '';
+      if (pCls.indexOf('pointer-events-none') !== -1) return true;
+    }
     var role = getAttr(el, 'role');
     if (role === 'button' || role === 'menu' || role === 'menuitem' || role === 'tooltip' || role === 'toolbar' || role === 'tab' || role === 'tablist') {
       return true;

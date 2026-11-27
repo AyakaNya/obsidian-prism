@@ -18,13 +18,14 @@
   const MAX_DPR = 1.5;
   const DEG2RAD = Math.PI / 180;
 
-  // 6 槽位真实 3D 错落坐标（5 主宠与石台留足呼吸间距，同时与 6 列名牌视觉对齐）
+  // 7 槽位真实 3D 错落坐标（6 主宠与石台留足呼吸间距，同时与 7 列名牌视觉对齐）
   const SLOT_WORLD_POS = Object.freeze([
-    Object.freeze({ key: 'c', kind: 'clawd', x: -2.62, y: 0.0, z: 0.24, hitR: 0.56, col: [0.98, 0.48, 0.16], colHi: [1.0, 0.70, 0.34] }),
-    Object.freeze({ key: 'k', kind: 'cat', x: -1.48, y: 0.0, z: -0.18, hitR: 0.56, col: [0.58, 0.38, 0.96], colHi: [0.52, 0.76, 1.0] }),
-    Object.freeze({ key: 'd', kind: 'dragon', x: -0.32, y: 0.0, z: 0.26, hitR: 0.58, col: [0.76, 0.88, 0.98], colHi: [0.30, 0.92, 0.84] }),
-    Object.freeze({ key: 'w', kind: 'whale', x: 0.46, y: 0.0, z: -0.14, hitR: 0.56, col: [0.24, 0.54, 1.0], colHi: [0.34, 0.82, 1.0] }),
-    Object.freeze({ key: 'l', kind: 'lechat', x: 1.24, y: 0.0, z: 0.22, hitR: 0.56, col: [1.0, 0.48, 0.10], colHi: [1.0, 0.75, 0.22] }),
+    Object.freeze({ key: 'c', kind: 'clawd', x: -2.64, y: 0.0, z: 0.24, hitR: 0.50, col: [0.98, 0.48, 0.16], colHi: [1.0, 0.70, 0.34] }),
+    Object.freeze({ key: 'k', kind: 'cat', x: -1.50, y: 0.0, z: -0.18, hitR: 0.50, col: [0.58, 0.38, 0.96], colHi: [0.52, 0.76, 1.0] }),
+    Object.freeze({ key: 'd', kind: 'dragon', x: -0.32, y: 0.0, z: 0.26, hitR: 0.52, col: [0.76, 0.88, 0.98], colHi: [0.30, 0.92, 0.84] }),
+    Object.freeze({ key: 'w', kind: 'whale', x: 0.38, y: 0.0, z: -0.14, hitR: 0.48, col: [0.24, 0.54, 1.0], colHi: [0.34, 0.82, 1.0] }),
+    Object.freeze({ key: 'l', kind: 'lechat', x: 0.98, y: 0.0, z: 0.22, hitR: 0.48, col: [1.0, 0.48, 0.10], colHi: [1.0, 0.75, 0.22] }),
+    Object.freeze({ key: 'z', kind: 'zicheng', x: 1.54, y: 0.0, z: -0.12, hitR: 0.48, col: [0.95, 0.75, 0.18], colHi: [0.35, 0.68, 1.0] }),
     Object.freeze({ key: 'm', kind: 'minis', x: 2.60, y: 0.40, z: -0.06, hitR: 0.74, col: [0.98, 0.56, 0.22], colHi: [1.0, 0.76, 0.30] }),
   ]);
 
@@ -172,8 +173,8 @@ uniform vec4 uEmissive;
 uniform vec4 uFlags;
 uniform vec4 uLightTheme;
 uniform vec4 uHearth;
-uniform vec4 uSlotPos[6];
-uniform vec4 uSlotCol[6];
+uniform vec4 uSlotPos[7];
+uniform vec4 uSlotCol[7];
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec4 fragEmissive;
 void main() {
@@ -192,7 +193,7 @@ void main() {
   vec3 slotRimCol = vec3(1.0, 0.76, 0.42);
   float slotRimBoost = 0.0;
   vec3 slotLightSum = vec3(0.0);
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 7; i++) {
     float li = uSlotPos[i].w;
     if (li <= 0.01) continue;
     vec3 sPos = vec3(uSlotPos[i].x, uSlotPos[i].y + 1.15, uSlotPos[i].z);
@@ -1247,9 +1248,9 @@ void main() {
       });
     };
 
-    // ── 桌宠动态精灵离屏微画布（256×96, 1 逻辑像素 = 1 纹素, 零抗锯齿, 脏更新）──
-    const SPR_W = 256, SPR_H = 96;
-    const SPR_MAIN_W = 48, SPR_MAIN_H = 44; // 4 主宠槽：x = idx * 48, y = 0
+    // ── 桌宠动态精灵离屏微画布（320×96, 1 逻辑像素 = 1 纹素, 零抗锯齿, 脏更新）──
+    const SPR_W = 320, SPR_H = 96;
+    const SPR_MAIN_W = 48, SPR_MAIN_H = 44; // 6 主宠槽：x = idx * 48, y = 0
     const SPR_MINI_W = 24, SPR_MINI_H = 24; // 3 迷你蟹：x = idx * 24, y = 48
     const spriteCanvas = doc && typeof doc.createElement === 'function' ? doc.createElement('canvas') : null;
     if (spriteCanvas) {
@@ -1258,13 +1259,13 @@ void main() {
     }
     const spriteCtx = spriteCanvas && typeof spriteCanvas.getContext === 'function' ? spriteCanvas.getContext('2d') : null;
     const spriteTexInfo = createPixelTex(SPR_W, SPR_H, new Uint8Array(SPR_W * SPR_H * 4), false);
-    const spriteSlotSigs = ['', '', '', '', '', '', '', ''];
+    const spriteSlotSigs = ['', '', '', '', '', '', '', '', ''];
 
     const syncMascotSprites = (art, slotInfos, tickIdx) => {
       if (!spriteCtx || !spriteCanvas || !art) return;
       let dirty = false;
       spriteCtx.imageSmoothingEnabled = false;
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 6; i++) {
         const info = slotInfos[i];
         if (!info) continue;
         const sig = `${art.source || ''}|${info.kind}|${info.pose}|${info.sym || ''}|${info.breath ? 1 : 0}|${info.blink ? 1 : 0}|${info.animTick}`;
@@ -1281,15 +1282,15 @@ void main() {
         });
         dirty = true;
       }
-      const miniInfo = slotInfos[5] || slotInfos[slotInfos.length - 1] || { cheering: false, isHov: false, cnt: 0, farewell: false };
+      const miniInfo = slotInfos[6] || slotInfos[slotInfos.length - 1] || { cheering: false, isHov: false, cnt: 0, farewell: false };
       for (let m = 0; m < 3; m++) {
         const id = MINI_OFFSETS[m].id;
         const fk = miniInfo.cheering || miniInfo.isHov ? 'trick' : 'idle';
         const showZ = miniInfo.cnt === 0 && !miniInfo.isHov && !miniInfo.farewell && m === 2;
         const zPhase = showZ ? ((tickIdx >> 1) & 1) : -1;
         const sig = `${art.source || ''}|${id}|${fk}|${zPhase}`;
-        if (spriteSlotSigs[5 + m] === sig) continue;
-        spriteSlotSigs[5 + m] = sig;
+        if (spriteSlotSigs[6 + m] === sig) continue;
+        spriteSlotSigs[6 + m] = sig;
         const ox = m * SPR_MINI_W;
         spriteCtx.clearRect(ox, 48, SPR_MINI_W, SPR_MINI_H);
         art.drawMiniCrab(spriteCtx, id, fk, ox + 4, 48 + 12, 1);
@@ -1525,9 +1526,9 @@ void main() {
       const hearthFlicker = 2.40 + 0.34 * Math.sin(timeSec * 7.3) + 0.18 * Math.sin(timeSec * 13.1);
       gl.uniform4f(uScene.uHearth, -0.02, 0.76, -3.12, hearthFlicker * (lightMode > 0.5 ? 0.55 : 1.0));
 
-      const slotPosArr = new Float32Array(24);
-      const slotColArr = new Float32Array(24);
-      for (let i = 0; i < 6; i++) {
+      const slotPosArr = new Float32Array(28);
+      const slotColArr = new Float32Array(28);
+      for (let i = 0; i < 7; i++) {
         const sp = SLOT_WORLD_POS[i];
         const li = slotInfos[i] ? slotInfos[i].light : 0;
         slotPosArr[i * 4] = sp.x;
@@ -1622,43 +1623,43 @@ void main() {
 
       // 普通混合绘 Contact AO 地面阴影
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 7; i++) {
         const sp = SLOT_WORLD_POS[i];
-        const shScale = i === 5 ? 1.32 : 1.02;
+        const shScale = i === 6 ? 1.32 : 1.02;
         drawFxMesh(meshFxFloor, modelMat(sp.x, sp.y + 0.016, sp.z, shScale, 1, shScale * 0.68), [0.02, 0.02, 0.05, lightMode > 0.5 ? 0.24 : 0.58], [1.0, timeSec, 1.8, 0.0]);
       }
 
       // Additive 混合绘地板阵营池光、常驻锐利双环魔法光池与点亮瞬间魔法涟漪
       gl.blendFunc(gl.ONE, gl.ONE);
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 7; i++) {
         const sp = SLOT_WORLD_POS[i];
         const info = slotInfos[i];
         if (!info) continue;
         if (info.light > 0.02) {
-          const rad = (i === 5 ? 1.48 : 1.28) + info.light * 0.20;
+          const rad = (i === 6 ? 1.48 : 1.28) + info.light * 0.20;
           const a = info.light * (lightMode > 0.5 ? 0.22 : 0.38);
           drawFxMesh(meshFxFloor, modelMat(sp.x, sp.y + 0.020, sp.z, rad, 1, rad * 0.78), [sp.col[0], sp.col[1], sp.col[2], a], [1.0, timeSec, 1.9, 0.45]);
           const ringPulse = 0.95 + 0.05 * Math.sin(timeSec * 3.0 + i * 1.3);
-          const ringRad = (i === 5 ? 1.44 : 1.22) * ringPulse;
+          const ringRad = (i === 6 ? 1.44 : 1.22) * ringPulse;
           const rippleYield = info.rippleProg > 0 && info.rippleProg < 1 ? 0.55 + info.rippleProg * 0.45 : 1.0;
           const ringA = info.light * rippleYield * (lightMode > 0.5 ? 0.20 : 0.48);
           drawFxMesh(meshFxFloor, modelMat(sp.x, sp.y + 0.022, sp.z, ringRad, 1, ringRad * 0.78), [sp.colHi[0], sp.colHi[1], sp.colHi[2], ringA], [2.0, timeSec, 0.78, 0.72]);
         }
         if (info.rippleProg > 0 && info.rippleProg < 1) {
           const rp = info.rippleProg;
-          const scale = (i === 5 ? 1.58 : 1.44) * (0.45 + rp * 0.95);
+          const scale = (i === 6 ? 1.58 : 1.44) * (0.45 + rp * 0.95);
           const alpha = (1.0 - rp) * 0.74;
           drawFxMesh(meshFxFloor, modelMat(sp.x, sp.y + 0.025, sp.z, scale, 1, scale * 0.82), [sp.colHi[0], sp.colHi[1], sp.colHi[2], alpha], [2.0, timeSec, 0.35 + rp * 0.55, 0.78]);
         }
       }
 
-      // 3f) 6 大桌宠 3D 像素立牌（flags[0]=2 原色护色管线，点亮纯正饱满绝不泛白，休息沉入冷靛蓝暗影）
+      // 3f) 7 大桌宠 3D 像素立牌（flags[0]=2 原色护色管线，点亮纯正饱满绝不泛白，休息沉入冷靛蓝暗影）
       gl.depthMask(true);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       gl.useProgram(progScene);
       gl.uniformMatrix4fv(uScene.uViewProj, false, vp);
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 6; i++) {
         const sp = SLOT_WORLD_POS[i];
         const info = slotInfos[i] || { light: 0, cnt: 0, jumpWorld: 0, isHov: false, farewell: false };
         const dim = info.cnt === 0 && !info.isHov && !info.farewell ? 0.38 : info.cnt > 0 ? 1.0 : 0.82;
@@ -1666,7 +1667,7 @@ void main() {
         const u0 = (i * SPR_MAIN_W) / SPR_W;
         const uw = SPR_MAIN_W / SPR_W;
         const vh = SPR_MAIN_H / SPR_H;
-        const fireEm = info.pose === 'dragonFlame' || info.pose === 'whaleSpout' || info.pose === 'eatCroissant' || info.pose === 'mistralBreeze' ? 0.32 : 0.0;
+        const fireEm = info.pose === 'dragonFlame' || info.pose === 'whaleSpout' || info.pose === 'eatCroissant' || info.pose === 'mistralBreeze' || info.pose === 'eatShrimp' ? 0.32 : 0.0;
         drawSceneMesh(meshUnitQuadBot, spriteTexInfo, m, {
           uvRect: [u0, 0, uw, vh],
           emissive: [sp.colHi[0], sp.colHi[1], sp.colHi[2], fireEm],
@@ -1674,9 +1675,9 @@ void main() {
         });
       }
 
-      // 第 6 站位：抬高暖黑曜石苔藓石台上的 3 只迷你小蟹立体站位！
-      const spM = SLOT_WORLD_POS[5];
-      const infoM = slotInfos[5] || { light: 0, cnt: 0, cheering: false, cheerProg: 0, isHov: false, farewell: false };
+      // 第 7 站位：抬高暖黑曜石苔藓石台上的 3 只迷你小蟹立体站位！
+      const spM = SLOT_WORLD_POS[6];
+      const infoM = slotInfos[6] || { light: 0, cnt: 0, cheering: false, cheerProg: 0, isHov: false, farewell: false };
       const dimM = infoM.cnt === 0 && !infoM.isHov && !infoM.farewell ? 0.40 : infoM.cnt > 0 ? 1.0 : 0.82;
       for (let mIdx = 0; mIdx < 3; mIdx++) {
         const mo = MINI_OFFSETS[mIdx];
@@ -1737,8 +1738,8 @@ void main() {
         drawFxMesh(meshFxCard, modelMat(gx, gy, item.z + 0.05, haloSz, haloSz, 1), [item.emCol[0], item.emCol[1], item.emCol[2], haloA], [1.0, timeSec, 2.0, 1.28]);
       }
 
-      // 6 束可开关真 3D 交叉锥形体积光柱（略偏后置 z - 0.10 令高饱和光柱从主角头顶与身后划破暗夜，绝不糊白精灵面部！）
-      for (let i = 0; i < 6; i++) {
+      // 7 束可开关真 3D 交叉锥形体积光柱（略偏后置 z - 0.10 令高饱和光柱从主角头顶与身后划破暗夜，绝不糊白精灵面部！）
+      for (let i = 0; i < 7; i++) {
         const sp = SLOT_WORLD_POS[i];
         const info = slotInfos[i];
         if (!info || info.light <= 0.02) continue;

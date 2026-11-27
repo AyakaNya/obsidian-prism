@@ -971,8 +971,8 @@ test('v1.0.7: thought-client auto-translates asynchronously updated & newly adde
 });
 
 test('v1.0.7 / Issue #58: full-body gentle crouch peek (no hard bottom clip) + prism rim ambient bounce light preserves 0fps sleep and dedups micro-jitter', () => {
-  // 1. Verify peek pose renders full body grounded to maxY=9 (no hard cut) across all 5 species
-  for (const kind of ['clawd', 'cat', 'dragon', 'whale', 'lechat']) {
+  // 1. Verify peek pose renders full body grounded to maxY=9 (no hard cut) across all 6 species
+  for (const kind of ['clawd', 'cat', 'dragon', 'whale', 'lechat', 'zicheng']) {
     for (let t = 0; t < 4; t++) {
       const layers = dualMascotRig.buildClipLayers(kind, 'peek', t, { clipTick: t });
       const bodyRows = new Set();

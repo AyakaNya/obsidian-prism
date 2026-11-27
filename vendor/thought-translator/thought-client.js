@@ -29,6 +29,7 @@
   const SKIP_TAGS = new Set('SCRIPT,STYLE,BUTTON,SVG,NOSCRIPT'.split(','));
 
   let currentMode = 'off';
+  let collapseMode = 'auto';
   let triggerTiming = 'preload';
   let currentViewMode = 'immersive';
   let currentLang = '';
@@ -512,7 +513,7 @@
   }
 
   function scheduleReopenIfAutoCollapsed(btn) {
-    if (!btn || currentMode === 'off' || !isConn(btn)) return;
+    if (!btn || currentMode === 'off' || collapseMode !== 'keep' || !isConn(btn)) return;
     if (isUserCollapsedTrigger(btn)) return;
     const rec = keepExpandedTriggers.get(btn);
     if (!rec) return;
@@ -544,7 +545,7 @@
   }
 
   function registerKeepExpandedTrigger(btn) {
-    if (!btn || currentMode === 'off' || isUserCollapsedTrigger(btn)) return;
+    if (!btn || currentMode === 'off' || collapseMode !== 'keep' || isUserCollapsedTrigger(btn)) return;
     let rec = keepExpandedTriggers.get(btn);
     if (!rec) {
       rec = { since: nowMs(), winStart: 0, winCount: 0, coolUntil: 0, timer: null };
@@ -574,7 +575,7 @@
 
   function markKeepExpandedTriggerDone(btn) {
     if (!btn) return;
-    if (isUserCollapsedTrigger(btn)) {
+    if (collapseMode !== 'keep' || isUserCollapsedTrigger(btn)) {
       unregisterKeepExpandedTrigger(btn);
       return;
     }
@@ -4750,6 +4751,11 @@
   const api = {
     sync(cfg = {}) {
       const nextMode = cfg.thoughtTranslate === 'machine' || cfg.thoughtTranslate === 'ai' ? cfg.thoughtTranslate : 'off';
+      const nextCollapse = cfg.thoughtCollapse === 'keep' ? 'keep' : 'auto';
+      if (collapseMode !== nextCollapse) {
+        collapseMode = nextCollapse;
+        if (collapseMode !== 'keep') clearAllKeepExpandedWatchers();
+      }
       const prevTrigger = triggerTiming;
       triggerTiming = cfg.thoughtTrigger === 'expand' ? 'expand' : 'preload';
       const triggerChanged = prevTrigger !== triggerTiming;

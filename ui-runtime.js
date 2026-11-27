@@ -147,7 +147,7 @@
       out[sKey] = on ? 'on' : 'off';
     }
     out.placeholderStyle = out.promptStyle = (out.placeholderStyle ?? out.promptStyle) === 'host' ? 'host' : 'studio';
-    out.mascot = out.mascot === 'off' || out.mascot === false ? 'off' : /^(minis|quad(-minis)?|r:[ckdwl0-4,+m]+)$/.test(out.mascot) ? out.mascot : 'crab';
+    out.mascot = out.mascot === 'off' || out.mascot === false ? 'off' : /^(minis|quad(-minis)?|r:[ckdwlz0-4,+m]+)$/.test(out.mascot) ? out.mascot : 'crab';
     out.convRipple = normConvRipple(out.convRipple);
     for (const k of ['sidebarCompact', 'codeLigatures', 'autoArchiveOnExit']) out[k] = out[k] === true || out[k] === 'on';
     for (const k of ['sidebarNavFold', 'sidebarStudio', 'autoUpdate', 'chuanbanPaper', 'bookTypography']) out[k] = out[k] === 'on' || out[k] === true ? 'on' : 'off';
@@ -158,7 +158,7 @@
     out.ambientIntensity = pickOf(String(out.ambientIntensity ?? '100'), '0|35|70|100', '100');
     out.darkAura = pickOf(out.darkAura, 'subtle|balanced|vivid', 'balanced');
     for (const k of ['omniModule', 'effortMemory', 'periodicModelPicker']) out[k] = out[k] === 'off' || out[k] === false ? 'off' : 'on';
-    for (const [k, a, b] of [['lightPreset','alabaster','crystal'],['darkAuraStyle','neon','prism'],['thoughtTrigger','expand','preload'],['scrollBottomMotion','instant','smooth'],['thoughtView','bilingual','immersive'],['linkTarget','external','builtin'],['updateChannel','beta','stable']]) out[k] = out[k] === a ? a : b;
+    for (const [k, a, b] of [['lightPreset','alabaster','crystal'],['darkAuraStyle','neon','prism'],['thoughtCollapse','keep','auto'],['thoughtTrigger','expand','preload'],['scrollBottomMotion','instant','smooth'],['thoughtView','bilingual','immersive'],['linkTarget','external','builtin'],['updateChannel','beta','stable']]) out[k] = out[k] === a ? a : b;
     const migrateLegacyLang = (v) => {
       if (typeof v !== 'string') return '';
       const t = v.trim();
@@ -288,7 +288,7 @@
     if (any('accentTone|composerRestyle|placeholderStyle|mascot|smoothCaret|telemetryModule|motionLevel|language')) dirtyFlags.c = true;
     if (any('homeLayout|homeRipple|convRipple|motionLevel|language')) dirtyFlags.r = true;
     if (any('sidebarRestyle|sidebarCompact|sidebarNavFold')) dirtyFlags.s = true;
-    if (any('thoughtTranslate|thoughtTrigger|thoughtView')) dirtyFlags.l = dirtyFlags.tk = true;
+    if (any('thoughtCollapse|thoughtTranslate|thoughtTrigger|thoughtView')) dirtyFlags.l = dirtyFlags.tk = true;
   };
 
   const persistAndApplyConfigPatch = (rawPatch, emitSingleKey = null) => {
@@ -368,6 +368,7 @@
   const getEffortMemoryMode = () => onOffMode('effortMemory');
   const getPeriodicPickerMode = () => onOffMode('periodicModelPicker');
   const getHostLocalizationMode = () => pickOf(cfg.hostLocalization, 'on|off', 'auto');
+  const getThoughtCollapseMode = () => (cfg.thoughtCollapse === 'keep' ? 'keep' : 'auto');
   const getThoughtTranslateMode = () => pickOf(cfg.thoughtTranslate, 'machine|ai', 'off');
   const getThoughtTriggerTiming = () => (cfg.thoughtTrigger === 'expand' ? 'expand' : 'preload');
   const getAccentTone = () => pickOf(cfg.accentTone, 'cobalt|iris|amber|mono', 'follow');
@@ -887,6 +888,7 @@
         isMotionStandardOrUltra,
         isMotionUltra,
         isConvRunning,
+        getThoughtCollapseMode,
         isThoughtIsolatedNode,
         isThoughtMutationRecord,
         isManagedThoughtPanel,
@@ -1047,7 +1049,7 @@
     const motionLv = getMotionLevel(), ctxEnabled = isContextMenuEnabled() && !destroyed, hiMode = getHostLocalizationMode(), curLang = getLang();
     const key = [
       VERSION, curLang, motionLv, getTelemetryMode(), getEffortSliderMode(), getEffortMemoryMode(), hiMode,
-      getThoughtTranslateMode(), getThoughtTriggerTiming(), getThoughtView(), getOmniMode(), getLinkTarget(),
+      getThoughtCollapseMode(), getThoughtTranslateMode(), getThoughtTriggerTiming(), getThoughtView(), getOmniMode(), getLinkTarget(),
       +(cfg.sidebarStudio === 'on'), +ctxEnabled, meta?.baseUrl || '', sbMeta?.version || '', +!!sbMeta?.serviceReady,
       +!!tel, +!!eff, +!!hiInst, +!!th, +!!thUi, +!!omni, +!!sb, +!!ctxMenu,
     ].join('|');
@@ -1085,7 +1087,7 @@
         style: '1', theme: dark ? 'dark' : 'light', palette, 'light-preset': lightPreset,
         chuanban: getChuanbanMode(), 'book-font': getBookFontMode(), motion: motionLv,
         'target-fps': targetFps, telemetry: telemetryMod, 'effort-slider': effortSliderMod,
-        'thought-translate': getThoughtTranslateMode(), accent: getAccentTone(), corners: getCornerStyle(),
+        'thought-collapse': getThoughtCollapseMode(), 'thought-translate': getThoughtTranslateMode(), accent: getAccentTone(), corners: getCornerStyle(),
         'scroll-bottom': cfg.scrollBottomMotion, 'code-font': getCodeFont(),
         ligatures: isCodeLigaturesEnabled() ? '1' : '0', ambient: getAmbientCssValue(),
         'dark-aura': cfg.darkAura,
@@ -2383,6 +2385,7 @@
               syncHostAnimatedIcons([convNow]);
             });
             streamChoreoCtl.syncWorkedForAutoUnfold();
+            streamChoreoCtl.syncThoughtCollapse?.(convNow);
             if (getThoughtTranslateMode() !== 'off') {
               try {
                 W.__agPrismThought?.scan?.();
@@ -2426,8 +2429,10 @@
     if (!deferHeavyConvWork) {
       if (flags.f || routeJumped) {
         streamChoreoCtl.syncWorkedForAutoUnfold();
-      } else if (flags.l) {
-        streamChoreoCtl.syncWorkedForAutoUnfold(collapsibleScope);
+        streamChoreoCtl.syncThoughtCollapse?.();
+      } else {
+        if (flags.l) streamChoreoCtl.syncWorkedForAutoUnfold(collapsibleScope);
+        if (flags.tk || flags.l) streamChoreoCtl.syncThoughtCollapse?.();
       }
     }
 
@@ -2613,6 +2618,10 @@
         dispatchComposerSubmit(ev.target);
         return;
       }
+      if ((ev.key === 'Enter' || ev.key === ' ') && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+        const thoughtTrig = cl(ev.target, '[data-testid="thinking-collapsible-trigger"]');
+        if (thoughtTrig) streamChoreoCtl.onUserToggleThoughtTrigger?.(thoughtTrig, ev);
+      }
       if (ev.key === '[' && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !isEditableTarget(ev.target) && !cl(ev.target, '[role="dialog"], .monaco-editor')) {
         const html = de(), k = 'data-ag-cs-sidebar-collapsed';
         if (!html || cfg.sidebarRestyle === false) return;
@@ -2636,8 +2645,12 @@
       } else if (wasContextCardOpen) {
         ST(() => { if (!destroyed) syncContextCardOpenNotify(); }, 28);
       }
-      if (cl(t, '[data-testid="thinking-collapsible-trigger"]') && getThoughtTranslateMode() !== 'off') {
-        ST(() => { try { W.__agPrismThought?.scan?.(); } catch {} }, 25);
+      const thoughtTrig = cl(t, '[data-testid="thinking-collapsible-trigger"]');
+      if (thoughtTrig) {
+        streamChoreoCtl.onUserToggleThoughtTrigger?.(thoughtTrig, ev);
+        if (getThoughtTranslateMode() !== 'off') {
+          ST(() => { try { W.__agPrismThought?.scan?.(); } catch {} }, 25);
+        }
       }
       const sendBtn = cl(t, '[data-testid="input-send-button"], [data-testid="send-button"]');
       if (sendBtn && !sendBtn.disabled) {
@@ -2924,6 +2937,7 @@
     const safe = (fn) => { try { fn?.(); } catch {} };
     cancelScheduledSync();
     streamChoreoCtl.clearTransientTimers();
+    streamChoreoCtl.clearThoughtCollapseWatchers?.();
     for (const s of [dirtyAddedRoots, dirtyCollapsibleTargets, dirtyBgCmds, dirtyTurboRoots, bleedEls]) s.clear();
     clearWinBlur();
     finishResizing(false);

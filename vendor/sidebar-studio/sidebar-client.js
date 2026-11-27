@@ -316,9 +316,9 @@
     '.ag-prism-vessel-wrap[data-kind="spark"] .ag-prism-vessel::after{background:conic-gradient(from var(--ag-sb-halo-angle),transparent 0deg,transparent 205deg,rgba(50,121,249,.66) 262deg,rgba(96,165,250,.48) 300deg,rgba(16,185,129,.28) 326deg,rgba(251,191,36,.22) 342deg,rgba(248,113,113,.16) 352deg,transparent 360deg)}',
     '.ag-prism-vessel-wrap[data-focused="1"] .ag-prism-vessel::after{opacity:1;animation-play-state:running}',
     '@keyframes ag-sb-halo{from{--ag-sb-halo-angle:0deg}to{--ag-sb-halo-angle:360deg}}',
-    '.ag-prism-chat-input{min-height:58px;max-height:176px;overflow-y:auto;padding:16px 20px 8px;outline:none;color:var(--ag-sb-fg);font-size:15px;line-height:1.56}',
+    '.ag-prism-chat-input{position:relative;min-height:58px;max-height:176px;overflow-y:auto;padding:16px 20px 8px;outline:none;color:var(--ag-sb-fg);font-size:15px;line-height:1.56}',
     '.ag-prism-chat-input:focus,.ag-prism-chat-input:focus-visible{outline:none;box-shadow:none}',
-    '.ag-prism-chat-input:empty::before{content:attr(data-placeholder);color:var(--ag-sb-dim);pointer-events:none}',
+    '.ag-prism-chat-input:empty::before{content:attr(data-placeholder);color:var(--ag-sb-dim);pointer-events:none;padding-left:6px}',
     '.ag-prism-chat-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 12px 11px}',
     '.ag-prism-chat-bar-g{display:inline-flex;align-items:center;gap:6px;min-width:0}',
     '.ag-prism-subseg{position:relative;display:inline-grid;grid-template-columns:repeat(2,minmax(74px,1fr));padding:3px;border-radius:999px;background:var(--ag-sb-pill-track)}',
@@ -400,15 +400,20 @@
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] [data-testid="user-message-bubble"]{border-radius:22px 22px 6px 22px!important;border:none!important;background:var(--ag-sb-container)!important;box-shadow:none!important;padding:11px 18px!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] [data-testid="agent-input-box"]{position:relative!important;z-index:60!important;background:transparent!important;padding-top:26px!important;padding-bottom:10px!important;overflow:visible!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox{position:relative!important;z-index:60!important;width:100%!important;max-width:min(760px,calc(100% - 28px))!important;min-width:0!important;margin:0 auto 10px!important;background:transparent!important;border:none!important;box-shadow:none!important;overflow:visible!important}',
-    'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card{position:static!important;width:100%!important;box-sizing:border-box!important;border-radius:28px!important;padding:12px 14px 10px 18px!important;background:var(--ag-sb-container)!important;background-image:none!important;border:1px solid var(--ag-sb-hairline)!important;box-shadow:var(--ag-sb-shadow),inset 0 1px 0 var(--ag-sb-specular)!important;overflow:visible!important;transition:border-color 200ms ease,box-shadow 240ms ease,background-color 200ms ease!important}',
+    'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card{position:relative!important;width:100%!important;box-sizing:border-box!important;border-radius:28px!important;padding:10px 8px 7px!important;background:var(--ag-sb-container)!important;background-image:none!important;border:1px solid var(--ag-sb-hairline)!important;box-shadow:var(--ag-sb-shadow),inset 0 1px 0 var(--ag-sb-specular)!important;overflow:visible!important;transition:border-color 200ms ease,box-shadow 240ms ease,background-color 200ms ease!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card::before{display:none!important;content:none!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card:focus-within{border-color:color-mix(in srgb,var(--ag-sb-active-anchor) 42%,transparent)!important;box-shadow:var(--ag-sb-focus-shadow),0 0 0 1px color-mix(in srgb,var(--ag-sb-active-anchor) 20%,transparent),inset 0 1px 0 var(--ag-sb-specular)!important}',
-    'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card [data-lexical-editor="true"]{min-height:44px!important;font-size:15px!important;line-height:1.56!important;padding-top:2px!important}',
-    'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p[data-ag-cs-placeholder]::before{content:"问点什么…"!important;color:var(--ag-sb-dim)!important;font-size:15px!important;font-family:var(--ag-sb-font-display)!important}',
+    'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card [data-lexical-editor="true"]{min-height:40px!important;font-size:14px!important;line-height:22px!important;padding:8px!important}',
+    'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p[data-ag-cs-placeholder],html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p.pointer-events-none.absolute{top:8px!important;left:14px!important;font-size:14px!important;line-height:22px!important}',
+    'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p[data-ag-cs-placeholder]::before{content:"问点什么…"!important;color:var(--ag-sb-dim)!important;font-size:14px!important;line-height:22px!important;font-family:var(--ag-sb-font-display)!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"][data-ag-prism-chat-kind="spark"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p[data-ag-cs-placeholder]::before{content:"交给我一件要处理的事务…"!important}',
+    'html[data-ag-cs-style][data-ag-cs-lang="zh-TW"][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p[data-ag-cs-placeholder]::before{content:"問點什麼…"!important}',
+    'html[data-ag-cs-style][data-ag-cs-lang="zh-TW"][data-ag-prism-mode="chat"][data-ag-prism-chat-kind="spark"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p[data-ag-cs-placeholder]::before{content:"交給我一件要處理的事務…"!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p.pointer-events-none.absolute:not([data-ag-cs-placeholder]){color:transparent!important}',
-    'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p.pointer-events-none.absolute:not([data-ag-cs-placeholder])::before{content:"问点什么…";color:var(--ag-sb-dim);font-size:15px;font-family:var(--ag-sb-font-display)}',
+    'html[data-ag-cs-style][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p.pointer-events-none.absolute:not([data-ag-cs-placeholder])::before{content:"问点什么…";color:var(--ag-sb-dim);font-size:14px;line-height:22px;font-family:var(--ag-sb-font-display)}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"][data-ag-prism-chat-kind="spark"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p.pointer-events-none.absolute:not([data-ag-cs-placeholder])::before{content:"交给我一件要处理的事务…"}',
+    'html[data-ag-cs-style][data-ag-cs-lang="zh-TW"][data-ag-prism-mode="chat"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p.pointer-events-none.absolute:not([data-ag-cs-placeholder])::before{content:"問點什麼…"}',
+    'html[data-ag-cs-style][data-ag-cs-lang="zh-TW"][data-ag-prism-mode="chat"][data-ag-prism-chat-kind="spark"] #antigravity\\.agentSidePanelInputBox .surface-composer-card p.pointer-events-none.absolute:not([data-ag-cs-placeholder])::before{content:"交給我一件要處理的事務…"}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] .z-10[data-ag-cs-input-layer="1"]{z-index:60!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"] [data-testid="toggle-overview-panel"],html[data-ag-cs-style][data-ag-prism-mode="chat"] [data-testid="titlebar-more-actions"]{display:none!important}',
     'html[data-ag-cs-style][data-ag-prism-mode="chat"][data-ag-prism-chat-kind="pure"] [data-testid="conversation-view"] button.tabular-nums{font-size:12.5px!important;min-height:26px!important;padding:2px 8px!important;color:var(--ag-sb-dim)!important;opacity:.84!important;border-radius:999px!important;transition:opacity 160ms ease,color 160ms ease,background-color 160ms ease!important}',
@@ -514,8 +519,11 @@
     ['联网', '連網'],
     ['能力与扩展', '能力與擴充'],
     ['扩展插件', '擴充外掛'],
+    ['开发扩展', '開發擴充'],
+    ['与扩展', '與擴充'],
     ['项插件', '項外掛'],
     ['插件', '外掛'],
+    ['内置', '內建'],
     ['剪贴板', '剪貼簿'],
     ['回车创建', '按 Enter 建立'],
     ['重命名', '重新命名'],
@@ -538,6 +546,7 @@
     ['文件与事务', '檔案與事務'],
     ['文件内容', '檔案內容'],
     ['文件名', '檔案名稱'],
+    ['原始文件', '原始檔案'],
     ['图片和文件', '圖片與檔案'],
     ['图片 / 文件', '圖片／檔案'],
     ['个文件', '個檔案'],
@@ -546,6 +555,8 @@
     ['磁盘文件夹中的文件', '磁碟資料夾中的檔案'],
     ['拖文件', '拖曳檔案'],
     ['受控文件', '受控檔案'],
+    ['附加文件', '附加檔案'],
+    ['文档', '文件'],
     ['搜索', '搜尋'],
     ['多选批量管理', '多選批次管理'],
     ['批量', '批次'],
@@ -555,16 +566,24 @@
     ['保护', '保護'],
     ['设置', '設定'],
     ['导出', '匯出'],
+    ['导入', '匯入'],
+    ['打开', '開啟'],
     ['跳过', '略過'],
     ['消息', '訊息'],
     ['置顶', '置頂'],
     ['已归档', '已封存'],
     ['归档', '封存'],
+    ['恢复', '恢復'],
+    ['复制', '複製'],
+    ['干净', '乾淨'],
+    ['采用', '採用'],
+    ['加载', '載入'],
+    ['检测', '偵測'],
   ];
   const ZH_CN_CHARS =
-    '与专业个为么义乐习书买乱争于云亚产亩亲仅从仑仓们价众优伙会伟传伤伦伪伯估伴伸似但位低住体何余佛作你佣佩佳使例供依侠侣侦侧侨侮侯侵便促俄俊俗保信俩俭修俯俱俸俺倍倒候借倡倦债值倾假偎偏做停健偶偷偿傅储催傲傻像僧儒儿允元兄充兆先光克免兑兔儿入全两八公六兰共关兴兵其具典兹养兼兽内冈册再冒写军农冠冬冰冲决况冻冷准凉凌减凑凛几凡凤凭凯击函凿刀分切刊刑划列刘则刚创初判利删别刮到制刷券刹刺刻刽剂剃削前剑剔剖剥剧剩剪副割剽剿力劝办功加务劣动助努劫励劲劳势勃勇勉勋勒动勘募勤勾勿包匆匈化北匙匝匠匡匣匪汇匹区医华协单卖南博占卡卢卫印危即却卵卷卸卿厂厄厅历厉压厌厕厘厚原厢厥厦厨厩去县参又叉及友双反发叔取受变叙叛叠口古句另只叫召叮可台史右叶号司叹叻叼叽吁吃各合吉同名后吏吐向吓吕吗君吝吞吟吠否吧吨吩含听吭吮启吱吴吵吸吹吻吼呀吕呃呆呈告呐呒员呖呗呕呙呛呜呢呤呦周味呵呶呷呸呼命咀咁咂咄咆咋和咎咏咐咒咔咕咖咙咚咛咝咣咤咦咧咨咩咪咫咬咯咱咳咸咽哀品哄哆哇哈哉哌响哎哏哐哑哒哓哔哕哗哙哚哜哝哟哥哦哩哪哭哮哲哳哺哼哽哿唁唆唇唉唏唐唑唔唛唠唢唣唤唧唪唬售唯唱唳唷唼唾唿啁啃啄商啉啊啐啕啖啜啡啤啥啦啧啪啬啭啮啰啸喷喽喾嗫呵嗔嗦嗨嗯嗳嗷嗽嗾嘀嘁嘈嘉嘌嘎嘏嘘嘛嘞嘟嘣嘤嘧嘬嘭嘱嘲嘴嘶嘹嘻嘿噌噍噎噔噗噘噙噜噢噤器噩噪噫噬噱噶噻噼嚅嚆嚎嚏擦嚣不断地显设设置对话选择进输入创建缓暂顶条项删复恢导败请帮把这段得清检总点讲通懂比喻张图画风求先看当里清录单类建汇总读主提炼核结办排程定起草结题适大多深思复难长写均稳综步快兼顾速答轻效料读欢回随始今需做什从哪探聊新想有可问或交件要处务纯零调任外挂或令按网页支生及解户动供附绑受控编整协创白名挂载服放行扩未开直作通专流知解梳讨运独净并码境除会显启用否声称仓执系终用能真诚虚构助指范严访敏配自高险操前须征同全认模意附切强享受护管重导出标取永彻底消记跳可改夹空选仅解关盘原系绑移剪贴板停请求回根拖此快回车天内早放预安全提示磁盘选定开启关闭隐藏重新开启大小限制跳过超过单条消息最多截图';
+    '与专业个为么义乐习书买乱争于云亚产亩亲仅从仑仓们价众优伙会伟传伤伦伪伯估伴伸似但位低住体何余佛作你佣佩佳使例供依侠侣侦侧侨侮侯侵便促俄俊俗保信俩俭修俯俱俸俺倍倒候借倡倦债值倾假偎偏做停健偶偷偿傅储催傲傻像僧儒儿允元兄充兆先光克免兑兔儿入全两八公六兰共关兴兵其具典兹养兼兽内冈册再冒写军农冠冬冰冲决况冻冷准凉凌减凑凛几凡凤凭凯击函凿刀分切刊刑划列刘则刚创初判利删别刮到制刷券刹刺刻刽剂剃削前剑剔剖剥剧剩剪副割剽剿力劝办功加务劣动助努劫励劲劳势勃勇勉勋勒动勘募勤勾勿包匆匈化北匙匝匠匡匣匪汇匹区医华协单卖南博占卡卢卫印危即却卵卷卸卿厂厄厅历厉压厌厕厘厚原厢厥厦厨厩去县参又叉及友双反发叔取受变叙叛叠口古句另只叫召叮可台史右叶号司叹叻叼叽吁吃各合吉同名后吏吐向吓吕吗君吝吞吟吠否吧吨吩含听吭吮启吱吴吵吸吹吻吼呀吕呃呆呈告呐呒员呖呗呕呙呛呜呢呤呦周味呵呶呷呸呼命咀咁咂咄咆咋和咎咏咐咒咔咕咖咙咚咛咝咣咤咦咧咨咩咪咫咬咯咱咳咸咽哀品哄哆哇哈哉哌响哎哏哐哑哒哓哔哕哗哙哚哜哝哟哥哦哩哪哭哮哲哳哺哼哽哿唁唆唇唉唏唐唑唔唛唠唢唣唤唧唪唬售唯唱唳唷唼唾唿啁啃啄商啉啊啐啕啖啜啡啤啥啦啧啪啬啭啮啰啸喷喽喾嗫呵嗔嗦嗨嗯嗳嗷嗽嗾嘀嘁嘈嘉嘌嘎嘏嘘嘛嘞嘟嘣嘤嘧嘬嘭嘱嘲嘴嘶嘹嘻嘿噌噍噎噔噗噘噙噜噢噤器噩噪噫噬噱噶噻噼嚅嚆嚎嚏擦嚣不断地显设设置对话选择进输入创建缓暂顶条项删复恢导败请帮把这段得清检总点讲通懂比喻张图画风求先看当里清录单类建汇总读主提炼核结办排程定起草结题适大多深思复难长写均稳综步快兼顾速答轻效料读欢回随始今需做什从哪探聊新想有可问或交件要处务纯零调任外挂或令按网页支生及解户动供附绑受控编整协创白名挂载服放行扩未开直作通专流知解梳讨运独净并码境除会显启用否声称仓执系终用能真诚虚构助指范严访敏配自高险操前须征同全认模意附切强享受护管重导出标取永彻底消记跳可改夹空选仅解关盘原系绑移剪贴板停请求回根拖此快回车天内早放预安全提示磁盘选定开启关闭隐藏重新开启大小限制跳过超过单条消息最多截图资归议档论时数杂极给辑识环应库统纳规围确换无许语沟达惯忆级钩载周荐装测触拦绪状态简洁将续该经没联绝览';
   const ZH_TW_CHARS =
-    '與專業個為麼義樂習書買亂爭於雲亞產畝親僅從侖倉們價眾優夥會偉傳傷倫偽伯估伴伸似但位低住體何餘佛作你傭佩佳使例供依俠侶偵側僑侮侯侵便促俄俊俗保信倆儉修俯俱俸俺倍倒候借倡倦債值傾假偎偏做停健偶偷償傅儲催傲傻像僧儒兒允元兄充兆先光克免兌兔兒入全兩八公六蘭共關興兵其具典茲養兼獸內岡冊再冒寫軍農冠冬冰沖決況凍冷準涼凌減湊凜幾凡鳳憑凱擊函鑿刀分切刊刑劃列劉則剛創初判利刪別刮到制刷券剎刺刻劊劑剃削前劍剔剖剝劇剩剪副割剽剿力勸辦功加務劣動助努劫勵勁勞勢勃勇勉勳勒動勘募勤勾勿包匆匈化北匙匝匠匡匣匪匯匹區醫華協單賣南博佔卡盧衛印危即卻卵卷卸卿廠厄廳歷厲壓厭廁釐厚原廂厥廈廚廄去縣參又叉及友雙反發叔取受變敘叛疊口古句另只叫召叮可台史右葉號司嘆叻叼嘰籲吃各合吉同名後吏吐向嚇呂嗎君吝吞吟吠否吧噸吩含聽吭吮啟吱吳吵吸吹吻吼呀呂呃呆呈告吶嘸員嚦唄嘔咼嗆嗚呢呤呦周味呵呶呷呸呼命咀咁咂咄咆咋和咎詠咐咒咔咕咖嚨咚嚀噝咣吒咦咧咨咩咪咫咬咯咱咳鹹咽哀品哄哆哇哈哉哌響哎哏哐啞噠嘵嗶噦嘩噲哚嚌噥喲哥哦哩哪哭哮哲唓哺哼哽哿唁唆唇唉唏唐唑唔嘜嘮嗩唕喚唧唪唬售唯唱唳唷唼唾唿啁啃啄商啉啊啐啕啖啜啡啤啥啦嘖啪嗇囀嚙囉嘯噴嘍嚳囁呵嗔嗦嗨嗯噯嗷嗽嗾嘀嘁嘈嘉嘌嘎嘏噓嘛嘞嘟嘣嚶嘧嘬嘭囑嘲嘴嘶嘹嘻嘿噌噍噎噔噗噘噙嚕噢噤器噩噪噫噬噱噶噻噼嚅嚆嚎嚏擦囂不斷地顯設設置對話選擇進輸入創建緩暫頂條項刪復恢導敗請幫把這段得清檢總點講通懂比喻張圖畫風求先看當裡清錄單類建彙總讀主提煉核結辦排程定起草結題適大多深思複難長寫均穩綜步快兼顧速答輕效料讀歡回隨始今需做什從哪探聊新想有可問或交件要處務純零調任外掛或令按網頁支生及解戶動供附綁受控編整協創白名掛載服放行擴未開直作通專流知解梳討運獨淨並碼境除會顯啟用否聲稱倉執系終用能真誠虛構助指範嚴訪敏配自高險操前須徵同全認模意附切強享受護管重導出標取永徹底消記跳可改夾空選僅解關盤原系綁移剪貼板停請求回根拖此快回車天內早放預安全提示磁盤選定開啟關閉隱藏重新開啟大小限制跳過超過單條消息最多截圖';
+    '與專業個為麼義樂習書買亂爭於雲亞產畝親僅從侖倉們價眾優夥會偉傳傷倫偽伯估伴伸似但位低住體何餘佛作你傭佩佳使例供依俠侶偵側僑侮侯侵便促俄俊俗保信倆儉修俯俱俸俺倍倒候借倡倦債值傾假偎偏做停健偶偷償傅儲催傲傻像僧儒兒允元兄充兆先光克免兌兔兒入全兩八公六蘭共關興兵其具典茲養兼獸內岡冊再冒寫軍農冠冬冰沖決況凍冷準涼凌減湊凜幾凡鳳憑凱擊函鑿刀分切刊刑劃列劉則剛創初判利刪別刮到制刷券剎刺刻劊劑剃削前劍剔剖剝劇剩剪副割剽剿力勸辦功加務劣動助努劫勵勁勞勢勃勇勉勳勒動勘募勤勾勿包匆匈化北匙匝匠匡匣匪匯匹區醫華協單賣南博佔卡盧衛印危即卻卵卷卸卿廠厄廳歷厲壓厭廁釐厚原廂厥廈廚廄去縣參又叉及友雙反發叔取受變敘叛疊口古句另只叫召叮可台史右葉號司嘆叻叼嘰籲吃各合吉同名後吏吐向嚇呂嗎君吝吞吟吠否吧噸吩含聽吭吮啟吱吳吵吸吹吻吼呀呂呃呆呈告吶嘸員嚦唄嘔咼嗆嗚呢呤呦周味呵呶呷呸呼命咀咁咂咄咆咋和咎詠咐咒咔咕咖嚨咚嚀噝咣吒咦咧咨咩咪咫咬咯咱咳鹹咽哀品哄哆哇哈哉哌響哎哏哐啞噠嘵嗶噦嘩噲哚嚌噥喲哥哦哩哪哭哮哲唓哺哼哽哿唁唆唇唉唏唐唑唔嘜嘮嗩唕喚唧唪唬售唯唱唳唷唼唾唿啁啃啄商啉啊啐啕啖啜啡啤啥啦嘖啪嗇囀嚙囉嘯噴嘍嚳囁呵嗔嗦嗨嗯噯嗷嗽嗾嘀嘁嘈嘉嘌嘎嘏噓嘛嘞嘟嘣嚶嘧嘬嘭囑嘲嘴嘶嘹嘻嘿噌噍噎噔噗噘噙嚕噢噤器噩噪噫噬噱噶噻噼嚅嚆嚎嚏擦囂不斷地顯設設置對話選擇進輸入創建緩暫頂條項刪復恢導敗請幫把這段得清檢總點講通懂比喻張圖畫風求先看當裡清錄單類建彙總讀主提煉核結辦排程定起草結題適大多深思複難長寫均穩綜步快兼顧速答輕效料讀歡回隨始今需做什從哪探聊新想有可問或交件要處務純零調任外掛或令按網頁支生及解戶動供附綁受控編整協創白名掛載服放行擴未開直作通專流知解梳討運獨淨並碼境除會顯啟用否聲稱倉執系終用能真誠虛構助指範嚴訪敏配自高險操前須徵同全認模意附切強享受護管重導出標取永徹底消記跳可改夾空選僅解關盤原系綁移剪貼板停請求回根拖此快回車天內早放預安全提示磁盤選定開啟關閉隱藏重新開啟大小限制跳過超過單條消息最多截圖資歸議檔論時數雜極給輯識環應庫統納規圍確換無許語溝達慣憶級鉤載週薦裝測觸攔緒狀態簡潔將續該經沒聯絕覽';
 
   const ZH_TW_CHAR_MAP = new Map();
   for (let i = 0; i < Math.min(ZH_CN_CHARS.length, ZH_TW_CHARS.length); i++) {
@@ -573,8 +592,22 @@
     }
   }
 
+  function isZhTwActive() {
+    if (activeUiLang === 'zh-TW') return true;
+    try {
+      if (typeof document !== 'undefined' && document.documentElement && typeof document.documentElement.getAttribute === 'function') {
+        const dl = document.documentElement.getAttribute('data-ag-cs-lang');
+        if (dl && normalizeLang(dl) === 'zh-TW') {
+          activeUiLang = 'zh-TW';
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
   function toZhTwUi(input) {
-    if (typeof input !== 'string' || !input || activeUiLang !== 'zh-TW') return input;
+    if (typeof input !== 'string' || !input || !isZhTwActive()) return input;
     let out = input;
     for (let i = 0; i < ZH_TW_PHRASE_PAIRS.length; i++) {
       const [cn, tw] = ZH_TW_PHRASE_PAIRS[i];
@@ -2733,12 +2766,28 @@
       return selectedModel;
     }
 
+    function resolveRunningSessionEffort(cid, modelObj) {
+      const ov = cid ? sessionModelOverrides.get(cid) : null;
+      if (ov && ov.effort) return ov.effort;
+      const trig = document.querySelector('#antigravity\\.agentSidePanelInputBox [data-testid="model-selector-trigger"]');
+      const txt = (trig && (trig.getAttribute('aria-label') || trig.textContent) || '').trim();
+      const m = txt.match(/\b(XHigh|Extra\s+High|High|Medium|Low)\b/i);
+      if (m) {
+        const parsed = normalizeEffortTier(m[1]);
+        if (parsed) return parsed;
+      }
+      return (modelObj && modelObj.defaultEffort) || selectedEffort || 'High';
+    }
+
     function openModelMenu(anchorEl, opts) {
+      getCurrentLang();
       refreshLiveGeminiModels();
       const isRunning = Boolean(opts && opts.runningSession);
       const runningCid = isRunning && typeof opts.cascadeId === 'string' ? opts.cascadeId : '';
       const models = liveGeminiModels && liveGeminiModels.length ? liveGeminiModels : DEFAULT_GEMINI_MODELS;
       const currentModelId = isRunning ? resolveRunningSessionModelId(runningCid) : selectedModel;
+      const curObj = models.find((x) => x.id === currentModelId) || models[0];
+      const currentEffort = isRunning ? resolveRunningSessionEffort(runningCid, curObj) : selectedEffort;
       const isEn = getCurrentLang() === 'en';
       const pop = el('div', 'ag-prism-sidebar-popover ag-prism-model-popover');
       pop.setAttribute('data-testid', isRunning ? 'prism-chat-running-model-menu' : 'prism-chat-home-model-menu');
@@ -2746,9 +2795,7 @@
         el(
           'div',
           'ag-prism-menu-note',
-          isRunning
-            ? isEn ? 'Gemini Models' : 'Gemini 模型'
-            : isEn ? 'Gemini Models' : 'Gemini 模型'
+          isEn ? 'Gemini Models' : 'Gemini 模型'
         )
       );
 
@@ -2779,8 +2826,11 @@
 
         opt.addEventListener('click', (e) => {
           e.stopPropagation();
+          const allowed = Array.isArray(m.efforts) && m.efforts.length ? m.efforts : ['Low', 'Medium', 'High'];
           if (isRunning) {
-            const eff = m.defaultEffort || (m.id.includes('3.8') ? 'Medium' : 'High');
+            const eff = allowed.includes(currentEffort)
+              ? currentEffort
+              : m.defaultEffort || (m.id.includes('3.8') ? 'Medium' : 'High');
             const modelEnum = resolveModelEnum(m.id, eff);
             selectedModel = m.id;
             selectedEffort = eff;
@@ -2799,7 +2849,6 @@
             showToast(`已切换为 ${m.id}`);
           } else {
             selectedModel = m.id;
-            const allowed = Array.isArray(m.efforts) && m.efforts.length ? m.efforts : ['Low', 'Medium', 'High'];
             if (!allowed.includes(selectedEffort)) {
               selectedEffort = m.defaultEffort || allowed[allowed.length - 1] || 'High';
             }
@@ -2810,31 +2859,45 @@
         pop.appendChild(opt);
       }
 
-      if (!isRunning) {
-        pop.appendChild(el('div', 'ag-prism-menu-sep'));
-        pop.appendChild(el('div', 'ag-prism-menu-note', isEn ? 'Thinking Effort' : '思考强度'));
+      pop.appendChild(el('div', 'ag-prism-menu-sep'));
+      pop.appendChild(el('div', 'ag-prism-menu-note', isEn ? 'Thinking Effort' : '思考强度'));
 
-        const curObj = models.find((x) => x.id === selectedModel) || models[0];
-        const allowedEfforts = Array.isArray(curObj.efforts) && curObj.efforts.length ? curObj.efforts : ['Low', 'Medium', 'High'];
-        const row = el('div', 'ag-prism-effort-pills');
-        row.style.gridTemplateColumns = `repeat(${allowedEfforts.length}, minmax(0, 1fr))`;
+      const allowedEfforts = Array.isArray(curObj.efforts) && curObj.efforts.length ? curObj.efforts : ['Low', 'Medium', 'High'];
+      const row = el('div', 'ag-prism-effort-pills');
+      row.style.gridTemplateColumns = `repeat(${allowedEfforts.length}, minmax(0, 1fr))`;
 
-        for (let i = 0; i < CHAT_EFFORT_TIERS.length; i++) {
-          const tier = CHAT_EFFORT_TIERS[i];
-          if (!allowedEfforts.includes(tier.id)) continue;
-          const b = el('button', 'ag-prism-effort-pill', isEn ? tier.id : tier.fullLabel);
-          b.type = 'button';
-          b.setAttribute('data-active', selectedEffort === tier.id ? '1' : '0');
-          b.addEventListener('click', (e) => {
-            e.stopPropagation();
-            selectedEffort = tier.id;
+      for (let i = 0; i < CHAT_EFFORT_TIERS.length; i++) {
+        const tier = CHAT_EFFORT_TIERS[i];
+        if (!allowedEfforts.includes(tier.id)) continue;
+        const b = el('button', 'ag-prism-effort-pill', isEn ? tier.id : tier.fullLabel);
+        b.type = 'button';
+        b.setAttribute('data-active', currentEffort === tier.id ? '1' : '0');
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectedEffort = tier.id;
+          if (isRunning) {
+            const modelEnum = resolveModelEnum(curObj.id, tier.id);
+            if (runningCid && typeof modelEnum === 'number') {
+              setBoundedMapEntry(sessionModelOverrides, runningCid, { modelId: curObj.id, effort: tier.id, modelEnum });
+              if (host.store && typeof host.store.dispatch === 'function') {
+                try {
+                  host.store.dispatch({
+                    type: 'modelSelection/modelPicked',
+                    payload: { conversationId: runningCid, model: modelEnum },
+                  });
+                } catch {}
+              }
+            }
+            closePopover();
+            showToast(`已切换为 ${curObj.id} · ${toZhTwUi(tier.label)}`);
+          } else {
             closePopover();
             renderChatHome();
-          });
-          row.appendChild(b);
-        }
-        pop.appendChild(row);
+          }
+        });
+        row.appendChild(b);
       }
+      pop.appendChild(row);
       mountPopover(pop, anchorEl, true);
     }
 
@@ -3026,15 +3089,15 @@
         pinBtn.appendChild(makeMonoSvg('pin', 14));
         const renameBtn = el('button', 'ag-prism-chat-topbar-btn');
         renameBtn.type = 'button';
-        renameBtn.title = '重命名对话';
+        renameBtn.title = toZhTwUi('重命名对话');
         renameBtn.appendChild(makeMonoSvg('edit', 13.5));
         const expBtn = el('button', 'ag-prism-chat-topbar-btn');
         expBtn.type = 'button';
-        expBtn.title = '导出为 Markdown';
+        expBtn.title = toZhTwUi('导出为 Markdown');
         expBtn.appendChild(makeMonoSvg('download', 13.5));
         const newBtn = el('button', 'ag-prism-chat-topbar-btn');
         newBtn.type = 'button';
-        newBtn.title = '新建对话';
+        newBtn.title = toZhTwUi('新建对话');
         newBtn.appendChild(makeMonoSvg('plus', 14.5));
 
         bar._refs = { pinBtn, renameBtn, expBtn, newBtn };
@@ -3074,7 +3137,10 @@
       bar._cid = activeCid;
       const item = findSidebarChatItemById(activeCid);
       bar._refs.pinBtn.setAttribute('data-active', item && item.pinned ? '1' : '0');
-      bar._refs.pinBtn.title = item && item.pinned ? '取消置顶' : '置顶对话';
+      bar._refs.pinBtn.title = toZhTwUi(item && item.pinned ? '取消置顶' : '置顶对话');
+      bar._refs.renameBtn.title = toZhTwUi('重命名对话');
+      bar._refs.expBtn.title = toZhTwUi('导出为 Markdown');
+      bar._refs.newBtn.title = toZhTwUi('新建对话');
     }
 
     function syncChatComposerChrome(scheduleRetry) {
@@ -3235,7 +3301,7 @@
         );
         const closeBtn = el('button', 'ag-prism-sb-icon-btn');
         closeBtn.type = 'button';
-        closeBtn.title = '关闭';
+        closeBtn.title = toZhTwUi('关闭');
         closeBtn.appendChild(makeMonoSvg('x', 14));
         closeBtn.addEventListener('click', () => close());
         head.appendChild(headText);
@@ -3579,7 +3645,7 @@
         chip.appendChild(el('span', 'ag-prism-att-name', att.name));
         const rm = el('button', 'ag-prism-att-rm');
         rm.type = 'button';
-        rm.title = '移除附件';
+        rm.title = toZhTwUi('移除附件');
         rm.appendChild(makeMonoSvg('x', 11));
         rm.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -3948,7 +4014,7 @@
         if (badge && badge.targetMode === targetMode) {
           dotEl.style.display = '';
           dotEl.setAttribute('data-status', badge.status);
-          dotEl.title = `${label} 后台任务 (${badge.count})`;
+          dotEl.title = toZhTwUi(`${label} 后台任务 (${badge.count})`);
         } else {
           dotEl.style.display = 'none';
         }
@@ -3971,7 +4037,8 @@
         const newBtn = el('button', 'ag-prism-sb-new-btn');
         newBtn.type = 'button';
         newBtn.appendChild(makeMonoSvg('plus', 14));
-        newBtn.appendChild(el('span', '', '新建对话'));
+        const newBtnLbl = el('span', '', '新建对话');
+        newBtn.appendChild(newBtnLbl);
         newBtn.addEventListener('click', () => {
           greetingSeed = Math.floor(Math.random() * 100);
           void callDaemonRpc('navigate', { mode: 'chat', view: '/', navRev: snapshot.navRev });
@@ -3981,7 +4048,7 @@
 
         const searchBtn = el('button', 'ag-prism-sb-icon-btn');
         searchBtn.type = 'button';
-        searchBtn.title = '搜索对话';
+        searchBtn.title = toZhTwUi('搜索对话');
         searchBtn.appendChild(makeMonoSvg('search', 14));
         searchBtn.addEventListener('click', () => {
           searchOpen = !searchOpen;
@@ -4000,7 +4067,7 @@
 
         const batchBtn = el('button', 'ag-prism-sb-icon-btn');
         batchBtn.type = 'button';
-        batchBtn.title = '多选批量管理';
+        batchBtn.title = toZhTwUi('多选批量管理');
         batchBtn.setAttribute('data-testid', 'prism-sb-batch-toggle');
         batchBtn.appendChild(makeMonoSvg('checklist', 14));
         batchBtn.addEventListener('click', () => {
@@ -4045,7 +4112,7 @@
         const batchCountLbl = el('span', '', '已选 0 项');
         const batchExitBtn = el('button', 'ag-prism-sb-act-btn');
         batchExitBtn.type = 'button';
-        batchExitBtn.title = '退出多选';
+        batchExitBtn.title = toZhTwUi('退出多选');
         batchExitBtn.appendChild(makeMonoSvg('x', 13));
         batchExitBtn.addEventListener('click', () => {
           multiSelectMode = false;
@@ -4130,7 +4197,8 @@
         policyBtn.type = 'button';
         policyBtn.setAttribute('data-testid', 'prism-sb-policy-btn');
         policyBtn.appendChild(makeMonoSvg('sliders', 13.5));
-        policyBtn.appendChild(el('span', 'ag-prism-sb-row-title', '能力与扩展'));
+        const policyTitleEl = el('span', 'ag-prism-sb-row-title', '能力与扩展');
+        policyBtn.appendChild(policyTitleEl);
         const policyCnt = el('span', 'ag-prism-sb-cnt', '');
         policyBtn.appendChild(policyCnt);
         policyBtn.addEventListener('click', () => {
@@ -4141,7 +4209,34 @@
 
         nav.insertBefore(pane, anchorAfterDock);
         host.chatPaneEl = pane;
-        host.chatPaneRefs = { list, searchWrap, searchInput, policyCnt, batchBtn, batchBar, batchCountLbl, bMove, bArch, bDel };
+        host.chatPaneRefs = {
+          list,
+          searchWrap,
+          searchInput,
+          policyCnt,
+          batchBtn,
+          batchBar,
+          batchCountLbl,
+          bMove,
+          bArch,
+          bDel,
+          newBtnLbl,
+          searchBtn,
+          batchExitBtn,
+          policyTitleEl,
+        };
+      }
+      if (host.chatPaneRefs) {
+        const cr = host.chatPaneRefs;
+        if (cr.newBtnLbl) cr.newBtnLbl.textContent = toZhTwUi('新建对话');
+        if (cr.searchBtn) cr.searchBtn.title = toZhTwUi('搜索对话');
+        if (cr.batchBtn) cr.batchBtn.title = toZhTwUi('多选批量管理');
+        if (cr.searchInput) cr.searchInput.placeholder = toZhTwUi('搜索 Chat 对话…');
+        if (cr.batchExitBtn) cr.batchExitBtn.title = toZhTwUi('退出多选');
+        if (cr.bMove) cr.bMove.textContent = toZhTwUi('移入');
+        if (cr.bArch) cr.bArch.textContent = toZhTwUi('归档');
+        if (cr.bDel) cr.bDel.textContent = toZhTwUi('删除');
+        if (cr.policyTitleEl) cr.policyTitleEl.textContent = toZhTwUi('能力与扩展');
       }
     }
 
@@ -4167,7 +4262,7 @@
         const inp = el('input', 'ag-prism-modal-input');
         inp.type = 'text';
         inp.value = initialValue || '';
-        inp.placeholder = placeholder || '输入新名称…';
+        inp.placeholder = toZhTwUi(placeholder || '输入新名称…');
         box.appendChild(inp);
         const submit = () => {
           const v = inp.value.trim();
@@ -4652,7 +4747,7 @@
       const refs = host.chatPaneRefs;
       refs.batchBar.style.display = multiSelectMode ? 'flex' : 'none';
       const n = selectedBatchIds.size;
-      refs.batchCountLbl.textContent = `已选 ${n} 项`;
+      refs.batchCountLbl.textContent = toZhTwUi(`已选 ${n} 项`);
       refs.bMove.disabled = n === 0;
       refs.bArch.disabled = n === 0;
       refs.bDel.disabled = n === 0;
@@ -4725,7 +4820,7 @@
       if (!multiSelectMode) {
         const moreBtn = el('button', 'ag-prism-sb-act-btn');
         moreBtn.type = 'button';
-        moreBtn.title = '更多操作';
+        moreBtn.title = toZhTwUi('更多操作');
         moreBtn.appendChild(makeMonoSvg('more', 13));
         moreBtn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -4754,7 +4849,7 @@
         .join(';');
       const archCount = Number(proj.archived?.totalCount ?? 0);
       const archSig = ((proj.archived && proj.archived.items) || []).map(fmtItem).join(';');
-      return `${dayKey}#${activeCid}#${q}#${multiSelectMode ? 1 : 0}#${selIds}#${inlineFolderOpen ? 1 : 0}#${inlineBoxOpen ? 1 : 0}#${archivedOpen ? 1 : 0}#${draggingCid || ''}#${kRootSig}#${kFoldersSig}#${sProjSig}#${archCount}:${archSig}`;
+      return `${activeUiLang}#${dayKey}#${activeCid}#${q}#${multiSelectMode ? 1 : 0}#${selIds}#${inlineFolderOpen ? 1 : 0}#${inlineBoxOpen ? 1 : 0}#${archivedOpen ? 1 : 0}#${draggingCid || ''}#${kRootSig}#${kFoldersSig}#${sProjSig}#${archCount}:${archSig}`;
     }
 
     function renderChatSidebarList() {
@@ -4797,7 +4892,7 @@
         kRight.appendChild(el('span', 'ag-prism-sb-cnt', String(kTotal)));
         const addF = el('button', 'ag-prism-sb-icon-btn');
         addF.type = 'button';
-        addF.title = '新建子文件夹';
+        addF.title = toZhTwUi('新建子文件夹');
         addF.appendChild(makeMonoSvg('plus', 12));
         addF.addEventListener('click', () => {
           inlineFolderOpen = !inlineFolderOpen;
@@ -4918,7 +5013,7 @@
           const fActs = el('div', 'ag-prism-sb-row-actions');
           const fNew = el('button', 'ag-prism-sb-act-btn');
           fNew.type = 'button';
-          fNew.title = '在此文件夹新建对话';
+          fNew.title = toZhTwUi('在此文件夹新建对话');
           fNew.appendChild(makeMonoSvg('plus', 12));
           fNew.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -4934,7 +5029,7 @@
           });
           const fMore = el('button', 'ag-prism-sb-act-btn');
           fMore.type = 'button';
-          fMore.title = '文件夹操作';
+          fMore.title = toZhTwUi('文件夹操作');
           fMore.appendChild(makeMonoSvg('more', 13));
           fMore.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -4962,7 +5057,7 @@
         sRight.appendChild(el('span', 'ag-prism-sb-cnt', String(sProjects.length)));
         const addBox = el('button', 'ag-prism-sb-icon-btn');
         addBox.type = 'button';
-        addBox.title = '新建工作文件夹';
+        addBox.title = toZhTwUi('新建工作文件夹');
         addBox.appendChild(makeMonoSvg('plus', 12));
         addBox.addEventListener('click', () => {
           inlineBoxOpen = !inlineBoxOpen;
@@ -5040,7 +5135,7 @@
             const pActs = el('div', 'ag-prism-sb-row-actions');
             const pNew = el('button', 'ag-prism-sb-act-btn');
             pNew.type = 'button';
-            pNew.title = '在此工作区新建对话';
+            pNew.title = toZhTwUi('在此工作区新建对话');
             pNew.appendChild(makeMonoSvg('plus', 12));
             pNew.addEventListener('click', (e) => {
               e.stopPropagation();
@@ -5056,7 +5151,7 @@
             });
             const pMore = el('button', 'ag-prism-sb-act-btn');
             pMore.type = 'button';
-            pMore.title = '工作区操作';
+            pMore.title = toZhTwUi('工作区操作');
             pMore.appendChild(makeMonoSvg('more', 13));
             pMore.addEventListener('click', (e) => {
               e.stopPropagation();
@@ -5127,6 +5222,7 @@
 
     function renderChatHome() {
       runGuarded(() => {
+        getCurrentLang();
         const shouldShow = Boolean(host.engaged && snapshot && snapshot.activeMode === 'chat' && snapshot.currentView === '/');
         const mainHost = resolveMainCanvasHost();
 
@@ -5260,7 +5356,7 @@
           const left = el('div', 'ag-prism-chat-bar-g');
           const plusBtn = el('button', 'ag-prism-sb-icon-btn');
           plusBtn.type = 'button';
-          plusBtn.title = '附加文件与选项';
+          plusBtn.title = toZhTwUi('附加文件与选项');
           plusBtn.appendChild(makeMonoSvg('plus', 15));
           plusBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -5339,9 +5435,10 @@
 
           const filesBtn = el('button', 'ag-prism-ghost-btn');
           filesBtn.type = 'button';
-          filesBtn.title = '预览或导入工作文件夹内的文件';
+          filesBtn.title = toZhTwUi('预览或导入工作文件夹内的文件');
           filesBtn.appendChild(makeMonoSvg('file', 13));
-          filesBtn.appendChild(el('span', '', '目录文件'));
+          const filesLbl = el('span', '', '目录文件');
+          filesBtn.appendChild(filesLbl);
           filesBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             openSparkFilesPopover(filesBtn, snapshot?.chatDraft?.sparkProjectId);
@@ -5383,7 +5480,7 @@
 
           container._refs = {
             aura, mark, eyeTxt, h1, wrap, attStrip, input, subSeg, kBtn, sBtn,
-            modelLbl, sendBtn, projLbl, fenceLbl, filesBtn, starterRow,
+            modelLbl, sendBtn, projLbl, fenceLbl, filesBtn, filesLbl, plusBtn, starterRow,
           };
           if (host.chatHomeHostEl && host.chatHomeHostPrevPos !== null) {
             host.chatHomeHostEl.style.position = host.chatHomeHostPrevPos;
@@ -5466,6 +5563,9 @@
         const proj = (snapshot.sparkProjects || []).find((p) => p.id === snapshot.chatDraft?.sparkProjectId) || null;
         refs.projLbl.textContent = proj ? proj.name : toZhTwUi('工作文件夹');
         refs.fenceLbl.textContent = toZhTwUi(proj && proj.sharedWithCode ? '共享目录 · 已保护' : '安全保护');
+        if (refs.plusBtn) refs.plusBtn.title = toZhTwUi('附加文件与选项');
+        if (refs.filesBtn) refs.filesBtn.title = toZhTwUi('预览或导入工作文件夹内的文件');
+        if (refs.filesLbl) refs.filesLbl.textContent = toZhTwUi('目录文件');
 
         // 淡雅起手灵感胶囊（按 Pure / Spark 切换，可一键关闭持久化）
         const policy = getEffectiveChatPolicy();
@@ -5632,6 +5732,7 @@
 
     function renderAll() {
       if (destroyed) return;
+      getCurrentLang();
       renderSidebar();
       renderChatHome();
       syncChatComposerChrome(true);
@@ -5842,6 +5943,7 @@
       if (destroyed) return;
       if (cfg && typeof cfg === 'object') currentCfg = { ...cfg };
       if (meta && typeof meta === 'object') currentMeta = { ...meta };
+      getCurrentLang();
       if (currentCfg.sidebarStudio !== 'on') {
         if (snapshot && snapshot.activeMode === 'chat') {
           navigateHostRoute('/');

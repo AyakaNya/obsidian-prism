@@ -177,6 +177,7 @@
     sidebarRestyle: S_T,
     sidebarCompact: S_F,
     sidebarNavFold: mkSp(['off', 'on']),
+    thoughtCollapse: mkSp(['auto', 'keep']),
     thoughtTranslate: mkSp(['off', 'machine', 'ai']),
     thoughtTrigger: mkSp(['preload', 'expand']),
     thoughtView: mkSp(['immersive', 'bilingual']),
@@ -190,6 +191,7 @@
     autoUpdate: S_OFF,
     updateChannel: mkSp(['stable', 'beta']),
     autoArchiveOnExit: S_F,
+    themeChatCloudSync: S_T,
   });
 
   const SCENE_PRESETS = O.freeze({
@@ -202,7 +204,7 @@
       homeLayout: 'classic',
       homeRipple: false,
       convRipple: 'off',
-      mascot: 'r:k1,l1',
+      mascot: 'r:k1,l1,z1',
       sidebarCompact: false,
       smoothCaret: true,
       ambientIntensity: '0',
@@ -227,24 +229,24 @@
       .replace(/\b(?:sk|rk|pk|ak|AIza)[A-Za-z0-9_\-]{10,}\b/g, '[REDACTED]')
       .replace(/\bBearer\s+[A-Za-z0-9._\-]{10,}\b/gi, 'Bearer [REDACTED]');
 
-  const MASCOT_SPECIES = O.freeze(['c', 'k', 'd', 'w', 'l']);
+  const MASCOT_SPECIES = O.freeze(['c', 'k', 'd', 'w', 'l', 'z']);
   const MASCOT_PRESETS = O.freeze({
-    off: O.freeze({ c: 0, k: 0, d: 0, w: 0, l: 0, minis: false }),
-    crab: O.freeze({ c: 1, k: 1, d: 0, w: 0, l: 0, minis: false }),
-    dual: O.freeze({ c: 1, k: 1, d: 0, w: 0, l: 0, minis: false }),
-    minis: O.freeze({ c: 1, k: 1, d: 0, w: 0, l: 0, minis: true }),
-    quad: O.freeze({ c: 1, k: 1, d: 1, w: 1, l: 0, minis: false }),
-    'quad-minis': O.freeze({ c: 1, k: 1, d: 1, w: 1, l: 0, minis: true }),
+    off: O.freeze({ c: 0, k: 0, d: 0, w: 0, l: 0, z: 0, minis: false }),
+    crab: O.freeze({ c: 1, k: 1, d: 0, w: 0, l: 0, z: 0, minis: false }),
+    dual: O.freeze({ c: 1, k: 1, d: 0, w: 0, l: 0, z: 0, minis: false }),
+    minis: O.freeze({ c: 1, k: 1, d: 0, w: 0, l: 0, z: 0, minis: true }),
+    quad: O.freeze({ c: 1, k: 1, d: 1, w: 1, l: 0, z: 0, minis: false }),
+    'quad-minis': O.freeze({ c: 1, k: 1, d: 1, w: 1, l: 0, z: 0, minis: true }),
   });
 
   const parseMascotSpec = (raw) => {
-    if (raw === false) return { c: 0, k: 0, d: 0, w: 0, l: 0, minis: false };
+    if (raw === false) return { c: 0, k: 0, d: 0, w: 0, l: 0, z: 0, minis: false };
     if (typeof raw !== 'string') return null;
     if (hasOwn(MASCOT_PRESETS, raw)) return { ...MASCOT_PRESETS[raw] };
     if (!raw.startsWith('r:') || raw.length <= 2) return null;
-    const m = /^r:(?:([ckdwl][0-4](?:,[ckdwl][0-4])*)?(\+m)?)$/.exec(raw);
+    const m = /^r:(?:([ckdwlz][0-4](?:,[ckdwlz][0-4])*)?(\+m)?)$/.exec(raw);
     if (!m) return null;
-    const out = { c: 0, k: 0, d: 0, w: 0, l: 0, minis: Boolean(m[2]) };
+    const out = { c: 0, k: 0, d: 0, w: 0, l: 0, z: 0, minis: Boolean(m[2]) };
     const seen = new Set();
     let rawTotal = 0;
     let total = 0;
@@ -260,23 +262,23 @@
         total += clamped;
       }
     }
-    return rawTotal > 6 || total > 5 ? null : out;
+    return rawTotal > 6 || total > 6 ? null : out;
   };
 
   const encodeMascotSpec = (spec) => {
     const src = isObj(spec) ? spec : {};
-    const counts = { c: 0, k: 0, d: 0, w: 0, l: 0 };
-    let rem = 5;
+    const counts = { c: 0, k: 0, d: 0, w: 0, l: 0, z: 0 };
+    let rem = 6;
     for (const sp of MASCOT_SPECIES) {
       const n = Math.max(0, Math.min(1, Math.min(rem, Number(src[sp]) > 0 ? 1 : 0)));
       counts[sp] = n;
       rem -= n;
     }
     const minis = Boolean(src.minis);
-    const total = counts.c + counts.k + counts.d + counts.w + counts.l;
+    const total = counts.c + counts.k + counts.d + counts.w + counts.l + counts.z;
     if (total === 0 && !minis) return 'off';
-    if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0 && counts.l === 0) return minis ? 'minis' : 'crab';
-    if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1 && counts.l === 0) return minis ? 'quad-minis' : 'quad';
+    if (counts.c === 1 && counts.k === 1 && counts.d === 0 && counts.w === 0 && counts.l === 0 && counts.z === 0) return minis ? 'minis' : 'crab';
+    if (counts.c === 1 && counts.k === 1 && counts.d === 1 && counts.w === 1 && counts.l === 0 && counts.z === 0) return minis ? 'quad-minis' : 'quad';
     const parts = [];
     for (const sp of MASCOT_SPECIES) if (counts[sp] > 0) parts.push(sp + counts[sp]);
     return 'r:' + parts.join(',') + (minis ? '+m' : '');
@@ -296,6 +298,7 @@
       dragon: decPal('#d7dfef;s95a1c2;o1e1936;Oc6cce6;qbfbde6;Qe2e1f7;Uedf1fc;Ta3a5d6;X818ab2', SH),
       whale: decPal('#4e6fff;s3450cf;o141413;O4e6fff;q86a2ff;Qc7d6ff;Ue5f0ff;Ta8cbff;X38bdf8', SH),
       lechat: decPal('#ff7a1a;sd94e14;o141413;Off7a1a;qff9824;Qffe49e;Uffb82e;T241c19;X3d2b24', SH),
+      zicheng: decPal('#f7f5f0;sc8c2ba;oeab308;X2563eb;Of7f5f0;qe2dcd3;Qf5f2ec;Uffffff;T8f867c', SH),
       cowboy: decPal('#d97757;sbf684c;o141413;H8b5e3c;Ra6744e;hrgba(20, 20, 19, 0.18)'),
       shades: decPal('#e0896b;sc16f53;o141413;G141413;g6d778a;wffffff;hrgba(20, 20, 19, 0.18)'),
       wizard: decPal('#8a74cf;s6a56aa;o141413;M5c4b9e;ye8b64a;bcfe3ee;hrgba(20, 20, 19, 0.18)'),
@@ -355,10 +358,17 @@
       body: decGrp('stand=2,1:2#2Us2Us2U2#/12#*2/s10#s/4#4U4#/2s2#4U2#2s/12#;loaf=1,4:.2#2U4s2U2#./14#/s12#s/5#4U5#/2s3#4U3#2s/14#;squash=1,2:.2#2U4s2U2#./14#*2/s12#s/5#4U5#/2s3#4U3#2s/14#;turnL=2,1:2#2Us2Us2U#s/11#s*2/s10#s/3#4U3#s/2s#4U2#2s/11#s'),
       tail: decGrp('up=14,3:.T/.#*2/s#;sway=14,3:.#*2/sT/#.;loaf=14,6:.#T/s#;puff=14,2:.T/##/s#/##/#.'),
     };
+    const Z = {
+      ears: L.ears,
+      body: decGrp('stand=2,1:2#s#T2#T#s2#/12#*2/s10#s/12#/s2#6U2#s/12#;loaf=1,4:.2#s#T2#T#s2#./14#/s12#s/4#6U4#/s3#6U3#s/14#;squash=1,2:.2#s#T2#T#s2#./14#*2/s12#s/4#6U4#/s3#6U3#s/14#;turnL=2,1:2#s#T2#T#2s/11#s*2/s10#s/3#6U2#s/s2#6U#2s/11#s'),
+      eyes: decGrp('open=4,3:o6.X*2;half=4,4:o6.X;shut=3,4:oo6.XX;happy=3,3:.o6.X./o.o4.X.X;loafShut=3,6:oo6.XX;loafHalf=4,6:o6.X'),
+      tail: decGrp('up=14,3:.T/.s/.#/##;sway=14,3:.T/.#/s#/#.;loaf=14,6:.sT/s#;puff=14,2:.T/#s/s#/##/#.'),
+    };
     const FX = decGrp(
       'dragonFlame0=14,4:.f./YVf/.f.;dragonFlame1=14,3:..fF./.YVfF/VYYfF/.fF..;dragonFlame2=14,3:3.fF./.fYVfF/VYYfF./..fF..;' +
       'whaleSpout0=5,-3:.B..B./..AA../..BA../..AA..;whaleSpout1=4,-5:.B4.B./B.A..A.B/..AB.BA./3.AA3./3.BA3./3.AA3.;whaleSpout2=3,-5:..B4.B../.A6.A./B3.BB3.B/4.AA4./.B..BA..B./4.AA4.;' +
       'croissant0=11,4:.f3Yf./fY3VYf/fn.n.nf;croissant1=11,4:..2Yf./.Y2VYf/..n..nf;' +
+      'shrimp0=11,4:..fFF../.fYVYf./fYV.nFf/..3f..;shrimp1=11,3:..fFF../.fYVYf./..V.nFf/3.ff..;' +
       'z1=10,-6:4k/..k./.k../4k;z2=12,-9:3k/.k./3k;spark=5,-8:..y..*2/5y/..y..*2;heart=5,-7:.r.r./5r/.3r./..r..;' +
       'fireSpark0=5,-8:..Y../f3.V/..f..;fireSpark1=5,-9:.V..f/..Y../f4.;fireSpark2=5,-8:f..Y./4.V/.f3.'
     );
@@ -422,6 +432,13 @@
           else if (poseKey === 'happy') layers.push(m ? L.tail.puff : L.tail.up, C.legs.stand, L.body.stand, m ? L.ears.nod : L.ears.stand, K.eyes.happy, K.paws.cheer);
           else if (poseKey === 'wave') layers.push(L.tail.up, C.legs.stand, L.body.stand, L.ears.nod, K.eyes.happy, m ? K.paws.upR : K.paws.none);
           else layers.push(m ? L.tail.sway : L.tail.up, C.legs.stand, L.body.stand, L.ears.stand, opts.blink ? K.eyes.half : K.eyes.open);
+        } else if (kind === 'zicheng') {
+          if (poseKey === 'sleep') layers.push(Z.tail.loaf, Z.body.loaf, Z.ears.loaf, Z.eyes.loafShut);
+          else if (poseKey === 'tilt') layers.push(Z.tail.up, C.legs.stand, Z.body.turnL, Z.ears.nod, Z.eyes.half);
+          else if (poseKey === 'eatShrimp') layers.push(m ? Z.tail.puff : Z.tail.sway, m ? C.legs.tuck : C.legs.stand, m ? Z.body.squash : Z.body.stand, m ? Z.ears.nod : Z.ears.stand, Z.eyes.happy, K.paws.cheer, FX['shrimp' + (m ? 1 : 0)]);
+          else if (poseKey === 'happy') layers.push(m ? Z.tail.puff : Z.tail.up, C.legs.stand, Z.body.stand, m ? Z.ears.nod : Z.ears.stand, Z.eyes.happy, K.paws.cheer);
+          else if (poseKey === 'wave') layers.push(Z.tail.up, C.legs.stand, Z.body.stand, Z.ears.nod, Z.eyes.happy, m ? K.paws.upR : K.paws.none);
+          else layers.push(m ? Z.tail.sway : Z.tail.up, C.legs.stand, Z.body.stand, Z.ears.stand, opts.blink ? Z.eyes.half : Z.eyes.open);
         } else {
           if (poseKey === 'sleep') layers.push(W.tail.loaf, W.body.loaf, { ...K.eyes.loafShut, oy: 5 }, W.paws.tuck);
           else if (poseKey === 'tilt') layers.push(W.tail.up, W.body.turnL, K.eyes.half, W.paws.flap);
@@ -460,11 +477,12 @@
 
   // ── 《八方旅人》黑曜石星辰酒馆 HD-2D WebGL2 3D 视差选角子面板（仅打开且可见时渲染，关闭/隐藏/脱离 DOM 立即停帧并 0×0 + WEBGL_lose_context 回收显存）──
   const STAGE_SLOTS = O.freeze([
-    { key: 'c', toggleId: 'c', kind: 'clawd', cx: 56, i18nKey: 'mascotSpeciesCrab', fb: 'Claude Crab', hex: '#d97757', rayA: '249,115,22', rayB: '251,146,60', cheerPose: 'happy', cheerSym: 'spark' },
-    { key: 'k', toggleId: 'k', kind: 'cat', cx: 148, i18nKey: 'mascotSpeciesCat', fb: 'Gemini Cat', hex: '#947fd6', rayA: '139,92,246', rayB: '56,189,248', cheerPose: 'happy', cheerSym: 'heart' },
-    { key: 'd', toggleId: 'd', kind: 'dragon', cx: 240, i18nKey: 'mascotSpeciesDragon', fb: 'GPT Dragon', hex: '#d7dfef', rayA: '226,232,240', rayB: '45,212,191', cheerPose: 'dragonFlame', cheerSym: 'spark' },
-    { key: 'w', toggleId: 'w', kind: 'whale', cx: 332, i18nKey: 'mascotSpeciesWhale', fb: 'DeepSeek Whale', hex: '#4e6fff', rayA: '59,130,246', rayB: '56,189,248', cheerPose: 'whaleSpout', cheerSym: 'spark' },
-    { key: 'l', toggleId: 'l', kind: 'lechat', cx: 424, i18nKey: 'mascotSpeciesLechat', fb: 'Mistral Le Chat', hex: '#ff7a1a', rayA: '255,122,26', rayB: '251,191,36', cheerPose: 'eatCroissant', cheerSym: 'heart' },
+    { key: 'c', toggleId: 'c', kind: 'clawd', cx: 48, i18nKey: 'mascotSpeciesCrab', fb: 'Claude Crab', hex: '#d97757', rayA: '249,115,22', rayB: '251,146,60', cheerPose: 'happy', cheerSym: 'spark' },
+    { key: 'k', toggleId: 'k', kind: 'cat', cx: 126, i18nKey: 'mascotSpeciesCat', fb: 'Gemini Cat', hex: '#947fd6', rayA: '139,92,246', rayB: '56,189,248', cheerPose: 'happy', cheerSym: 'heart' },
+    { key: 'd', toggleId: 'd', kind: 'dragon', cx: 204, i18nKey: 'mascotSpeciesDragon', fb: 'GPT Dragon', hex: '#d7dfef', rayA: '226,232,240', rayB: '45,212,191', cheerPose: 'dragonFlame', cheerSym: 'spark' },
+    { key: 'w', toggleId: 'w', kind: 'whale', cx: 282, i18nKey: 'mascotSpeciesWhale', fb: 'DeepSeek Whale', hex: '#4e6fff', rayA: '59,130,246', rayB: '56,189,248', cheerPose: 'whaleSpout', cheerSym: 'spark' },
+    { key: 'l', toggleId: 'l', kind: 'lechat', cx: 360, i18nKey: 'mascotSpeciesLechat', fb: 'Mistral Le Chat', hex: '#ff7a1a', rayA: '255,122,26', rayB: '251,191,36', cheerPose: 'eatCroissant', cheerSym: 'heart' },
+    { key: 'z', toggleId: 'z', kind: 'zicheng', cx: 438, i18nKey: 'mascotSpeciesZicheng', fb: 'Zicheng Cat', hex: '#f7f5f0', rayA: '234,179,8', rayB: '59,130,246', cheerPose: 'eatShrimp', cheerSym: 'heart' },
     { key: 'm', toggleId: 'minis', kind: 'minis', cx: 566, i18nKey: 'mascotStageMinisSlot', fb: 'Mini Crab Corner', hex: '#fb923c', rayA: '251,146,60', rayB: '245,158,11', cheerPose: 'trick', cheerSym: 'spark' },
   ]);
 
@@ -618,13 +636,13 @@
     let canvas = createStageCanvas();
     ap(stageFrame, canvas);
 
-    // 3. 与 6 站位严格垂直对齐的 6 张精致像素阵营名牌开关按钮
+    // 3. 与 7 站位严格垂直对齐的 7 张精致像素阵营名牌开关按钮
     const dockGrid = mk('div');
     sa(dockGrid, 'data-ag-stage-dock', '1');
     if (dockGrid.style) {
       O.assign(dockGrid.style, {
         display: 'grid',
-        gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
         gap: '6px',
       });
     }
@@ -780,7 +798,7 @@
           borderRadius: '2px',
           background: sl.hex,
           flexShrink: '0',
-          boxShadow: sl.key === 'd' ? 'inset 0 0 0 1px rgba(30,25,54,0.32)' : 'none',
+          boxShadow: sl.key === 'd' || sl.key === 'z' ? 'inset 0 0 0 1px rgba(30,25,54,0.32)' : 'none',
         });
       }
       const nameEl = mk('span', '');
@@ -848,12 +866,12 @@
       const u = uiText(l) || {};
       const r = readRoster();
       const encoded = encodeMascotSpec(r);
-      const total = r.c + r.k + r.d + r.w + (r.l || 0);
+      const total = r.c + r.k + r.d + r.w + (r.l || 0) + (r.z || 0);
       sa(view, 'data-mascot-val', encoded);
       backBtn.textContent = `← ${u.mascotStageBackBtn || 'Back to Settings'}`;
       titleEl.textContent = u.mascotStageTitle || 'Mascot Casting Stage';
       hintEl.textContent = u.mascotStageHint || 'Click mascots in the tavern or badges below to toggle spotlights; move pointer for 3D parallax';
-      countPill.textContent = String(u.mascotRosterCount || 'Main {n}/5').replace('{n}', String(total));
+      countPill.textContent = String(u.mascotRosterCount || 'Main {n}/6').replace('{n}', String(total));
       sa(countPill, 'data-total', total);
       if (countPill.style) countPill.style.borderColor = total >= 4 ? 'var(--ag-cs-accent, #60a5fa)' : 'var(--ag-cs-border, rgba(148,163,184,0.26))';
       minisPill.textContent = `${u.mascotRosterMinis || '+3 Mini Crabs'}: ${r.minis ? (u.mascotStageActiveOn || 'On Stage') : (u.mascotStageActiveOff || 'Resting')}`;
@@ -2058,6 +2076,14 @@
         if (act) sa(btn, 'data-active', '1');
         else ra(btn, 'data-active');
       });
+      const themeChatSyncOn = effVal('themeChatCloudSync', l) !== false;
+      qa(rootEl, 'button[data-ag-cs-theme-chat-sync]').forEach((btn) => {
+        const isOnBtn = ga(btn, 'data-ag-cs-theme-chat-sync') === 'on';
+        const act = isOnBtn === themeChatSyncOn;
+        sa(btn, 'aria-pressed', act);
+        if (act) sa(btn, 'data-active', '1');
+        else ra(btn, 'data-active');
+      });
       for (const [pBtn, m] of dirtyPresets) {
         pBtn.__agAct = m;
         sa(pBtn, 'data-active', m ? '1' : '0');
@@ -2125,12 +2151,12 @@
       const mRosterEl = qs(rootEl, '[data-ag-mascot-roster="1"]');
       if (mRosterEl) {
         const mCur = effVal('mascot', l);
-        const r = parseMascotSpec(mCur) || { c: 1, k: 1, d: 0, w: 0, l: 0, minis: false };
-        const total = r.c + r.k + r.d + r.w + (r.l || 0);
+        const r = parseMascotSpec(mCur) || { c: 1, k: 1, d: 0, w: 0, l: 0, z: 0, minis: false };
+        const total = r.c + r.k + r.d + r.w + (r.l || 0) + (r.z || 0);
         sa(mRosterEl, 'data-mascot-val', encodeMascotSpec(r));
         const rCntEl = qs(mRosterEl, '[data-ag-mascot-summary-count]');
         if (rCntEl) {
-          const ct = String(u.mascotRosterCount || 'Main {n}/5').replace('{n}', String(total));
+          const ct = String(u.mascotRosterCount || 'Main {n}/6').replace('{n}', String(total));
           if (rCntEl[K_TC] !== ct) rCntEl[K_TC] = ct;
           sa(rCntEl, 'data-total', total);
         }
@@ -2147,6 +2173,7 @@
             ['d', '#d7dfef', u.mascotSpeciesDragon || 'GPT Dragon', r.d],
             ['w', '#4e6fff', u.mascotSpeciesWhale || 'DeepSeek Whale', r.w],
             ['l', '#ff7a1a', u.mascotSpeciesLechat || 'Mistral Le Chat', r.l],
+            ['z', '#f7f5f0', u.mascotSpeciesZicheng || 'Zicheng Cat', r.z],
           ].filter((x) => x[3] > 0);
           const chipSig = `${spInfo.map((x) => x[0] + x[3]).join(',')}|${r.minis ? 1 : 0}|${l}`;
           if (chipsEl.__agChipSig !== chipSig) {
@@ -2569,6 +2596,7 @@
             RS('sidebarRestyle', onOff, 'Sidebar'),
             RS('sidebarCompact', onOff),
             R('sidebarNavFold', 'setSidebarNavFoldLabel', 'setSidebarNavFoldDesc', [['off', U('optSidebarNavFoldOff', 'Show All')], ['on', U('optSidebarNavFoldOn', 'Fold Extra')]]),
+            RS('thoughtCollapse', [['auto', U('optThoughtAutoCollapse', 'Auto-collapse')], ['keep', U('optThoughtKeepExpanded', 'Keep expanded')]]),
             RS('thoughtTranslate', [['off', U('optThoughtOff')], ['machine', U('optThoughtMachine')], ['ai', U('optThoughtAi')]], 'ThoughtMode'),
             RS('thoughtTrigger', [['preload', U('optTriggerPreload')], ['expand', U('optTriggerExpand')]]),
             RS('thoughtView', [['immersive', U('optThoughtImmersive')], ['bilingual', U('optThoughtBilingual')]]),
@@ -2595,7 +2623,7 @@
           const groups = [
             { id: 'appearance', title: U('grpAppearance'), keys: ['chuanbanPaper', 'bookTypography', 'palette', 'lightPreset', 'darkAuraStyle', 'accentTone', 'cornerStyle', 'ambientIntensity', 'darkAura', 'motionLevel', 'targetFps', 'homeLayout', 'homeRipple', 'convRipple', 'logoInk', 'language', 'hostLocalization'] },
             { id: 'interaction', title: U('grpInteraction'), keys: ['composerRestyle', 'placeholderStyle', 'smoothCaret', 'scrollBottomMotion', 'contextMenu', 'codeFont', 'codeLigatures', 'mascot', 'sidebarRestyle', 'sidebarCompact', 'sidebarNavFold'] },
-            { id: 'thought', title: U('grpThought'), keys: ['thoughtTranslate', 'thoughtTrigger', 'thoughtView'] },
+            { id: 'thought', title: U('grpThought'), keys: ['thoughtCollapse', 'thoughtTranslate', 'thoughtTrigger', 'thoughtView'] },
             { id: 'modules', title: U('groupModules'), keys: ['telemetryModule', 'effortSliderModule', 'effortMemory', 'periodicModelPicker', 'omniModule', 'linkTarget'] },
             { id: 'beta', title: U('grpBeta'), keys: ['sidebarStudio'] },
           ];
@@ -2997,6 +3025,14 @@
           sa(autoExitOffBtn, 'data-tone', 'secondary');
           const autoExitOnBtn = mkB('ag-cs-repo-sync-btn', U('storageAutoExitOn', 'On'), 'data-ag-cs-auto-archive-exit', 'on');
           sa(autoExitOnBtn, 'data-tone', 'secondary');
+          const themeChatSyncChip = mkChip(U('themeChatSyncIdle', 'Checking…'), 'data-ag-cs-theme-chat-sync-status');
+          const themeChatSyncOffBtn = mkB('ag-cs-repo-sync-btn', U('themeChatSyncOff', 'Off'), 'data-ag-cs-theme-chat-sync', 'off');
+          sa(themeChatSyncOffBtn, 'data-tone', 'secondary');
+          const themeChatSyncOnBtn = mkB('ag-cs-repo-sync-btn', U('themeChatSyncOn', 'On'), 'data-ag-cs-theme-chat-sync', 'on');
+          sa(themeChatSyncOnBtn, 'data-tone', 'secondary');
+          const themeChatSyncNowBtn = mkB('ag-cs-repo-sync-btn', U('themeChatSyncNowBtn', 'Sync Now'), 'data-ag-cs-theme-chat-sync-now');
+          sa(themeChatSyncNowBtn, 'data-tone', 'secondary');
+          let themeChatSyncBusy = false;
           const archActionChip = mkEl('span', 'ag-cs-repo-chip', '');
           setVis(archActionChip, false);
           sa(archActionChip, 'data-ag-cs-archive-action-status');
@@ -3147,6 +3183,44 @@
             });
           };
           syncAutoExitButtons(resolveSettingRowActiveValue('autoArchiveOnExit') === true);
+          const syncThemeChatButtons = (enabled) => {
+            const on = enabled !== false;
+            runGuardedMut(() => {
+              if (!on) sa(themeChatSyncOffBtn, 'data-active', '1');
+              else ra(themeChatSyncOffBtn, 'data-active');
+              if (on) sa(themeChatSyncOnBtn, 'data-active', '1');
+              else ra(themeChatSyncOnBtn, 'data-active');
+            });
+          };
+          syncThemeChatButtons(resolveSettingRowActiveValue('themeChatCloudSync') !== false);
+          const applyThemeChatSyncView = (st) => {
+            if (!themeChatSyncChip[K_IC] || !st || st.offline || st.timeout) return;
+            const u = uiText(getLang()) || ui;
+            runGuardedMut(() => {
+              if (typeof st.theme_chat_sync_enabled === 'boolean') syncThemeChatButtons(st.theme_chat_sync_enabled);
+              else if (typeof st.themeChatCloudSync === 'boolean') syncThemeChatButtons(st.themeChatCloudSync);
+              if (st.ok === false && st.error) {
+                setChip(themeChatSyncChip, 'error', st.error);
+                return;
+              }
+              const enabled = st.theme_chat_sync_enabled !== false && st.themeChatCloudSync !== false;
+              if (!enabled) {
+                setChip(themeChatSyncChip, 'idle', u.themeChatSyncPaused || 'Paused');
+                return;
+              }
+              const count = Number(st.theme_chat_count) || 0;
+              const docsLabel = st.gdoc_chat_docs_ready
+                ? String(Number(st.theme_chat_doc_count) || 0)
+                : (u.themeChatSyncDocsPending || 'Pending');
+              const timeRaw = String(st.last_sync_at || '');
+              const hhmm = timeRaw.length >= 16 ? ` · ${timeRaw.slice(11, 16)}` : '';
+              setChip(
+                themeChatSyncChip,
+                st.vault_mounted === false ? 'warn' : (st.action === 'theme-chat-sync-now' ? 'updated' : 'ok'),
+                fmtTpl(u.themeChatSyncSummaryTpl || 'Synced {0} (MD · Docs {1}){2}', [count, docsLabel, hhmm])
+              );
+            });
+          };
 
           const applyStorageView = (st, prepared) => {
             if (!storageChip[K_IC] || !st || st.offline || st.timeout) return;
@@ -3224,6 +3298,9 @@
               .catch((err) => applyStorageView({ ok: false, error: String(err?.message || err) }, false));
             void invokePrismRepoAction('gomemlimit-status', version)
               .then((st) => st && applyGoMemView(st))
+              .catch(() => {});
+            void invokePrismRepoAction('theme-chat-sync-status', version)
+              .then((st) => st && applyThemeChatSyncView(st))
               .catch(() => {});
           };
           const loadStorageDetail = (force) => {
@@ -3427,6 +3504,58 @@
             mkEl('p', 'ag-cs-thought-hint', U('goMemLimitDesc'))
           );
 
+          const toggleThemeChatSync = (enabled) => {
+            syncThemeChatButtons(enabled);
+            const win = getWin();
+            const repoBridge = win?.__agPrismRepoBridge;
+            const hasRepoBridge = isFn(repoBridge) || isFn(repoBridge?.['theme-chat-sync-toggle']) || isFn(repoBridge?.call);
+            const hasSettingBinding = isFn(win?.__agPrismSetting) || isFn(win?.__agClaudeStyleSetting);
+            if (!hasRepoBridge) {
+              try { saveSetting('themeChatCloudSync', enabled); } catch {}
+              return;
+            }
+            if (!hasSettingBinding) {
+              try { saveSetting('themeChatCloudSync', enabled); } catch {}
+            }
+            void invokePrismRepoAction('theme-chat-sync-toggle', version, { themeChatCloudSync: enabled }).then((r) => {
+              if (r?.offline && hasSettingBinding) {
+                try { saveSetting('themeChatCloudSync', enabled); } catch {}
+                return;
+              }
+              if (r) applyThemeChatSyncView(r);
+            });
+          };
+          onClk(themeChatSyncOffBtn, () => toggleThemeChatSync(false));
+          onClk(themeChatSyncOnBtn, () => toggleThemeChatSync(true));
+          onClk(themeChatSyncNowBtn, () => {
+            if (themeChatSyncBusy) return;
+            themeChatSyncBusy = true;
+            const u = uiText(getLang()) || ui;
+            runGuardedMut(() => {
+              themeChatSyncNowBtn.disabled = true;
+              setChip(themeChatSyncChip, 'idle', u.themeChatSyncRunning || 'Syncing…');
+            });
+            void invokePrismRepoAction('theme-chat-sync-now', version)
+              .then((st) => st && applyThemeChatSyncView(st))
+              .catch((err) => applyThemeChatSyncView({ ok: false, error: String(err?.message || err) }))
+              .finally(() => {
+                themeChatSyncBusy = false;
+                runGuardedMut(() => { if (themeChatSyncNowBtn[K_IC]) themeChatSyncNowBtn.disabled = false; });
+              });
+          });
+
+          const themeChatSyncBox = mkEl('div', 'ag-cs-thought-cfg-box');
+          sa(themeChatSyncBox, 'data-ag-cs-theme-chat-sync-box', '1');
+          ap(
+            themeChatSyncBox,
+            ap(
+              mkEl('div', 'ag-cs-about-repo-row'),
+              ap(mkEl('div', 'ag-cs-about-repo-info'), mkEl('span', 'font-medium text-foreground', U('themeChatSyncTitle', 'Theme Chat Cloud Sync')), themeChatSyncChip),
+              ap(mkEl('div', 'ag-cs-thought-btn-group'), themeChatSyncOffBtn, themeChatSyncOnBtn, themeChatSyncNowBtn)
+            ),
+            mkEl('p', 'ag-cs-thought-hint', U('themeChatSyncDesc'))
+          );
+
           ap(
             aboutBox,
             ap(mkEl('div', 'ag-cs-about-repo-row'), ap(mkEl('div', 'ag-cs-about-repo-info'), mkEl('span', 'font-medium text-foreground', U('storageHealthTitle', 'DB')), storageChip)),
@@ -3435,6 +3564,7 @@
             restoreConfirmBox,
             ap(mkEl('div', 'ag-cs-about-repo-row'), ap(mkEl('div', 'ag-cs-about-repo-info'), mkEl('span', 'font-medium text-foreground', U('storageAutoExitTitle', 'Auto-Archive')), mkEl('span', 'ag-cs-thought-hint', U('storageAutoExitDesc'))), ap(mkEl('div', 'ag-cs-thought-btn-group'), autoExitOffBtn, autoExitOnBtn)),
             stWb,
+            themeChatSyncBox,
             goMemBox
           );
 

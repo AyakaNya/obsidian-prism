@@ -408,7 +408,11 @@ test('settings-panel schema, scene presets, strict apiKey-stripping JSON export,
   // Verify all 39 global config keys (including darkAura, darkAuraStyle, convRipple, effortMemory, periodicModelPicker, contextMenu, sidebarNavFold, scrollBottomMotion, hostLocalization, omniModule, linkTarget, sidebarStudio, autoUpdate, updateChannel & autoArchiveOnExit) match exact contract
   const { PRISM_SETTINGS_SCHEMA, SCENE_PRESETS, buildSanitizedConfigExport, validateImportedConfigJson, getDefaultSettingsPatch } =
     settingsPanel;
-  assert.equal(Object.keys(PRISM_SETTINGS_SCHEMA).length, 41);
+  assert.equal(Object.keys(PRISM_SETTINGS_SCHEMA).length, 43);
+  assert.deepEqual(PRISM_SETTINGS_SCHEMA.thoughtCollapse.allowed, ['auto', 'keep']);
+  assert.equal(PRISM_SETTINGS_SCHEMA.thoughtCollapse.default, 'auto');
+  assert.deepEqual(PRISM_SETTINGS_SCHEMA.themeChatCloudSync.allowed, [true, false]);
+  assert.equal(PRISM_SETTINGS_SCHEMA.themeChatCloudSync.default, true);
   assert.deepEqual(PRISM_SETTINGS_SCHEMA.chuanbanPaper.allowed, ['on', 'off']);
   assert.equal(PRISM_SETTINGS_SCHEMA.chuanbanPaper.default, 'off');
   assert.deepEqual(PRISM_SETTINGS_SCHEMA.bookTypography.allowed, ['on', 'off']);
@@ -538,7 +542,9 @@ test('settings-panel schema, scene presets, strict apiKey-stripping JSON export,
   assert.equal(validateImportedConfigJson('not-json').ok, false);
   assert.equal(validateImportedConfigJson('{"unknownOnly": 1}').ok, false);
   const defaultPatch = getDefaultSettingsPatch();
-  assert.equal(Object.keys(defaultPatch).length, 41);
+  assert.equal(Object.keys(defaultPatch).length, 43);
+  assert.equal(defaultPatch.thoughtCollapse, 'auto');
+  assert.equal(defaultPatch.themeChatCloudSync, true);
   assert.equal(defaultPatch.homeRipple, true);
   assert.equal(defaultPatch.convRipple, 'off');
   assert.equal(defaultPatch.darkAura, 'balanced');

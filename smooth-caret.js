@@ -192,7 +192,10 @@
         cachedEditors.every((e) => e && e.isConnected !== false) &&
         (!activeIsEditable || cachedEditors.includes(activeEl));
       if (cacheValid) return cachedEditors;
-      cachedEditors = Array.from(document.querySelectorAll('[data-testid="agent-input-box"] [contenteditable="true"]'));
+      const list = Array.from(document.querySelectorAll('[data-testid="agent-input-box"] [contenteditable="true"]'));
+      const chatInp = typeof document.querySelector === 'function' ? document.querySelector('.ag-prism-chat-input[contenteditable="true"]') : null;
+      if (chatInp && !list.includes(chatInp)) list.push(chatInp);
+      cachedEditors = list;
       lastEditorScanAt = now;
       return cachedEditors;
     }
