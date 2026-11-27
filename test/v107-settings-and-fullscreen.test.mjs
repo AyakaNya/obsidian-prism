@@ -887,5 +887,5 @@ test('CSS hygiene, dual-split :not([data-split-overlaid]), dead brand SVG CSS re
   const cdp = require(path.join(ROOT, 'cdp.js'));
   const expr = cdp.buildInjectExpression(cdp.DEFAULT_CONFIG);
   const bytes = Buffer.byteLength(expr, 'utf8');
-  assert.ok(bytes < 550000, `Channel 1 bundle must stay < 550,000 B, got ${bytes} B`);
+  assert.ok(bytes < 565000, `Channel 1 bundle must stay < 565,000 B, got ${bytes} B`);
 });

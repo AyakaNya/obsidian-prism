@@ -961,6 +961,7 @@ test('style.css covers all 6 Wave-2 config hooks, eliminates double borders & en
   assert.equal(css.includes('scrollbar-width:thin'), false, 'style.css must not use scrollbar-width:thin');
   const scrollBottomRule = css.split('\n').find((l) => l.includes('& .agy-scroll-bottom{')) || '';
   assert.equal(scrollBottomRule.includes('position:relative'), false, '.agy-scroll-bottom must never set position:relative');
+  assert.equal(/\btranslate\s*:/.test(scrollBottomRule), false, '.agy-scroll-bottom must never override host translate (breaks centered hitbox and causes hover jitter)');
   const overviewShellRule = css.split('\n').find((l) => l.includes('& [data-ag-cs-overview-shell="1"]{')) || '';
   assert.equal(overviewShellRule.includes('position:relative'), false, '[data-ag-cs-overview-shell="1"] must never override native absolute floating positioning');
 

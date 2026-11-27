@@ -31,12 +31,14 @@ const PID_FILE = path.join(__dirname, '.watch.pid');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
 
 const DEFAULT_CONFIG = {
-  language: 'zh-TW',
-  lang: 'zh-TW',
-  palette: 'warm',
-  lightPreset: 'alabaster',
+  language: 'auto',
+  lang: 'auto',
+  palette: 'obsidian',
+  lightPreset: 'crystal',
+  chuanbanPaper: 'off',
+  bookTypography: 'off',
   darkAuraStyle: 'prism',
-  motionLevel: 'subtle',
+  motionLevel: 'ultra',
   targetFps: '180',
   telemetryModule: 'auto',
   effortSliderModule: 'auto',
@@ -44,11 +46,11 @@ const DEFAULT_CONFIG = {
   periodicModelPicker: 'on',
   thoughtTranslate: 'off',
   thoughtTrigger: 'preload',
-  homeLayout: 'classic',
-  homeMode: 'classic',
-  homeRipple: false,
+  homeLayout: 'studio',
+  homeMode: 'studio',
+  homeRipple: true,
   convRipple: 'off',
-  ripple: 'off',
+  ripple: 'on',
   composerRestyle: true,
   composer: 'on',
   placeholderStyle: 'studio',
@@ -63,16 +65,16 @@ const DEFAULT_CONFIG = {
   scrollBottomMotion: 'smooth',
   contextMenu: true,
   accentTone: 'follow',
-  cornerStyle: 'soft',
+  cornerStyle: 'balanced',
   codeFont: 'default',
   codeLigatures: false,
-  ambientIntensity: '0',
-  darkAura: 'subtle',
+  ambientIntensity: '100',
+  darkAura: 'balanced',
   thoughtView: 'immersive',
   omniModule: 'on',
   linkTarget: 'builtin',
   sidebarStudio: 'off',
-  hostLocalization: 'on',
+  hostLocalization: 'auto',
   autoUpdate: 'off',
   updateChannel: 'stable',
   autoArchiveOnExit: false,
@@ -84,6 +86,8 @@ const VALIDATORS = {
   lang: ['auto', 'zh-CN', 'zh-TW', 'en', 'ja', 'ko', 'es', 'fr', 'de'],
   palette: ['host', 'obsidian', 'warm', 'claude'],
   lightPreset: ['crystal', 'alabaster'],
+  chuanbanPaper: ['on', 'off'],
+  bookTypography: ['on', 'off'],
   darkAuraStyle: ['prism', 'neon'],
   motionLevel: ['off', 'subtle', 'standard', 'ultra'],
   targetFps: ['60', '120', '180', 'native'],
@@ -271,7 +275,7 @@ function reconcileConfigAliases(raw) {
   if (has('autoArchiveOnExit') && typeof out.autoArchiveOnExit === 'string') {
     out.autoArchiveOnExit = out.autoArchiveOnExit === 'on' || out.autoArchiveOnExit === 'true';
   }
-  for (const k of ['telemetryModule', 'effortSliderModule', 'effortMemory', 'periodicModelPicker', 'omniModule', 'sidebarStudio', 'autoUpdate', 'sidebarNavFold']) {
+  for (const k of ['telemetryModule', 'effortSliderModule', 'effortMemory', 'periodicModelPicker', 'omniModule', 'sidebarStudio', 'autoUpdate', 'sidebarNavFold', 'chuanbanPaper', 'bookTypography']) {
     if (has(k) && typeof out[k] === 'boolean') {
       out[k] = out[k] ? 'on' : 'off';
     }
@@ -12281,6 +12285,8 @@ const REMOVE_EXPRESSION = `(() => {
       'data-ag-cs-style',
       'data-ag-cs-theme',
       'data-ag-cs-palette',
+      'data-ag-cs-chuanban',
+      'data-ag-cs-book-font',
       'data-ag-cs-light-preset',
       'data-ag-cs-motion',
       'data-ag-cs-target-fps',

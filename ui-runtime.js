@@ -128,7 +128,7 @@
   };
 
   const BOOL_ALIAS_PAIRS = [['homeRipple', 'ripple'], ['composerRestyle', 'composer'], ['sidebarRestyle', 'sidebar']];
-  const ONOFF_STR_KEYS = 'telemetryModule|effortSliderModule|effortMemory|periodicModelPicker|omniModule|sidebarStudio|autoUpdate|sidebarNavFold'.split('|');
+  const ONOFF_STR_KEYS = 'telemetryModule|effortSliderModule|effortMemory|periodicModelPicker|omniModule|sidebarStudio|autoUpdate|sidebarNavFold|chuanbanPaper|bookTypography'.split('|');
   const pickOf = (v, s, d) => (s.split('|').includes(v) ? v : d);
   const normConvRipple = (v) => (v === true || v === 'true' || v === 'on' ? 'medium' : pickOf(v, 'subtle|medium|full', 'off'));
 
@@ -150,7 +150,7 @@
     out.mascot = out.mascot === 'off' || out.mascot === false ? 'off' : /^(minis|quad(-minis)?|r:[ckdwl0-4,+m]+)$/.test(out.mascot) ? out.mascot : 'crab';
     out.convRipple = normConvRipple(out.convRipple);
     for (const k of ['sidebarCompact', 'codeLigatures', 'autoArchiveOnExit']) out[k] = out[k] === true || out[k] === 'on';
-    for (const k of ['sidebarNavFold', 'sidebarStudio', 'autoUpdate']) out[k] = out[k] === 'on' || out[k] === true ? 'on' : 'off';
+    for (const k of ['sidebarNavFold', 'sidebarStudio', 'autoUpdate', 'chuanbanPaper', 'bookTypography']) out[k] = out[k] === 'on' || out[k] === true ? 'on' : 'off';
     for (const k of ['smoothCaret', 'contextMenu']) out[k] = out[k] === undefined ? true : out[k] !== false && out[k] !== 'off';
     out.accentTone = pickOf(out.accentTone, 'follow|cobalt|iris|amber|mono', 'follow');
     out.cornerStyle = pickOf(out.cornerStyle, 'sharp|balanced|soft', 'balanced');
@@ -284,7 +284,7 @@
   const routeConfigDirtyFlags = (prevCfg, nextCfg, patch) => {
     dirtyFlags.g = true;
     const any = (s) => s.split('|').some((k) => prevCfg[k] !== nextCfg[k] || O.hasOwn(patch, k));
-    if (any('palette|lightPreset|accentTone|ambientIntensity|darkAura|darkAuraStyle|cornerStyle|codeFont|codeLigatures')) dirtyFlags.t = true;
+    if (any('palette|lightPreset|chuanbanPaper|bookTypography|accentTone|ambientIntensity|darkAura|darkAuraStyle|cornerStyle|codeFont|codeLigatures')) dirtyFlags.t = true;
     if (any('accentTone|composerRestyle|placeholderStyle|mascot|smoothCaret|telemetryModule|motionLevel|language')) dirtyFlags.c = true;
     if (any('homeLayout|homeRipple|convRipple|motionLevel|language')) dirtyFlags.r = true;
     if (any('sidebarRestyle|sidebarCompact|sidebarNavFold')) dirtyFlags.s = true;
@@ -357,6 +357,8 @@
 
   const getEffectivePalette = () => pickOf(cfg.palette === 'claude' ? 'warm' : cfg.palette, 'obsidian|warm|host', 'obsidian');
   const getLightPreset = () => (cfg.lightPreset === 'alabaster' ? 'alabaster' : 'crystal');
+  const getChuanbanMode = () => (cfg.chuanbanPaper === 'on' || cfg.chuanbanPaper === true ? 'on' : 'off');
+  const getBookFontMode = () => (cfg.bookTypography === 'on' || cfg.bookTypography === true ? 'on' : 'off');
   const getMotionLevel = () => pickOf(cfg.motionLevel, 'off|subtle|standard|ultra', 'ultra');
   const getTargetFps = () => pickOf(String(cfg.targetFps || ''), '60|120|180|native', '180');
   const getMinFrameGapMs = () => ({ native: 0, 60: 15.2, 120: 7.5 })[getTargetFps()] ?? 4.8;
@@ -1080,7 +1082,8 @@
 
     runGuardedMut(() => {
       const csA = {
-        style: '1', theme: dark ? 'dark' : 'light', palette, 'light-preset': lightPreset, motion: motionLv,
+        style: '1', theme: dark ? 'dark' : 'light', palette, 'light-preset': lightPreset,
+        chuanban: getChuanbanMode(), 'book-font': getBookFontMode(), motion: motionLv,
         'target-fps': targetFps, telemetry: telemetryMod, 'effort-slider': effortSliderMod,
         'thought-translate': getThoughtTranslateMode(), accent: getAccentTone(), corners: getCornerStyle(),
         'scroll-bottom': cfg.scrollBottomMotion, 'code-font': getCodeFont(),
@@ -1132,13 +1135,13 @@
         lastAppliedLang = lang;
         if (prevLang) refreshOpenUiForLanguage();
       }
-      const themeKey = `${palette}|${lightPreset}|${dark ? 'd' : 'l'}|${getAccentTone()}|${getAmbientIntensitySetting()}|${cfg.darkAura}|${cfg.darkAuraStyle}|${getCornerStyle()}`;
+      const themeKey = `${palette}|${lightPreset}|${getChuanbanMode()}|${dark ? 'd' : 'l'}|${getAccentTone()}|${getAmbientIntensitySetting()}|${cfg.darkAura}|${cfg.darkAuraStyle}|${getCornerStyle()}`;
       if (themeKey !== lastThemeKey) {
         lastThemeKey = themeKey;
         refreshOptics();
         try { hostEnhancerCtl.onThemeChange?.(); } catch {}
       }
-      const metricsKey = `${lang}|${getCodeFont()}|${isCodeLigaturesEnabled() ? 1 : 0}|${getCornerStyle()}|${cfg.composerRestyle === false ? 0 : 1}`;
+      const metricsKey = `${lang}|${getCodeFont()}|${getBookFontMode()}|${isCodeLigaturesEnabled() ? 1 : 0}|${getCornerStyle()}|${cfg.composerRestyle === false ? 0 : 1}`;
       if (metricsKey !== lastMetricsKey) {
         const hadPrev = lastMetricsKey !== '';
         lastMetricsKey = metricsKey;

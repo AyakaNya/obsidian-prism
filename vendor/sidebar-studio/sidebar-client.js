@@ -175,8 +175,8 @@
       heads: ['今天需要我为你做些什么？', '想从哪里开始探索？', '随时聊聊你的新想法。', '有什么我可以帮你的？'],
     },
     'zh-TW': {
-      eyeUser: ['嗨，{user}', '歡迎回來，{user}', '{user}，很高興見到妳'],
-      eyeAnon: ['嗨，歡迎回來', '隨時開始', '歡迎回來'],
+      eyeUser: ['Hi, {user}', 'Welcome back, {user}', 'Good to see you, {user}'],
+      eyeAnon: ['Hello', 'Welcome back', 'Ready when you are'],
       heads: ['今天想一起做些什麼呢？', '我們從哪裡繼續？', '有什麼新想法隨時聊聊。'],
     },
     yue: {

@@ -408,7 +408,11 @@ test('settings-panel schema, scene presets, strict apiKey-stripping JSON export,
   // Verify all 39 global config keys (including darkAura, darkAuraStyle, convRipple, effortMemory, periodicModelPicker, contextMenu, sidebarNavFold, scrollBottomMotion, hostLocalization, omniModule, linkTarget, sidebarStudio, autoUpdate, updateChannel & autoArchiveOnExit) match exact contract
   const { PRISM_SETTINGS_SCHEMA, SCENE_PRESETS, buildSanitizedConfigExport, validateImportedConfigJson, getDefaultSettingsPatch } =
     settingsPanel;
-  assert.equal(Object.keys(PRISM_SETTINGS_SCHEMA).length, 39);
+  assert.equal(Object.keys(PRISM_SETTINGS_SCHEMA).length, 41);
+  assert.deepEqual(PRISM_SETTINGS_SCHEMA.chuanbanPaper.allowed, ['on', 'off']);
+  assert.equal(PRISM_SETTINGS_SCHEMA.chuanbanPaper.default, 'off');
+  assert.deepEqual(PRISM_SETTINGS_SCHEMA.bookTypography.allowed, ['on', 'off']);
+  assert.equal(PRISM_SETTINGS_SCHEMA.bookTypography.default, 'off');
   assert.deepEqual(PRISM_SETTINGS_SCHEMA.homeRipple.allowed, [true, false]);
   assert.equal(PRISM_SETTINGS_SCHEMA.homeRipple.default, true);
   assert.deepEqual(PRISM_SETTINGS_SCHEMA.convRipple.allowed, ['off', 'subtle', 'medium', 'full']);
@@ -450,7 +454,11 @@ test('settings-panel schema, scene presets, strict apiKey-stripping JSON export,
   assert.equal(PRISM_SETTINGS_SCHEMA.autoUpdate.default, 'off');
   assert.deepEqual(PRISM_SETTINGS_SCHEMA.updateChannel.allowed, ['stable', 'beta']);
   assert.equal(PRISM_SETTINGS_SCHEMA.updateChannel.default, 'stable');
-  assert.ok(SCENE_PRESETS.ultra && SCENE_PRESETS.focus && SCENE_PRESETS.eco);
+  assert.ok(SCENE_PRESETS.chuanban && SCENE_PRESETS.ultra && SCENE_PRESETS.focus && SCENE_PRESETS.eco);
+  assert.equal(SCENE_PRESETS.chuanban.chuanbanPaper, 'on');
+  assert.equal(SCENE_PRESETS.chuanban.bookTypography, 'on');
+  assert.equal(SCENE_PRESETS.ultra.chuanbanPaper, 'off');
+  assert.equal(SCENE_PRESETS.ultra.bookTypography, 'off');
 
   // Export MUST strip apiKey, secret fields, and embedded sk-... tokens
   const mockSkPrefix = 'sk' + '-';
@@ -530,7 +538,7 @@ test('settings-panel schema, scene presets, strict apiKey-stripping JSON export,
   assert.equal(validateImportedConfigJson('not-json').ok, false);
   assert.equal(validateImportedConfigJson('{"unknownOnly": 1}').ok, false);
   const defaultPatch = getDefaultSettingsPatch();
-  assert.equal(Object.keys(defaultPatch).length, 39);
+  assert.equal(Object.keys(defaultPatch).length, 41);
   assert.equal(defaultPatch.homeRipple, true);
   assert.equal(defaultPatch.convRipple, 'off');
   assert.equal(defaultPatch.darkAura, 'balanced');

@@ -149,6 +149,8 @@
   const S_F = O.freeze(mkSp([true, false], false));
 
   const PRISM_SETTINGS_SCHEMA = O.freeze({
+    chuanbanPaper: S_OFF,
+    bookTypography: S_OFF,
     palette: mkSp(['obsidian', 'host', 'warm'], null, { claude: 'warm' }),
     lightPreset: mkSp(['crystal', 'alabaster']),
     darkAuraStyle: mkSp(['prism', 'neon'], 'prism'),
@@ -191,9 +193,25 @@
   });
 
   const SCENE_PRESETS = O.freeze({
-    ultra: O.freeze({ motionLevel: 'ultra', targetFps: '180', homeRipple: true, mascot: 'crab', sidebarCompact: false, smoothCaret: true, ambientIntensity: '100' }),
-    focus: O.freeze({ motionLevel: 'subtle', targetFps: '120', homeRipple: false, convRipple: 'off', mascot: 'off', sidebarCompact: true, smoothCaret: true, ambientIntensity: '35' }),
-    eco: O.freeze({ motionLevel: 'off', targetFps: '60', homeRipple: false, convRipple: 'off', mascot: 'off', sidebarCompact: false, smoothCaret: false, ambientIntensity: '0' }),
+    chuanban: O.freeze({
+      chuanbanPaper: 'on',
+      bookTypography: 'on',
+      palette: 'warm',
+      lightPreset: 'alabaster',
+      motionLevel: 'subtle',
+      homeLayout: 'classic',
+      homeRipple: false,
+      convRipple: 'off',
+      mascot: 'r:k1,l1',
+      sidebarCompact: false,
+      smoothCaret: true,
+      ambientIntensity: '0',
+      darkAura: 'subtle',
+      cornerStyle: 'soft',
+    }),
+    ultra: O.freeze({ chuanbanPaper: 'off', bookTypography: 'off', motionLevel: 'ultra', targetFps: '180', homeRipple: true, mascot: 'crab', sidebarCompact: false, smoothCaret: true, ambientIntensity: '100' }),
+    focus: O.freeze({ chuanbanPaper: 'off', bookTypography: 'off', motionLevel: 'subtle', targetFps: '120', homeRipple: false, convRipple: 'off', mascot: 'off', sidebarCompact: true, smoothCaret: true, ambientIntensity: '35' }),
+    eco: O.freeze({ chuanbanPaper: 'off', bookTypography: 'off', motionLevel: 'off', targetFps: '60', homeRipple: false, convRipple: 'off', mascot: 'off', sidebarCompact: false, smoothCaret: false, ambientIntensity: '0' }),
   });
 
   const normThoughtStyle = (s) => (s === 'tech' || s === 'technical' ? 'technical' : s === 'concise' || s === 'custom' ? s : null);
@@ -1588,7 +1606,7 @@
                       : 'en';
       }
     }
-    if ((key === 'periodicModelPicker' || key === 'omniModule' || key === 'sidebarStudio' || key === 'autoUpdate' || key === 'sidebarNavFold') && typeof val === 'boolean') val = val ? 'on' : 'off';
+    if ((key === 'periodicModelPicker' || key === 'omniModule' || key === 'sidebarStudio' || key === 'autoUpdate' || key === 'sidebarNavFold' || key === 'chuanbanPaper' || key === 'bookTypography') && typeof val === 'boolean') val = val ? 'on' : 'off';
     if (key === 'convRipple' && typeof val === 'boolean') val = val ? 'medium' : 'off';
     if (typeof spec.default === 'string' && typeof val === 'number' && Number.isFinite(val)) val = String(val);
     return spec.allowed.includes(val) ? { valid: true, value: val } : { valid: false };
@@ -2058,22 +2076,32 @@
         if (tb) tb.hidden = tmMode !== 'ai';
       }
       const isMotionOff = effVal('motionLevel', l) === 'off';
+      const isChuanbanOn = effVal('chuanbanPaper', l) === 'on';
       for (const [dk, dim] of [
+        ['palette', isChuanbanOn],
+        ['lightPreset', isChuanbanOn],
+        ['accentTone', isChuanbanOn],
+        ['ambientIntensity', isChuanbanOn],
         ['placeholderStyle', effVal('composerRestyle', l) === false],
         ['sidebarCompact', effVal('sidebarRestyle', l) === false],
         ['sidebarNavFold', effVal('sidebarRestyle', l) === false],
         ['thoughtTrigger', tmMode === 'off'],
         ['thoughtView', tmMode === 'off'],
-        ['homeRipple', isMotionOff || effVal('homeLayout', l) === 'off'],
-        ['convRipple', isMotionOff],
+        ['homeRipple', isMotionOff || effVal('homeLayout', l) === 'off' || isChuanbanOn],
+        ['convRipple', isMotionOff || isChuanbanOn],
         ['linkTarget', effVal('omniModule', l) === 'off'],
-        ['darkAura', effVal('ambientIntensity', l) === '0'],
-        ['darkAuraStyle', effVal('ambientIntensity', l) === '0'],
+        ['darkAura', effVal('ambientIntensity', l) === '0' || isChuanbanOn],
+        ['darkAuraStyle', effVal('ambientIntensity', l) === '0' || isChuanbanOn],
       ]) {
         const dr = qs(rootEl, `[data-ag-cs-row="${dk}"]`);
         if (!dr) continue;
         if (dr.style) dr.style.opacity = dim ? '0.55' : '';
         if (dim) sa(dr, 'data-ag-cs-dimmed', '1'); else ra(dr, 'data-ag-cs-dimmed');
+      }
+      const palDescEl = qs(rootEl, '[data-ag-cs-row="palette"] [data-k="d"]');
+      if (palDescEl) {
+        const palText = isChuanbanOn && u.chuanbanOverrideHint ? u.chuanbanOverrideHint : u.setPaletteDesc || '';
+        if (palDescEl[K_TC] !== palText) palDescEl[K_TC] = palText;
       }
       const lpDescEl = qs(rootEl, '[data-ag-cs-row="lightPreset"] [data-k="d"]');
       if (lpDescEl) {
@@ -2505,6 +2533,8 @@
 
           const rowDefs = {};
           for (const r of [
+            RS('chuanbanPaper', onOffStr),
+            RS('bookTypography', onOffStr),
             RS('palette', [['host', U('optHost')], ['warm', warmLbl], ['obsidian', U('optObsidian')]]),
             RS('lightPreset', [['crystal', U('optLightCrystal')], ['alabaster', U('optLightAlabaster')]]),
             RS('accentTone', [['follow', U('optToneFollow')], ['cobalt', U('optToneCobalt')], ['iris', U('optToneIris')], ['amber', U('optToneAmber')], ['mono', U('optToneMono')]]),
@@ -2563,7 +2593,7 @@
           ]) rowDefs[r.key] = r;
 
           const groups = [
-            { id: 'appearance', title: U('grpAppearance'), keys: ['palette', 'lightPreset', 'darkAuraStyle', 'accentTone', 'cornerStyle', 'ambientIntensity', 'darkAura', 'motionLevel', 'targetFps', 'homeLayout', 'homeRipple', 'convRipple', 'logoInk', 'language', 'hostLocalization'] },
+            { id: 'appearance', title: U('grpAppearance'), keys: ['chuanbanPaper', 'bookTypography', 'palette', 'lightPreset', 'darkAuraStyle', 'accentTone', 'cornerStyle', 'ambientIntensity', 'darkAura', 'motionLevel', 'targetFps', 'homeLayout', 'homeRipple', 'convRipple', 'logoInk', 'language', 'hostLocalization'] },
             { id: 'interaction', title: U('grpInteraction'), keys: ['composerRestyle', 'placeholderStyle', 'smoothCaret', 'scrollBottomMotion', 'contextMenu', 'codeFont', 'codeLigatures', 'mascot', 'sidebarRestyle', 'sidebarCompact', 'sidebarNavFold'] },
             { id: 'thought', title: U('grpThought'), keys: ['thoughtTranslate', 'thoughtTrigger', 'thoughtView'] },
             { id: 'modules', title: U('groupModules'), keys: ['telemetryModule', 'effortSliderModule', 'effortMemory', 'periodicModelPicker', 'omniModule', 'linkTarget'] },
@@ -2719,7 +2749,7 @@
           const topDeck = mkEl('div', 'ag-cs-settings-topdeck');
           sa(topDeck, 'data-ag-cs-topdeck', '1');
           const presetPills = mkEl('div', 'ag-cs-preset-pills');
-          for (const [pid, plbl] of [['ultra', U('presetUltra', 'Full Optical')], ['focus', U('presetFocus', 'Deep Focus')], ['eco', U('presetEco', 'Silent Eco')]]) {
+          for (const [pid, plbl] of [['chuanban', U('presetChuanban', 'Chuanban Paper')], ['ultra', U('presetUltra', 'Full Optical')], ['focus', U('presetFocus', 'Deep Focus')], ['eco', U('presetEco', 'Silent Eco')]]) {
             const pb = mkB('ag-cs-preset-btn', plbl, 'data-ag-cs-preset', pid);
             onClk(pb, () => {
               applyBatch({ ...SCENE_PRESETS[pid] });

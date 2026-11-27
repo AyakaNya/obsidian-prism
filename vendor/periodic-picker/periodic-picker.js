@@ -3595,7 +3595,7 @@
         if (activeRenderer && typeof activeRenderer.setHardwareState === 'function') {
           try { activeRenderer.setHardwareState(hardwareStatePayload); } catch (e) {}
         }
-        if (FLAT_PAPER_2D_MODE) {
+        if (isFlatPaper2DMode()) {
           syncFlatPaper2D(dInfo);
         }
 
@@ -3654,7 +3654,7 @@
 
       function shouldAnimateDrawerCollapse() {
         if (isDestroyed || !overlayEl) return false;
-        if (FLAT_PAPER_2D_MODE) return true;
+        if (isFlatPaper2DMode()) return true;
         if (stageMode !== 'drawer' || bentoUi.isReducedMotion(doc, root)) return false;
         return Boolean(root && typeof root.HTMLElement === 'function');
       }
@@ -3937,8 +3937,11 @@
         scheduleSettledRectSync();
       }
 
-      /* ── Pure 2D Flat Paper Periodic Table Mode (lightweight stationery aesthetic) ── */
-      var FLAT_PAPER_2D_MODE = true;
+      /* ── Pure 2D Flat Paper Periodic Table Mode (follows Chuanban paper toggle) ── */
+      function isFlatPaper2DMode() {
+        var de = doc && doc.documentElement;
+        return Boolean(de && typeof de.getAttribute === 'function' && de.getAttribute('data-ag-cs-chuanban') === 'on');
+      }
       var flat2dRefs = null;
       var flatHoveredGlobalAux = null;
       var flatHoveredChemZ = null;
@@ -3968,7 +3971,7 @@
       };
 
       function positionFlatPopover(anchorHint) {
-        if (!FLAT_PAPER_2D_MODE || !overlayEl) return;
+        if (!isFlatPaper2DMode() || !overlayEl) return;
         var winW = (root && Number(root.innerWidth)) || 1280;
         var winH = (root && Number(root.innerHeight)) || 800;
         var trig =
@@ -4202,7 +4205,7 @@
       }
 
       function syncFlatPaper2D(dInfo) {
-        if (!FLAT_PAPER_2D_MODE || !stageEl) return;
+        if (!isFlatPaper2DMode() || !stageEl) return;
         var refs = ensureFlatPaper2DDom(stageEl);
         if (!refs) return;
         if (dInfo) refs.lastDInfo = dInfo;
@@ -4362,15 +4365,25 @@
               var iconSpan = mkEl(doc, 'span', 'ag-pp-f2-aux-icon');
               iconSpan.setAttribute('aria-hidden', 'true');
               var rawKey = ((as.id || '') + ' ' + (as.title || '')).toLowerCase();
+              var svgNs = 'http://www.w3.org/2000/svg';
+              var mkSvg = function (tag, attrs) {
+                var n = doc.createElementNS ? doc.createElementNS(svgNs, tag) : mkEl(doc, tag);
+                for (var ak in attrs) if (Object.prototype.hasOwnProperty.call(attrs, ak)) n.setAttribute(ak, attrs[ak]);
+                return n;
+              };
+              var svgEl = mkSvg('svg', { viewBox: '0 0 16 16', fill: 'none' });
               if (isOrch || rawKey.indexOf('orch') !== -1) {
-                iconSpan.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><circle cx="6.2" cy="8" r="3.6" stroke="currentColor" stroke-width="1.45"/><circle cx="9.8" cy="8" r="3.6" stroke="currentColor" stroke-width="1.45" stroke-opacity=".72"/></svg>';
+                svgEl.appendChild(mkSvg('circle', { cx: '6.2', cy: '8', r: '3.6', stroke: 'currentColor', 'stroke-width': '1.45' }));
+                svgEl.appendChild(mkSvg('circle', { cx: '9.8', cy: '8', r: '3.6', stroke: 'currentColor', 'stroke-width': '1.45', 'stroke-opacity': '.72' }));
               } else if (rawKey.indexOf('claude') !== -1 || rawKey.indexOf('opus') !== -1 || rawKey.indexOf('sonnet') !== -1) {
-                iconSpan.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><path d="M8 1.8v12.4M1.8 8h12.4M3.6 3.6l8.8 8.8M12.4 3.6l-8.8 8.8" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/></svg>';
+                svgEl.appendChild(mkSvg('path', { d: 'M8 1.8v12.4M1.8 8h12.4M3.6 3.6l8.8 8.8M12.4 3.6l-8.8 8.8', stroke: 'currentColor', 'stroke-width': '1.45', 'stroke-linecap': 'round' }));
               } else if (rawKey.indexOf('gpt') !== -1 || rawKey.indexOf('openai') !== -1) {
-                iconSpan.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><polygon points="8,1.8 13.4,4.9 13.4,11.1 8,14.2 2.6,11.1 2.6,4.9" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="8" cy="8" r="1.7" fill="currentColor"/></svg>';
+                svgEl.appendChild(mkSvg('polygon', { points: '8,1.8 13.4,4.9 13.4,11.1 8,14.2 2.6,11.1 2.6,4.9', stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linejoin': 'round' }));
+                svgEl.appendChild(mkSvg('circle', { cx: '8', cy: '8', r: '1.7', fill: 'currentColor' }));
               } else {
-                iconSpan.innerHTML = '<svg viewBox="0 0 16 16" fill="none"><path d="M8 1.2C8.25 5.4 10.6 7.75 14.8 8C10.6 8.25 8.25 10.6 8 14.8C7.75 10.6 5.4 8.25 1.2 8C5.4 7.75 7.75 5.4 8 1.2Z" fill="currentColor"/></svg>';
+                svgEl.appendChild(mkSvg('path', { d: 'M8 1.2C8.25 5.4 10.6 7.75 14.8 8C10.6 8.25 8.25 10.6 8 14.8C7.75 10.6 5.4 8.25 1.2 8C5.4 7.75 7.75 5.4 8 1.2Z', fill: 'currentColor' }));
               }
+              iconSpan.appendChild(svgEl);
               var nameSpan = mkEl(doc, 'span', 'ag-pp-f2-aux-name', as.title || as.shortLabel || '');
               pill.appendChild(iconSpan);
               pill.appendChild(nameSpan);
@@ -4904,7 +4917,7 @@
         var onOpenExternalClick = function (ev) {
           if (!overlayEl || isDestroyed || isDrawerClosing || isConfirmClosing || currentMode === 'off') return;
           if (ev && isTargetWithinNode(overlayEl, ev.target)) return;
-          if (FLAT_PAPER_2D_MODE) {
+          if (isFlatPaper2DMode()) {
             collapseDrawerAndClose();
             return;
           }
@@ -4912,7 +4925,7 @@
           scheduleSessionSyncFollowup(SESSION_SYNC_CLICK_FOLLOWUP_MS);
         };
         var onOpenExternalPointerDown = function (ev) {
-          if (!FLAT_PAPER_2D_MODE || !overlayEl || isDestroyed || isDrawerClosing || isConfirmClosing || currentMode === 'off') return;
+          if (!isFlatPaper2DMode() || !overlayEl || isDestroyed || isDrawerClosing || isConfirmClosing || currentMode === 'off') return;
           if (ev && isTargetWithinNode(overlayEl, ev.target)) return;
           collapseDrawerAndClose();
         };
@@ -5852,18 +5865,27 @@
         }
 
         var pinnedScrollEl = null;
-        if (FLAT_PAPER_2D_MODE) {
+        var useFlat2D = isFlatPaper2DMode();
+        if (useFlat2D) {
           overlayEl.setAttribute('data-in-flow', '0');
           overlayEl.setAttribute('data-flat-2d', '1');
           doc.body.appendChild(overlayEl);
           positionFlatPopover(triggerEl);
-        } else if (stageMode === 'drawer') {
-          var drawerMount = resolveDrawerMountHost(doc, triggerEl);
-          overlayEl.setAttribute('data-in-flow', drawerMount.inFlow ? '1' : '0');
-          if (drawerMount.inFlow) pinnedScrollEl = findNearBottomScrollContainer(drawerMount.host);
-          (drawerMount.host || doc.body).appendChild(overlayEl);
         } else {
-          doc.body.appendChild(overlayEl);
+          overlayEl.removeAttribute('data-flat-2d');
+          if (overlayEl.style && typeof overlayEl.style.removeProperty === 'function') {
+            overlayEl.style.removeProperty('--ag-pp-pop-left');
+            overlayEl.style.removeProperty('--ag-pp-pop-bottom');
+            overlayEl.style.removeProperty('--ag-pp-pop-width');
+          }
+          if (stageMode === 'drawer') {
+            var drawerMount = resolveDrawerMountHost(doc, triggerEl);
+            overlayEl.setAttribute('data-in-flow', drawerMount.inFlow ? '1' : '0');
+            if (drawerMount.inFlow) pinnedScrollEl = findNearBottomScrollContainer(drawerMount.host);
+            (drawerMount.host || doc.body).appendChild(overlayEl);
+          } else {
+            doc.body.appendChild(overlayEl);
+          }
         }
 
         if (doc.documentElement && typeof doc.documentElement.setAttribute === 'function') {
@@ -5890,7 +5912,7 @@
           }
         }
 
-        if (FLAT_PAPER_2D_MODE) {
+        if (useFlat2D) {
           activeRenderer = null;
           flatHoveredGlobalAux = null;
           flatHoveredChemZ = null;
@@ -5900,6 +5922,10 @@
           ensureFlatPaper2DDom(stageEl);
         } else {
           if (overlayEl) overlayEl.removeAttribute('data-flat-2d');
+          if (flat2dRefs && flat2dRefs.root) {
+            if (flat2dRefs.root.parentNode) flat2dRefs.root.parentNode.removeChild(flat2dRefs.root);
+            flat2dRefs = null;
+          }
           var kbFactory = resolveKeyboard3DFactory(root);
           if (kbFactory) {
             try {

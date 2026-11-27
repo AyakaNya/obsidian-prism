@@ -3,6 +3,8 @@
   "lang": "auto",
   "palette": "obsidian",
   "lightPreset": "crystal",
+  "chuanbanPaper": "off",
+  "bookTypography": "off",
   "darkAuraStyle": "prism",
   "motionLevel": "ultra",
   "targetFps": "180",
